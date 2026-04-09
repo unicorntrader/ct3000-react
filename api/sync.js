@@ -1,8 +1,8 @@
 const https = require('https');
 
-const BASE_URL = 'https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService';
-const SEND_URL = `${BASE_URL}/SendRequest`;
-const GET_URL  = `${BASE_URL}/GetStatement`;
+const BASE_URL = 'https://gdcdyn.interactivebrokers.com/Universal/servlet';
+const SEND_URL = `${BASE_URL}/FlexStatementService.SendRequest`;
+const GET_URL  = `${BASE_URL}/FlexStatementService.GetStatement`;
 
 function httpsGet(url) {
   return new Promise((resolve, reject) => {
