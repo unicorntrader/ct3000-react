@@ -10,6 +10,15 @@ import PerformanceScreen from './screens/PerformanceScreen'
 import IBKRScreen from './screens/IBKRScreen'
 
 const NAV_ITEMS = [
+  { id: 'home', label: 'Home' },
+  { id: 'plans', label: 'Plans' },
+  { id: 'daily', label: 'Daily View' },
+  { id: 'journal', label: 'Journal' },
+  { id: 'performance', label: 'Performance' },
+  { id: 'ibkr', label: 'IBKR' },
+]
+
+const MOBILE_NAV_ITEMS = [
   {
     id: 'home', label: 'Home',
     icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />,
@@ -45,22 +54,25 @@ function AppShell({ session }) {
 
   const renderScreen = () => {
     switch (activeScreen) {
-      case 'home':        return <HomeScreen session={session} />
+      case 'home':        return <HomeScreen session={session} onTabChange={setActiveScreen} />
       case 'plans':       return <PlansScreen session={session} />
       case 'daily':       return <DailyViewScreen session={session} />
       case 'journal':     return <JournalScreen session={session} />
       case 'performance': return <PerformanceScreen session={session} />
       case 'ibkr':        return <IBKRScreen session={session} />
-      default:            return <HomeScreen session={session} />
+      default:            return <HomeScreen session={session} onTabChange={setActiveScreen} />
     }
   }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Top bar — matches Header.jsx style */}
+
+      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14">
+
+            {/* Logo */}
             <div className="flex items-center space-x-2">
               <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
                 <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -69,6 +81,25 @@ function AppShell({ session }) {
               </div>
               <span className="text-lg font-semibold text-gray-900">CT3000</span>
             </div>
+
+            {/* Desktop nav tabs */}
+            <nav className="hidden md:flex items-center h-full">
+              {NAV_ITEMS.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveScreen(item.id)}
+                  className={`px-4 h-full text-sm font-medium border-b-2 transition-colors ${
+                    activeScreen === item.id
+                      ? 'text-blue-600 border-blue-600'
+                      : 'text-gray-500 border-transparent hover:text-gray-900'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+
+            {/* Sign out */}
             <button
               onClick={handleSignOut}
               className="text-sm text-gray-500 hover:text-gray-800 hover:bg-gray-100 px-3 py-1.5 rounded-lg transition-colors"
@@ -86,10 +117,10 @@ function AppShell({ session }) {
         </div>
       </main>
 
-      {/* Bottom nav — matches MobileNav.jsx style */}
+      {/* Mobile bottom nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30">
         <div className="flex">
-          {NAV_ITEMS.map((item) => (
+          {MOBILE_NAV_ITEMS.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveScreen(item.id)}
@@ -128,7 +159,6 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Loading splash
   if (session === undefined) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
