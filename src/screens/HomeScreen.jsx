@@ -1,10 +1,108 @@
-import React from 'react';
-import { openPositions, activePlans } from '../data/mockData';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
-export default function HomeScreen({ onTabChange, onReviewOpen, reviewDismissed }) {
+const fmt = (n) => {
+  if (n == null) return 'N/A';
+  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (n >= 0 ? '+$' : '-$') + abs;
+};
+
+const fmtPrice = (n) => {
+  if (n == null) return 'N/A';
+  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+const thirtyDaysAgo = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  return d.toISOString();
+};
+
+export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewDismissed }) {
+  const [positions, setPositions] = useState([]);
+  const [plans, setPlans] = useState([]);
+  const [logicalTrades, setLogicalTrades] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    fetchData();
+  }, [session]);
+
+  const fetchData = async () => {
+    const userId = session.user.id;
+    const [posRes, plansRes, tradesRes] = await Promise.all([
+      supabase.from('open_positions').select('*').eq('user_id', userId),
+      supabase.from('planned_trades').select('*').eq('user_id', userId),
+      supabase
+        .from('logical_trades')
+        .select('status, total_realized_pnl, closed_at, matching_status, direction')
+        .eq('user_id', userId)
+        .gte('closed_at', thirtyDaysAgo()),
+    ]);
+
+    setPositions(posRes.data || []);
+    setPlans(plansRes.data || []);
+    setLogicalTrades(tradesRes.data || []);
+    setLoading(false);
+  };
+
+  // Derived stats
+  const today = todayStr();
+  const todayTrades = logicalTrades.filter(t => t.closed_at?.slice(0, 10) === today);
+  const todayPnl = todayTrades.reduce((sum, t) => sum + (t.total_realized_pnl || 0), 0);
+
+  const totalUnrealized = positions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
+
+  const closedLast30 = logicalTrades.filter(t => t.status === 'closed');
+  const wins = closedLast30.filter(t => (t.total_realized_pnl || 0) > 0).length;
+  const losses = closedLast30.filter(t => (t.total_realized_pnl || 0) <= 0).length;
+  const winRate = closedLast30.length > 0 ? Math.round((wins / closedLast30.length) * 100) : null;
+
+  const reviewCount = logicalTrades.filter(
+    t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'
+  ).length;
+
+  const statCards = [
+    {
+      label: "Today's P&L",
+      value: todayTrades.length > 0 ? fmt(todayPnl) : '—',
+      sub: todayTrades.length > 0 ? `${todayTrades.length} trade${todayTrades.length !== 1 ? 's' : ''}` : 'No trades today',
+      color: todayPnl >= 0 ? 'text-green-600' : 'text-red-500',
+    },
+    {
+      label: 'Open positions',
+      value: String(positions.length),
+      sub: positions.length > 0 ? fmt(totalUnrealized) + ' unrealized' : 'No open positions',
+      color: 'text-blue-600',
+    },
+    {
+      label: 'Active plans',
+      value: String(plans.length),
+      sub: plans.length > 0 ? 'Ready to execute' : 'No plans yet',
+      color: 'text-gray-900',
+    },
+    {
+      label: 'Win rate (30d)',
+      value: winRate != null ? `${winRate}%` : '—',
+      sub: closedLast30.length > 0 ? `${wins}W · ${losses}L` : 'No closed trades',
+      color: winRate != null && winRate >= 50 ? 'text-green-600' : 'text-red-500',
+    },
+  ];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-5 h-5 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div>
-      {!reviewDismissed && (
+      {!reviewDismissed && reviewCount > 0 && (
         <div
           className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center space-x-3 cursor-pointer mb-6"
           onClick={onReviewOpen}
@@ -15,7 +113,7 @@ export default function HomeScreen({ onTabChange, onReviewOpen, reviewDismissed 
             </svg>
           </div>
           <div className="flex-1">
-            <p className="text-sm font-medium text-amber-800">4 trades need review</p>
+            <p className="text-sm font-medium text-amber-800">{reviewCount} trade{reviewCount !== 1 ? 's' : ''} need review</p>
             <p className="text-xs text-amber-600">Tap to review now -- takes about 2 minutes</p>
           </div>
           <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -25,12 +123,7 @@ export default function HomeScreen({ onTabChange, onReviewOpen, reviewDismissed 
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {[
-          { label: "Today's P&L", value: '+$970', sub: '3 trades', color: 'text-green-600' },
-          { label: 'Open positions', value: '3', sub: '+$1,670 unrealized', color: 'text-blue-600' },
-          { label: 'Active plans', value: '2', sub: 'Ready to execute', color: 'text-gray-900' },
-          { label: 'Win rate (30d)', value: '62%', sub: '31W · 19L', color: 'text-green-600' },
-        ].map(card => (
+        {statCards.map(card => (
           <div key={card.label} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
             <p className="text-xs font-medium text-gray-400 mb-1">{card.label}</p>
             <p className={`text-2xl font-semibold ${card.color}`}>{card.value}</p>
@@ -45,20 +138,33 @@ export default function HomeScreen({ onTabChange, onReviewOpen, reviewDismissed 
             <h3 className="text-sm font-semibold text-gray-700">Open positions</h3>
             <button onClick={() => onTabChange('daily')} className="text-xs text-blue-600 font-medium hover:underline">View all &rarr;</button>
           </div>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-50">
-            {openPositions.map(pos => (
-              <div key={pos.symbol} className="flex items-center justify-between px-5 py-3">
-                <div>
-                  <p className="font-semibold text-gray-900">{pos.symbol}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{pos.direction} &middot; {pos.qty} shares &middot; {pos.days} days</p>
-                </div>
-                <div className="text-right">
-                  <p className={`font-semibold ${pos.positive ? 'text-green-600' : 'text-red-500'}`}>{pos.pnl}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">avg {pos.avg}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          {positions.length === 0 ? (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-8 text-center">
+              <p className="text-sm text-gray-400">No open positions</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-50">
+              {positions.map(pos => {
+                const isLong = (pos.position || 0) >= 0;
+                const qty = Math.abs(pos.position || 0);
+                const pnl = pos.unrealized_pnl || 0;
+                return (
+                  <div key={pos.id || pos.symbol} className="flex items-center justify-between px-5 py-3">
+                    <div>
+                      <p className="font-semibold text-gray-900">{pos.symbol}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {isLong ? 'Long' : 'Short'} &middot; {qty} {pos.asset_category === 'STK' ? 'shares' : 'contracts'}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`font-semibold ${pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmt(pnl)}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">avg {fmtPrice(pos.avg_cost)}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div>
@@ -66,26 +172,46 @@ export default function HomeScreen({ onTabChange, onReviewOpen, reviewDismissed 
             <h3 className="text-sm font-semibold text-gray-700">Active plans</h3>
             <button onClick={() => onTabChange('plans')} className="text-xs text-blue-600 font-medium hover:underline">View all &rarr;</button>
           </div>
-          <div className="space-y-3">
-            {activePlans.map(plan => (
-              <div key={plan.symbol} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-semibold text-gray-900">{plan.symbol}</span>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                    plan.direction === 'long' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
-                  }`}>
-                    {plan.direction.toUpperCase()}
-                  </span>
-                </div>
-                <div className="grid grid-cols-3 gap-2 mb-2">
-                  <div className="text-center bg-gray-50 rounded-lg py-1.5"><p className="text-xs text-gray-400 mb-0.5">Entry</p><p className="text-sm font-medium">{plan.entry}</p></div>
-                  <div className="text-center bg-gray-50 rounded-lg py-1.5"><p className="text-xs text-gray-400 mb-0.5">Target</p><p className="text-sm font-medium text-green-600">{plan.target}</p></div>
-                  <div className="text-center bg-gray-50 rounded-lg py-1.5"><p className="text-xs text-gray-400 mb-0.5">Stop</p><p className="text-sm font-medium text-red-500">{plan.stop}</p></div>
-                </div>
-                <p className="text-xs text-gray-500 italic">{plan.thesis}</p>
-              </div>
-            ))}
-          </div>
+          {plans.length === 0 ? (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-8 text-center">
+              <p className="text-sm text-gray-400">No active plans</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {plans.map(plan => {
+                const dir = (plan.direction || '').toLowerCase();
+                return (
+                  <div key={plan.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="font-semibold text-gray-900">{plan.symbol}</span>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                        dir === 'long' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+                      }`}>
+                        {dir.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mb-2">
+                      <div className="text-center bg-gray-50 rounded-lg py-1.5">
+                        <p className="text-xs text-gray-400 mb-0.5">Entry</p>
+                        <p className="text-sm font-medium">{fmtPrice(plan.entry_price ?? plan.entry)}</p>
+                      </div>
+                      <div className="text-center bg-gray-50 rounded-lg py-1.5">
+                        <p className="text-xs text-gray-400 mb-0.5">Target</p>
+                        <p className="text-sm font-medium text-green-600">{fmtPrice(plan.target_price ?? plan.target)}</p>
+                      </div>
+                      <div className="text-center bg-gray-50 rounded-lg py-1.5">
+                        <p className="text-xs text-gray-400 mb-0.5">Stop</p>
+                        <p className="text-sm font-medium text-red-500">{fmtPrice(plan.stop_price ?? plan.stop)}</p>
+                      </div>
+                    </div>
+                    {(plan.notes || plan.thesis) && (
+                      <p className="text-xs text-gray-500 italic">{plan.notes ?? plan.thesis}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

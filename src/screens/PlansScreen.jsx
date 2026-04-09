@@ -1,12 +1,83 @@
-import React from 'react';
-import { plans } from '../data/mockData';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
+
+const fmtPrice = (n) => {
+  if (n == null) return 'N/A';
+  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+const fmtDate = (iso) => {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
 
 const statusStyles = {
   planned: 'bg-blue-50 text-blue-600',
   matched: 'bg-green-50 text-green-700',
+  active: 'bg-blue-50 text-blue-600',
 };
 
-export default function PlansScreen({ onNewPlan }) {
+export default function PlansScreen({ session, onNewPlan }) {
+  const [plans, setPlans] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    fetchPlans();
+  }, [session]);
+
+  const fetchPlans = async () => {
+    const { data } = await supabase
+      .from('planned_trades')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false });
+
+    setPlans(data || []);
+    setLoading(false);
+  };
+
+  const computeRR = (plan) => {
+    const entry = plan.entry_price ?? plan.entry;
+    const target = plan.target_price ?? plan.target;
+    const stop = plan.stop_price ?? plan.stop;
+    if (entry == null || target == null || stop == null) return null;
+    const reward = Math.abs(target - entry);
+    const risk = Math.abs(entry - stop);
+    if (risk === 0) return null;
+    return (reward / risk).toFixed(2);
+  };
+
+  const computeRisk = (plan) => {
+    const entry = plan.entry_price ?? plan.entry;
+    const stop = plan.stop_price ?? plan.stop;
+    const qty = plan.shares ?? plan.quantity ?? plan.total_opening_quantity;
+    if (entry == null || stop == null || qty == null) return null;
+    return (stop - entry) * qty;
+  };
+
+  const computeReward = (plan) => {
+    const entry = plan.entry_price ?? plan.entry;
+    const target = plan.target_price ?? plan.target;
+    const qty = plan.shares ?? plan.quantity ?? plan.total_opening_quantity;
+    if (entry == null || target == null || qty == null) return null;
+    return (target - entry) * qty;
+  };
+
+  const fmtPnl = (n) => {
+    if (n == null) return 'N/A';
+    const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return (n >= 0 ? '+$' : '-$') + abs;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-5 h-5 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -22,44 +93,66 @@ export default function PlansScreen({ onNewPlan }) {
         </button>
       </div>
 
-      <div className="space-y-4">
-        {plans.map((plan, i) => (
-          <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <div className="flex items-center space-x-3 mb-1">
-                  <span className="text-xl font-semibold text-gray-900">{plan.symbol}</span>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                    plan.direction === 'long' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
-                  }`}>
-                    {plan.direction.toUpperCase()}
-                  </span>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusStyles[plan.status]}`}>
-                    {plan.status.toUpperCase()}
-                  </span>
+      {plans.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-16 text-center">
+          <p className="text-sm font-medium text-gray-500 mb-1">No plans yet</p>
+          <p className="text-xs text-gray-400">Tap "New plan" to document your next trade setup</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {plans.map((plan) => {
+            const dir = (plan.direction || '').toLowerCase();
+            const status = (plan.status || 'planned').toLowerCase();
+            const rr = computeRR(plan);
+            const risk = computeRisk(plan);
+            const reward = computeReward(plan);
+            const qty = plan.shares ?? plan.quantity ?? plan.total_opening_quantity;
+
+            return (
+              <div key={plan.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <div className="flex items-center space-x-3 mb-1">
+                      <span className="text-xl font-semibold text-gray-900">{plan.symbol}</span>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                        dir === 'long' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+                      }`}>
+                        {dir.toUpperCase()}
+                      </span>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusStyles[status] || 'bg-gray-100 text-gray-500'}`}>
+                        {status.toUpperCase()}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-400">
+                      {fmtDate(plan.created_at)}
+                      {qty != null && <> &middot; {qty} {plan.asset_category === 'OPT' ? 'contracts' : 'shares'}</>}
+                      {rr != null && <> &middot; R:R {rr}</>}
+                    </p>
+                  </div>
                 </div>
-                <p className="text-xs text-gray-400">{plan.date} &middot; {plan.shares} shares &middot; R:R {plan.rr}</p>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
+                  {[
+                    { label: 'Entry', value: fmtPrice(plan.entry_price ?? plan.entry) },
+                    { label: 'Target', value: fmtPrice(plan.target_price ?? plan.target), color: 'text-green-600' },
+                    { label: 'Stop', value: fmtPrice(plan.stop_price ?? plan.stop), color: 'text-red-500' },
+                    { label: 'Risk', value: fmtPnl(risk), color: 'text-red-500' },
+                    { label: 'Reward', value: fmtPnl(reward), color: 'text-green-600' },
+                    { label: 'R:R', value: rr ?? 'N/A', color: 'text-blue-600' },
+                  ].map(f => (
+                    <div key={f.label} className="text-center bg-gray-50 rounded-lg py-2">
+                      <p className="text-xs text-gray-400 mb-1">{f.label}</p>
+                      <p className={`text-sm font-medium ${f.color || ''}`}>{f.value}</p>
+                    </div>
+                  ))}
+                </div>
+                {(plan.notes || plan.thesis) && (
+                  <p className="text-sm text-gray-500 italic">{plan.notes ?? plan.thesis}</p>
+                )}
               </div>
-            </div>
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
-              {[
-                { label: 'Entry', value: plan.entry },
-                { label: 'Target', value: plan.target, color: 'text-green-600' },
-                { label: 'Stop', value: plan.stop, color: 'text-red-500' },
-                { label: 'Risk', value: plan.risk, color: 'text-red-500' },
-                { label: 'Reward', value: plan.reward, color: 'text-green-600' },
-                { label: 'R:R', value: plan.rr, color: 'text-blue-600' },
-              ].map(f => (
-                <div key={f.label} className="text-center bg-gray-50 rounded-lg py-2">
-                  <p className="text-xs text-gray-400 mb-1">{f.label}</p>
-                  <p className={`text-sm font-medium ${f.color || ''}`}>{f.value}</p>
-                </div>
-              ))}
-            </div>
-            <p className="text-sm text-gray-500 italic">{plan.thesis}</p>
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

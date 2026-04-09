@@ -27,13 +27,13 @@ function AppShell({ session }) {
 
   const renderScreen = () => {
     switch (activeTab) {
-      case 'home':   return <HomeScreen onTabChange={setActiveTab} onReviewOpen={() => setReviewSheetOpen(true)} reviewDismissed={reviewDismissed} />
-      case 'plans':  return <PlansScreen onNewPlan={() => setPlanSheetOpen(true)} />
-      case 'daily':  return <DailyViewScreen />
-      case 'sj':     return <JournalScreen />
-      case 'perf':   return <PerformanceScreen />
+      case 'home':   return <HomeScreen session={session} onTabChange={setActiveTab} onReviewOpen={() => setReviewSheetOpen(true)} reviewDismissed={reviewDismissed} />
+      case 'plans':  return <PlansScreen session={session} onNewPlan={() => setPlanSheetOpen(true)} />
+      case 'daily':  return <DailyViewScreen session={session} />
+      case 'sj':     return <JournalScreen session={session} />
+      case 'perf':   return <PerformanceScreen session={session} />
       case 'ibkr':   return <IBKRScreen session={session} />
-      default:       return <HomeScreen onTabChange={setActiveTab} onReviewOpen={() => setReviewSheetOpen(true)} reviewDismissed={reviewDismissed} />
+      default:       return <HomeScreen session={session} onTabChange={setActiveTab} onReviewOpen={() => setReviewSheetOpen(true)} reviewDismissed={reviewDismissed} />
     }
   }
 
@@ -59,6 +59,7 @@ function AppShell({ session }) {
       />
 
       <ReviewSheet
+        session={session}
         isOpen={reviewSheetOpen}
         onClose={() => setReviewSheetOpen(false)}
         onComplete={() => setReviewDismissed(true)}

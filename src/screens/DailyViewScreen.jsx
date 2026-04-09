@@ -1,19 +1,52 @@
-import React, { useState } from 'react';
-import { dailyDays } from '../data/mockData';
+import React, { useState, useEffect, useMemo } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
 const statusStyles = {
   matched: 'bg-blue-50 text-blue-600',
   unmatched: 'bg-amber-100 text-amber-700',
   ambiguous: 'bg-purple-50 text-purple-700',
-  opt: 'bg-green-50 text-green-700',
+  auto: 'bg-gray-100 text-gray-500',
+  manual: 'bg-green-50 text-green-700',
 };
 
-function DayBlock({ day }) {
+const fmtPrice = (n) => {
+  if (n == null) return '—';
+  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+const fmtPnl = (n) => {
+  if (n == null) return '—';
+  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (n >= 0 ? '+$' : '-$') + abs;
+};
+
+const fmtTime = (iso) => {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+};
+
+const fmtDateLabel = (dateKey) => {
+  return new Date(dateKey + 'T12:00:00Z').toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  });
+};
+
+// Approximate exit price from entry + pnl + qty
+const calcExit = (trade) => {
+  const entry = trade.avg_entry_price;
+  const pnl = trade.total_realized_pnl;
+  const qty = trade.total_closing_quantity || trade.total_opening_quantity;
+  if (entry == null || pnl == null || !qty) return null;
+  if (trade.direction === 'LONG') return entry + pnl / qty;
+  if (trade.direction === 'SHORT') return entry - pnl / qty;
+  return null;
+};
+
+function DayBlock({ day, onResolve }) {
   const [note, setNote] = useState(day.note);
   const [editingNote, setEditingNote] = useState(false);
   const [noteInput, setNoteInput] = useState(day.note || '');
   const [journalInput, setJournalInput] = useState('');
-  const [resolved, setResolved] = useState({});
   const [openResolve, setOpenResolve] = useState(null);
 
   const handleSaveNote = () => {
@@ -24,27 +57,25 @@ function DayBlock({ day }) {
   const handleSaveJournal = () => {
     if (!journalInput.trim()) return;
     setNote(journalInput);
-  };
-
-  const handleResolve = (id, label) => {
-    setResolved(r => ({ ...r, [id]: label }));
-    setOpenResolve(null);
+    setJournalInput('');
   };
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
       <div className="flex items-start justify-between px-6 py-4 border-b border-gray-100">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">{day.date}</h3>
+          <h3 className="text-lg font-semibold text-gray-900">{day.dateLabel}</h3>
           <p className="text-sm text-gray-500 mt-0.5">
-            {day.trades} trades &middot; {day.wins} wins, {day.losses} losses
+            {day.trades} trade{day.trades !== 1 ? 's' : ''} &middot; {day.wins}W, {day.losses}L
             {day.needsReview > 0 && (
               <span className="text-amber-600 font-medium"> &middot; {day.needsReview} need review</span>
             )}
           </p>
         </div>
         <div className="text-right">
-          <p className={`text-2xl font-bold ${day.positive ? 'text-green-600' : 'text-red-500'}`}>{day.pnl}</p>
+          <p className={`text-2xl font-bold ${day.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+            {fmtPnl(day.pnl)}
+          </p>
           <p className="text-sm text-gray-400">Daily P&L</p>
         </div>
       </div>
@@ -86,34 +117,34 @@ function DayBlock({ day }) {
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              {['Time', 'Symbol', 'Entry', 'Exit', 'Qty', 'P&L', 'Status'].map(h => (
+              {['Time', 'Symbol', 'Dir', 'Entry', 'Exit', 'Qty', 'P&L', 'Status'].map(h => (
                 <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {day.rows.map((row, i) => {
-              const resolvedStatus = row.resolveId ? resolved[row.resolveId] : null;
-              const currentStatus = resolvedStatus || row.status;
-              const needsAction = (row.status === 'unmatched' || row.status === 'ambiguous') && !resolvedStatus;
-
+            {day.rows.map((row) => {
+              const needsAction = row.status === 'unmatched' || row.status === 'ambiguous';
               return (
-                <React.Fragment key={i}>
+                <React.Fragment key={row.id}>
                   <tr className={needsAction ? 'bg-amber-50' : 'hover:bg-gray-50'}>
                     <td className="px-6 py-4 text-sm text-gray-600">{row.time}</td>
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">{row.symbol}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{row.entry}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{row.exit}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{row.direction}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{fmtPrice(row.entry)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{row.status === 'open' ? <span className="text-blue-500 text-xs font-medium">Open</span> : fmtPrice(row.exit)}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">{row.qty}</td>
-                    <td className={`px-6 py-4 text-sm font-medium ${row.positive ? 'text-green-600' : 'text-red-500'}`}>{row.pnl}</td>
+                    <td className={`px-6 py-4 text-sm font-medium ${(row.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                      {row.tradeStatus === 'open' ? '—' : fmtPnl(row.pnl)}
+                    </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-2">
-                        <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${statusStyles[currentStatus] || 'bg-gray-100 text-gray-500'}`}>
-                          {resolvedStatus || (currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1))}
+                        <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${statusStyles[row.status] || 'bg-gray-100 text-gray-500'}`}>
+                          {row.status.charAt(0).toUpperCase() + row.status.slice(1)}
                         </span>
                         {needsAction && (
                           <button
-                            onClick={() => setOpenResolve(openResolve === row.resolveId ? null : row.resolveId)}
+                            onClick={() => setOpenResolve(openResolve === row.id ? null : row.id)}
                             className="text-xs text-blue-600 font-medium hover:underline whitespace-nowrap"
                           >
                             Resolve &rarr;
@@ -123,40 +154,27 @@ function DayBlock({ day }) {
                     </td>
                   </tr>
 
-                  {needsAction && openResolve === row.resolveId && (
+                  {needsAction && openResolve === row.id && (
                     <tr className="bg-amber-50">
-                      <td colSpan={7} className="px-6 py-3">
+                      <td colSpan={8} className="px-6 py-3">
                         <div className={`bg-white rounded-xl p-4 border ${row.status === 'ambiguous' ? 'border-purple-200' : 'border-amber-200'}`}>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                            Resolve {row.symbol} &middot; {row.pnl}
+                            Resolve {row.symbol} &middot; {fmtPnl(row.pnl)}
                           </p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-                            {row.status === 'unmatched' ? (
-                              <>
-                                <label className="flex items-start space-x-3 cursor-pointer p-3 rounded-lg border border-gray-200 hover:border-blue-400">
-                                  <input type="radio" name={`resolve-${row.resolveId}`} className="mt-0.5" />
-                                  <div><p className="text-sm font-medium text-gray-900">{row.symbol} -- Long &middot; Momentum</p><p className="text-xs text-gray-400 mt-0.5">Created Jul 25 &middot; Entry available</p></div>
-                                </label>
-                                <label className="flex items-start space-x-3 cursor-pointer p-3 rounded-lg border border-gray-200 hover:border-red-300">
-                                  <input type="radio" name={`resolve-${row.resolveId}`} className="mt-0.5" />
-                                  <div><p className="text-sm font-medium text-gray-900">Mark as unplanned</p><p className="text-xs text-gray-400 mt-0.5">Discretionary trade, no plan</p></div>
-                                </label>
-                              </>
-                            ) : (
-                              <>
-                                <label className="flex items-start space-x-3 cursor-pointer p-3 rounded-lg border border-gray-200 hover:border-blue-400">
-                                  <input type="radio" name={`resolve-${row.resolveId}`} className="mt-0.5" />
-                                  <div><p className="text-sm font-medium text-gray-900">{row.symbol} -- Long &middot; Support</p><p className="text-xs text-gray-400 mt-0.5">Created Jul 24 &middot; Entry $174</p></div>
-                                </label>
-                                <label className="flex items-start space-x-3 cursor-pointer p-3 rounded-lg border border-gray-200 hover:border-blue-400">
-                                  <input type="radio" name={`resolve-${row.resolveId}`} className="mt-0.5" />
-                                  <div><p className="text-sm font-medium text-gray-900">{row.symbol} -- Long &middot; Breakout</p><p className="text-xs text-gray-400 mt-0.5">Created Jul 25 &middot; Entry $176</p></div>
-                                </label>
-                              </>
-                            )}
-                          </div>
+                          <p className="text-sm text-gray-500 mb-3">
+                            {row.status === 'unmatched'
+                              ? 'No plan was matched to this trade. Mark it as unplanned or link a plan manually.'
+                              : 'Multiple plans matched. Go to the Journal to resolve this trade.'}
+                          </p>
                           <div className="flex space-x-2">
-                            <button onClick={() => handleResolve(row.resolveId, 'Matched')} className="bg-blue-600 text-white text-xs font-medium px-4 py-2 rounded-lg hover:bg-blue-700">Save</button>
+                            {row.status === 'unmatched' && (
+                              <button
+                                onClick={() => { onResolve(row.id, 'manual'); setOpenResolve(null); }}
+                                className="bg-blue-600 text-white text-xs font-medium px-4 py-2 rounded-lg hover:bg-blue-700"
+                              >
+                                Mark as unplanned
+                              </button>
+                            )}
                             <button onClick={() => setOpenResolve(null)} className="border border-gray-200 text-gray-600 text-xs px-4 py-2 rounded-lg hover:bg-gray-50">Cancel</button>
                           </div>
                         </div>
@@ -195,7 +213,103 @@ function DayBlock({ day }) {
   );
 }
 
-export default function DailyViewScreen() {
+export default function DailyViewScreen({ session }) {
+  const [trades, setTrades] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [dateFilter, setDateFilter] = useState('all');
+  const [sortAsc, setSortAsc] = useState(false);
+
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    fetchTrades();
+  }, [session]);
+
+  const fetchTrades = async () => {
+    const { data } = await supabase
+      .from('logical_trades')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('opened_at', { ascending: false });
+
+    setTrades(data || []);
+    setLoading(false);
+  };
+
+  const handleResolve = async (tradeId, newStatus) => {
+    await supabase
+      .from('logical_trades')
+      .update({ matching_status: newStatus })
+      .eq('id', tradeId);
+    setTrades(prev => prev.map(t => t.id === tradeId ? { ...t, matching_status: newStatus } : t));
+  };
+
+  // Group trades by day
+  const days = useMemo(() => {
+    const filtered = trades.filter(t =>
+      !search || t.symbol?.toLowerCase().includes(search.toLowerCase())
+    );
+
+    const grouped = new Map();
+    for (const t of filtered) {
+      // Use closed_at date for closed trades, opened_at for open ones
+      const anchor = (t.status === 'closed' ? t.closed_at : t.opened_at) || t.opened_at;
+      if (!anchor) continue;
+      const dateKey = anchor.slice(0, 10);
+      if (!grouped.has(dateKey)) grouped.set(dateKey, []);
+      grouped.get(dateKey).push(t);
+    }
+
+    let result = Array.from(grouped.entries()).map(([dateKey, dayTrades]) => {
+      const closed = dayTrades.filter(t => t.status === 'closed');
+      const wins = closed.filter(t => (t.total_realized_pnl || 0) > 0).length;
+      const losses = closed.filter(t => (t.total_realized_pnl || 0) <= 0).length;
+      const totalPnl = closed.reduce((sum, t) => sum + (t.total_realized_pnl || 0), 0);
+      const needsReview = dayTrades.filter(
+        t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'
+      ).length;
+
+      const rows = dayTrades.map(t => ({
+        id: t.id,
+        time: fmtTime(t.opened_at),
+        symbol: t.symbol,
+        direction: t.direction,
+        entry: t.avg_entry_price,
+        exit: calcExit(t),
+        qty: t.total_opening_quantity,
+        pnl: t.total_realized_pnl,
+        status: t.matching_status || 'auto',
+        tradeStatus: t.status,
+      }));
+
+      return { dateKey, dateLabel: fmtDateLabel(dateKey), rows, trades: dayTrades.length, wins, losses, pnl: totalPnl, needsReview, note: null };
+    });
+
+    result = result.filter(d => dateFilter === 'all' || d.dateKey === dateFilter);
+    result.sort((a, b) => sortAsc
+      ? a.dateKey.localeCompare(b.dateKey)
+      : b.dateKey.localeCompare(a.dateKey)
+    );
+
+    return result;
+  }, [trades, search, dateFilter, sortAsc]);
+
+  const uniqueDates = useMemo(() =>
+    [...new Set(trades.map(t => {
+      const anchor = (t.status === 'closed' ? t.closed_at : t.opened_at) || t.opened_at;
+      return anchor?.slice(0, 10);
+    }).filter(Boolean))].sort().reverse(),
+    [trades]
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-5 h-5 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
@@ -204,30 +318,47 @@ export default function DailyViewScreen() {
             <svg className="w-4 h-4 absolute left-3 top-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
-            <input type="text" placeholder="Search symbols..." className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50" />
+            <input
+              type="text"
+              placeholder="Search symbols..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50"
+            />
           </div>
-          <select className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 text-gray-700">
-            <option>All Dates</option>
-            <option>Jul 26, 2025</option>
-            <option>Jul 25, 2025</option>
+          <select
+            value={dateFilter}
+            onChange={e => setDateFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 text-gray-700"
+          >
+            <option value="all">All Dates</option>
+            {uniqueDates.map(d => (
+              <option key={d} value={d}>{new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</option>
+            ))}
           </select>
-          <select className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 text-gray-700">
-            <option>Sort by Date</option>
-            <option>Sort by Symbol</option>
-            <option>Sort by P&L</option>
-          </select>
-          <button className="flex items-center justify-center space-x-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 bg-gray-50 hover:bg-gray-100">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div />
+          <button
+            onClick={() => setSortAsc(v => !v)}
+            className="flex items-center justify-center space-x-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 bg-gray-50 hover:bg-gray-100"
+          >
+            <svg className={`w-4 h-4 transition-transform ${sortAsc ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
-            <span>Descending</span>
+            <span>{sortAsc ? 'Ascending' : 'Descending'}</span>
           </button>
         </div>
       </div>
 
-      {dailyDays.map(day => (
-        <DayBlock key={day.id} day={day} />
-      ))}
+      {days.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-16 text-center">
+          <p className="text-sm font-medium text-gray-500 mb-1">No trades found</p>
+          <p className="text-xs text-gray-400">Sync your IBKR account to import trades</p>
+        </div>
+      ) : (
+        days.map(day => (
+          <DayBlock key={day.dateKey} day={day} onResolve={handleResolve} />
+        ))
+      )}
     </div>
   );
 }

@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
-import { strategies } from '../data/mockData';
+
+const strategies = [
+  { group: 'Timeframe', options: ['Day Trade', 'Swing', 'Position'] },
+  { group: 'Setup', options: ['Breakout', 'Support', 'Resistance', 'Momentum'] },
+  { group: 'Thesis-driven', options: ['Value', 'Fundamental', 'Macro', 'Catalyst'] },
+];
 
 export default function PlanSheet({ isOpen, onClose }) {
   const [direction, setDirection] = useState('long');
