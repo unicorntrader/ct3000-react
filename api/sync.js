@@ -118,20 +118,30 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
+  // TEMP DEBUG — remove after testing
+  if (req.query.debug) {
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const userId = req.headers['x-user-id'];
+    return res.status(200).json({
+      supabaseUrl: supabaseUrl ? 'set' : 'MISSING',
+      serviceRoleKey: serviceRoleKey ? 'set' : 'MISSING',
+      userId: userId || 'MISSING',
+    });
+  }
+
   let token, queryId, userId;
 
-  // If called with explicit query params (test mode), use those directly
   if (req.query.token && req.query.queryId) {
     token = req.query.token;
     queryId = req.query.queryId;
   } else {
-    // Otherwise look up credentials from DB using user_id header
     userId = req.headers['x-user-id'];
     if (!userId) {
       return res.status(400).json({ error: 'Missing x-user-id header or token/queryId params.' });
     }
 
-    const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !serviceRoleKey) {
