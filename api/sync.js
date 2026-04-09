@@ -1,6 +1,6 @@
 const https = require('https');
 
-const BASE_URL = 'https://gdcdyn.interactivebrokers.com/AccountManagement/FlexWebService';
+const BASE_URL = 'https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService';
 const SEND_URL = `${BASE_URL}/SendRequest`;
 const GET_URL  = `${BASE_URL}/GetStatement`;
 
@@ -30,8 +30,8 @@ async function sendRequest(token, queryId) {
   return refMatch[1];
 }
 
-async function getStatement(refCode, maxRetries = 10, waitMs = 3000) {
-  const url = `${GET_URL}?q=${refCode}&v=3`;
+async function getStatement(refCode, token, maxRetries = 10, waitMs = 3000) {
+  const url = `${GET_URL}?q=${refCode}&t=${token}&v=3`;
 
   for (let i = 0; i < maxRetries; i++) {
     const xml = await httpsGet(url);
@@ -147,7 +147,7 @@ module.exports = async function handler(req, res) {
     console.log('Reference code:', refCode);
 
     console.log('Step 2: Fetching statement...');
-    const xml = await getStatement(refCode);
+    const xml = await getStatement(refCode, token);
     console.log('XML length:', xml.length);
 
     console.log('Step 3: Parsing...');
