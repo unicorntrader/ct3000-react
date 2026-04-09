@@ -50,6 +50,7 @@ function AppShell({ session }) {
         onClose={() => setSidebarOpen(false)}
         onTabChange={setActiveTab}
         onSignOut={handleSignOut}
+        session={session}
       />
 
       <PlanSheet
