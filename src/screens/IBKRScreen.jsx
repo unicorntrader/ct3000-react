@@ -215,6 +215,32 @@ export default function IBKRScreen({ session }) {
             .insert(logical);
           if (logicalError) {
             console.error('Logical trades save failed:', logicalError.message);
+          } else {
+            // Step 7: Run plan matcher
+            const { data: savedLogical } = await supabase
+              .from('logical_trades')
+              .select('*')
+              .eq('user_id', userId);
+
+            const { data: plannedTrades } = await supabase
+              .from('planned_trades')
+              .select('*')
+              .eq('user_id', userId);
+
+            if (savedLogical && plannedTrades) {
+              const { matchPlansToTrades } = await import('../lib/planMatcher');
+              const matchUpdates = matchPlansToTrades(savedLogical, plannedTrades);
+
+              for (const update of matchUpdates) {
+                await supabase
+                  .from('logical_trades')
+                  .update({
+                    matching_status: update.matching_status,
+                    planned_trade_id: update.planned_trade_id,
+                  })
+                  .eq('id', update.id);
+              }
+            }
           }
         }
       }
