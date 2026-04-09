@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Sidebar({ isOpen, onClose, onTabChange }) {
+export default function Sidebar({ isOpen, onClose, onTabChange, onSignOut }) {
   return (
     <>
       <div className={`overlay-bg ${isOpen ? 'open' : ''}`} onClick={onClose} />
@@ -95,7 +95,10 @@ export default function Sidebar({ isOpen, onClose, onTabChange }) {
             </div>
           </div>
 
-          <button className="w-full bg-white border border-gray-200 text-red-500 font-medium py-3 rounded-xl text-sm hover:bg-red-50 transition-colors">
+          <button
+            onClick={onSignOut}
+            className="w-full bg-white border border-gray-200 text-red-500 font-medium py-3 rounded-xl text-sm hover:bg-red-50 transition-colors"
+          >
             Log out
           </button>
         </div>
