@@ -1,5 +1,4 @@
 const https = require('https');
-const { createClient } = require('@supabase/supabase-js');
 
 const BASE_URL = 'https://gdcdyn.interactivebrokers.com/AccountManagement/FlexWebService';
 const SEND_URL = `${BASE_URL}/SendRequest`;
@@ -31,19 +30,36 @@ async function sendRequest(token, queryId) {
   return refMatch[1];
 }
 
-async function getStatement(refCode, maxRetries = 8, waitMs = 3000) {
+async function getStatement(refCode, maxRetries = 10, waitMs = 3000) {
   const url = `${GET_URL}?q=${refCode}&v=3`;
+
   for (let i = 0; i < maxRetries; i++) {
     const xml = await httpsGet(url);
-    if (xml.includes('<FlexStatementResponse>')) {
+
+    // IBKR returns FlexStatementResponse while processing OR when done
+    if (xml.includes('<FlexStatementResponse')) {
+      const statusMatch = xml.match(/<Status>([^<]+)<\/Status>/);
+      const status = statusMatch?.[1];
+
+      if (status === 'Success' || status === 'Complete') {
+        // Data is embedded inside this response — return it
+        return xml;
+      }
+
+      // Still processing — wait and retry
+      console.log(`Attempt ${i + 1}: Status=${status}, waiting...`);
       await sleep(waitMs);
       continue;
     }
+
+    // Direct FlexQueryResponse — also valid
     if (xml.includes('<FlexQueryResponse') || xml.includes('<FlexStatement ')) {
       return xml;
     }
-    throw new Error(`GetStatement error on attempt ${i + 1}: ${xml.substring(0, 300)}`);
+
+    throw new Error(`Unexpected response on attempt ${i + 1}: ${xml.substring(0, 300)}`);
   }
+
   throw new Error('Timed out waiting for IBKR statement after ' + maxRetries + ' attempts');
 }
 
@@ -113,59 +129,16 @@ function parseOpenPositions(xml) {
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-user-id');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
-  // TEMP DEBUG — remove after testing
-  if (req.query.debug) {
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const userId = req.headers['x-user-id'];
-    return res.status(200).json({
-      supabaseUrl: supabaseUrl ? 'set' : 'MISSING',
-      serviceRoleKey: serviceRoleKey ? 'set' : 'MISSING',
-      userId: userId || 'MISSING',
-    });
-  }
-
-  let token, queryId, userId;
-
-  if (req.query.token && req.query.queryId) {
-    token = req.query.token;
-    queryId = req.query.queryId;
-  } else {
-    userId = req.headers['x-user-id'];
-    if (!userId) {
-      return res.status(400).json({ error: 'Missing x-user-id header or token/queryId params.' });
-    }
-
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      return res.status(500).json({ error: 'Supabase env vars not configured on server.' });
-    }
-
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
-
-    const { data, error } = await supabase
-      .from('user_ibkr_credentials')
-      .select('ibkr_token, query_id_30d')
-      .eq('user_id', userId)
-      .single();
-
-    if (error || !data) {
-      return res.status(404).json({ error: 'No IBKR credentials found for this user. Please connect IBKR first.' });
-    }
-
-    token = data.ibkr_token;
-    queryId = data.query_id_30d;
-  }
+  const token   = req.query.token;
+  const queryId = req.query.queryId;
 
   if (!token || !queryId) {
-    return res.status(400).json({ error: 'Missing IBKR token or query ID.' });
+    return res.status(400).json({ error: 'Missing token or queryId params.' });
   }
 
   try {
@@ -177,7 +150,7 @@ module.exports = async function handler(req, res) {
     const xml = await getStatement(refCode);
     console.log('XML length:', xml.length);
 
-    console.log('Step 3: Parsing trades...');
+    console.log('Step 3: Parsing...');
     const trades = parseTrades(xml);
     const openPositions = parseOpenPositions(xml);
 
