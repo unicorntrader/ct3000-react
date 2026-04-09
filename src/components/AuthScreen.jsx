@@ -56,146 +56,133 @@ export default function AuthScreen() {
   const submitHandler = mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleReset
 
   return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center px-4">
-      {/* Background grid */}
-      <div
-        className="fixed inset-0 pointer-events-none"
-        style={{
-          backgroundImage:
-            'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)',
-          backgroundSize: '40px 40px',
-        }}
-      />
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4">
+      <div className="w-full max-w-sm">
 
-      <div className="relative w-full max-w-sm">
-        {/* Logo / wordmark */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2 mb-3">
-            <div className="w-7 h-7 bg-white flex items-center justify-center">
-              <span className="text-black font-black text-xs tracking-tight">CT</span>
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center space-x-2 mb-2">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
             </div>
-            <span
-              className="text-white font-black text-2xl tracking-widest"
-              style={{ fontFamily: "'Courier New', monospace", letterSpacing: '0.25em' }}
-            >
-              3000
-            </span>
+            <span className="text-xl font-semibold text-gray-900">CT3000</span>
           </div>
-          <p className="text-zinc-500 text-xs tracking-[0.2em] uppercase">
-            Plan Your Trade. Trade Your Plan.
-          </p>
+          <p className="text-sm text-gray-400">Your IBKR trading co-pilot</p>
         </div>
 
         {/* Card */}
-        <div className="bg-zinc-950 border border-zinc-800 p-8">
-          {/* Mode tabs */}
-          <div className="flex border-b border-zinc-800 mb-8 -mx-8 px-8">
-            {['login', 'signup'].map((m) => (
-              <button
-                key={m}
-                onClick={() => { setMode(m); clearFeedback() }}
-                className={`pb-3 mr-6 text-xs tracking-widest uppercase font-semibold transition-colors border-b-2 -mb-px ${
-                  mode === m
-                    ? 'text-white border-white'
-                    : 'text-zinc-500 border-transparent hover:text-zinc-300'
-                }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
 
-          {mode === 'reset' && (
-            <div className="mb-6">
-              <p className="text-zinc-400 text-sm">
-                Enter your email and we'll send a reset link.
-              </p>
+          {/* Tabs */}
+          {mode !== 'reset' && (
+            <div className="flex border-b border-gray-100">
+              {['login', 'signup'].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => { setMode(m); clearFeedback() }}
+                  className={`flex-1 py-3.5 text-sm font-medium transition-colors ${
+                    mode === m
+                      ? 'text-blue-600 border-b-2 border-blue-600 -mb-px bg-white'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  {m === 'login' ? 'Log in' : 'Sign up'}
+                </button>
+              ))}
             </div>
           )}
 
-          <form onSubmit={submitHandler} className="space-y-4">
-            <div>
-              <label className="block text-xs text-zinc-500 tracking-widest uppercase mb-2">
-                Email
-              </label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full bg-black border border-zinc-700 text-white text-sm px-3 py-2.5 focus:outline-none focus:border-zinc-400 transition-colors placeholder-zinc-700"
-                style={{ fontFamily: "'Courier New', monospace" }}
-              />
-            </div>
+          <div className="px-6 py-6">
+            {mode === 'reset' && (
+              <div className="mb-5">
+                <button
+                  onClick={() => { setMode('login'); clearFeedback() }}
+                  className="flex items-center space-x-1 text-sm text-gray-400 hover:text-gray-600 mb-4"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  <span>Back to login</span>
+                </button>
+                <h3 className="text-base font-semibold text-gray-900 mb-1">Reset password</h3>
+                <p className="text-sm text-gray-400">We'll send a reset link to your email.</p>
+              </div>
+            )}
 
-            {mode !== 'reset' && (
+            <form onSubmit={submitHandler} className="space-y-4">
               <div>
-                <label className="block text-xs text-zinc-500 tracking-widest uppercase mb-2">
-                  Password
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                  Email
                 </label>
                 <input
-                  type="password"
+                  type="email"
                   required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={mode === 'signup' ? 'Min 8 characters' : '••••••••'}
-                  className="w-full bg-black border border-zinc-700 text-white text-sm px-3 py-2.5 focus:outline-none focus:border-zinc-400 transition-colors placeholder-zinc-700"
-                  style={{ fontFamily: "'Courier New', monospace" }}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 text-gray-900 placeholder-gray-300"
                 />
               </div>
-            )}
 
-            {/* Feedback */}
-            {error && (
-              <div className="border border-red-900 bg-red-950/40 px-3 py-2 text-red-400 text-xs">
-                {error}
-              </div>
-            )}
-            {message && (
-              <div className="border border-green-900 bg-green-950/40 px-3 py-2 text-green-400 text-xs">
-                {message}
-              </div>
-            )}
+              {mode !== 'reset' && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={mode === 'signup' ? 'Min 8 characters' : '••••••••'}
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 text-gray-900 placeholder-gray-300"
+                  />
+                </div>
+              )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-white text-black text-xs font-black tracking-widest uppercase py-3 hover:bg-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed mt-2"
-            >
-              {loading
-                ? '...'
-                : mode === 'login'
-                ? 'Log In'
-                : mode === 'signup'
-                ? 'Create Account'
-                : 'Send Reset Link'}
-            </button>
-          </form>
+              {error && (
+                <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-600">
+                  {error}
+                </div>
+              )}
+              {message && (
+                <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-700">
+                  {message}
+                </div>
+              )}
 
-          {/* Forgot password / back links */}
-          <div className="mt-5 text-center">
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-blue-600 text-white font-semibold py-3 rounded-xl text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading
+                  ? 'Please wait...'
+                  : mode === 'login'
+                  ? 'Log in'
+                  : mode === 'signup'
+                  ? 'Create account'
+                  : 'Send reset link'}
+              </button>
+            </form>
+
             {mode === 'login' && (
-              <button
-                onClick={() => { setMode('reset'); clearFeedback() }}
-                className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
-              >
-                Forgot password?
-              </button>
-            )}
-            {mode === 'reset' && (
-              <button
-                onClick={() => { setMode('login'); clearFeedback() }}
-                className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
-              >
-                ← Back to login
-              </button>
+              <div className="text-center mt-4">
+                <button
+                  onClick={() => { setMode('reset'); clearFeedback() }}
+                  className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  Forgot password?
+                </button>
+              </div>
             )}
           </div>
         </div>
 
-        <p className="text-center text-zinc-700 text-xs mt-6 tracking-widest">
-          IBKR TRADING CO-PILOT
+        <p className="text-center text-xs text-gray-300 mt-6">
+          Plan your trade. Trade your plan.
         </p>
       </div>
     </div>
