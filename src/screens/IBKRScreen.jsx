@@ -1,19 +1,116 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
-export default function IBKRScreen({ onBack }) {
-  const [connected, setConnected] = useState(true);
+export default function IBKRScreen({ session }) {
+  const [connected, setConnected] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [token, setToken] = useState('');
   const [queryId, setQueryId] = useState('');
+  const [maskedToken, setMaskedToken] = useState('');
+  const [maskedQueryId, setMaskedQueryId] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
   const [syncError, setSyncError] = useState(null);
+  const [saveError, setSaveError] = useState(null);
 
-  const handleConnect = () => {
-    if (!token || !queryId) { alert('Please enter both your token and Query ID.'); return; }
-    setConnected(true);
+  // Load existing credentials on mount
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    loadCredentials();
+  }, [session]);
+
+  const loadCredentials = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('user_ibkr_credentials')
+      .select('token_masked, query_id_masked')
+      .eq('user_id', session.user.id)
+      .single();
+
+    if (data && !error) {
+      setConnected(true);
+      setMaskedToken(data.token_masked || '');
+      setMaskedQueryId(data.query_id_masked || '');
+    } else {
+      setConnected(false);
+    }
+    setLoading(false);
+  };
+
+  const handleSaveCredentials = async () => {
+    if (!token || !queryId) {
+      setSaveError('Please enter both your token and Query ID.');
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+
+    // Store masked versions for display, full values for sync
+    const tokenMasked = '•'.repeat(token.length - 4) + token.slice(-4);
+    const queryIdMasked = '•'.repeat(Math.max(0, queryId.length - 2)) + queryId.slice(-2);
+
+    const { error } = await supabase
+      .from('user_ibkr_credentials')
+      .upsert({
+        user_id: session.user.id,
+        ibkr_token: token,
+        query_id_30d: queryId,
+        token_masked: tokenMasked,
+        query_id_masked: queryIdMasked,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' });
+
+    if (error) {
+      setSaveError(error.message);
+    } else {
+      setConnected(true);
+      setMaskedToken(tokenMasked);
+      setMaskedQueryId(queryIdMasked);
+      setToken('');
+      setQueryId('');
+    }
+    setSaving(false);
+  };
+
+  const handleRemove = async () => {
+    const { error } = await supabase
+      .from('user_ibkr_credentials')
+      .delete()
+      .eq('user_id', session.user.id);
+
+    if (!error) {
+      setConnected(false);
+      setMaskedToken('');
+      setMaskedQueryId('');
+      setSyncResult(null);
+      setSyncError(null);
+    }
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    setSyncError(null);
+    try {
+      const res = await fetch('/api/sync', {
+        headers: { 'x-user-id': session.user.id },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSyncResult(data);
+      } else {
+        setSyncError(data.error);
+      }
+    } catch (err) {
+      setSyncError(err.message);
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const handleTestSync = async () => {
+    if (!token || !queryId) return;
     setSyncing(true);
     setSyncResult(null);
     setSyncError(null);
@@ -32,38 +129,23 @@ export default function IBKRScreen({ onBack }) {
     }
   };
 
-  const handleConnectedSync = async () => {
-    setSyncing(true);
-    setSyncResult(null);
-    setSyncError(null);
-    try {
-      const res = await fetch('/api/sync');
-      const data = await res.json();
-      if (data.success) {
-        setSyncResult(data);
-      } else {
-        setSyncError(data.error);
-      }
-    } catch (err) {
-      setSyncError(err.message);
-    } finally {
-      setSyncing(false);
-    }
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-5 h-5 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div>
+    <div className="max-w-lg">
       <div className="flex items-center space-x-3 mb-6">
-        <button onClick={onBack} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
         <h2 className="text-xl font-semibold text-gray-900">Interactive Brokers</h2>
       </div>
 
       {connected ? (
         <div className="space-y-4">
+          {/* Connected status */}
           <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center space-x-3">
             <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
               <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -72,33 +154,51 @@ export default function IBKRScreen({ onBack }) {
             </div>
             <div>
               <p className="text-sm font-medium text-green-800">IBKR account connected</p>
-              <p className="text-xs text-green-600 mt-0.5">Account U12345678 &middot; Syncing daily at 4:30pm ET</p>
+              <p className="text-xs text-green-600 mt-0.5">Syncing daily at 4:30pm ET</p>
             </div>
           </div>
 
+          {/* Credential details */}
           <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
             <div className="px-5 py-4 flex items-center justify-between">
-              <div><p className="text-sm font-medium text-gray-900">Last sync</p><p className="text-xs text-gray-400 mt-0.5">Today at 4:35pm &middot; 247 trades imported</p></div>
-              <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
+              <div>
+                <p className="text-sm font-medium text-gray-900">Flex Query token</p>
+                <p className="text-xs text-gray-400 mt-0.5 font-mono">{maskedToken}</p>
+              </div>
+              <button
+                onClick={handleRemove}
+                className="text-xs text-red-500 font-medium hover:underline"
+              >
+                Remove
+              </button>
             </div>
             <div className="px-5 py-4 flex items-center justify-between">
-              <div><p className="text-sm font-medium text-gray-900">Auto-sync</p><p className="text-xs text-gray-400 mt-0.5">Runs daily after US market close</p></div>
-              <label className="toggle"><input type="checkbox" defaultChecked /><span className="toggle-slider" /></label>
+              <div>
+                <p className="text-sm font-medium text-gray-900">Query ID</p>
+                <p className="text-xs text-gray-400 mt-0.5 font-mono">{maskedQueryId}</p>
+              </div>
+              <button
+                onClick={() => setConnected(false)}
+                className="text-xs text-blue-600 font-medium hover:underline"
+              >
+                Update
+              </button>
             </div>
             <div className="px-5 py-4 flex items-center justify-between">
-              <div><p className="text-sm font-medium text-gray-900">Flex Query token</p><p className="text-xs text-gray-400 mt-0.5 font-mono">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;3421</p></div>
-              <button onClick={() => setConnected(false)} className="text-xs text-blue-600 font-medium cursor-pointer hover:underline">Remove</button>
-            </div>
-            <div className="px-5 py-4 flex items-center justify-between">
-              <div><p className="text-sm font-medium text-gray-900">Query ID (30 days)</p><p className="text-xs text-gray-400 mt-0.5 font-mono">&bull;&bull;&bull;&bull;23</p></div>
-              <button onClick={() => setConnected(false)} className="text-xs text-blue-600 font-medium cursor-pointer hover:underline">Update</button>
+              <div>
+                <p className="text-sm font-medium text-gray-900">Auto-sync</p>
+                <p className="text-xs text-gray-400 mt-0.5">Daily after US market close</p>
+              </div>
+              <label className="toggle">
+                <input type="checkbox" defaultChecked />
+                <span className="toggle-slider" />
+              </label>
             </div>
           </div>
 
+          {/* Sync now */}
           <button
-            onClick={handleConnectedSync}
+            onClick={handleSync}
             disabled={syncing}
             className="w-full bg-blue-600 text-white font-semibold py-3 rounded-xl text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
           >
@@ -113,14 +213,6 @@ export default function IBKRScreen({ onBack }) {
               <p className="text-sm font-semibold text-green-800 mb-2">Sync successful</p>
               <p className="text-sm text-green-700">{syncResult.tradeCount} trades fetched</p>
               <p className="text-sm text-green-700">{syncResult.openPositionCount} open positions</p>
-              {syncResult.trades && syncResult.trades.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs font-semibold text-green-700 mb-1">First trade:</p>
-                  <pre className="text-xs text-green-700 bg-green-100 rounded-lg p-2 overflow-x-auto">
-                    {JSON.stringify(syncResult.trades[0], null, 2)}
-                  </pre>
-                </div>
-              )}
             </div>
           )}
 
@@ -130,45 +222,33 @@ export default function IBKRScreen({ onBack }) {
               <p className="text-sm text-red-600">{syncError}</p>
             </div>
           )}
-
-          <div className="bg-white rounded-xl border border-gray-100 p-5">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Sync history</h3>
-            <div className="space-y-2">
-              {[
-                { date: 'Apr 9, 2026 · 4:35pm', trades: '247 trades' },
-                { date: 'Apr 8, 2026 · 4:35pm', trades: '12 trades' },
-                { date: 'Apr 7, 2026 · 4:35pm', trades: '0 trades' },
-              ].map(row => (
-                <div key={row.date} className="flex justify-between text-sm">
-                  <span className="text-gray-500">{row.date}</span>
-                  <span className="text-gray-700 font-medium">{row.trades}</span>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
+
       ) : (
         <div className="space-y-6">
+          {/* Not connected */}
           <div className="border-2 border-dashed border-gray-200 rounded-2xl p-8 text-center">
             <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <svg className="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <h3 className="text-base font-semibold text-gray-900 mb-1">No IBKR account connected</h3>
-            <p className="text-sm text-gray-400">Connect your Interactive Brokers account to import trades automatically</p>
+            <h3 className="text-base font-semibold text-gray-900 mb-1">Connect Interactive Brokers</h3>
+            <p className="text-sm text-gray-400">Enter your Flex Query credentials to start importing trades automatically</p>
           </div>
 
+          {/* Instructions */}
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
             <p className="text-xs font-semibold text-blue-800 mb-2">How to get your credentials:</p>
             <ol className="text-xs text-blue-700 space-y-1.5 list-decimal list-inside">
               <li>Log in to IBKR Client Portal</li>
-              <li>Go to Performance &amp; Reports &rarr; Flex Queries</li>
-              <li>Click Flex Web Service Configuration &rarr; enable &amp; copy your Token</li>
-              <li>Create an Activity Flex Query &rarr; note the Query ID</li>
+              <li>Go to Performance &amp; Reports → Flex Queries</li>
+              <li>Click Flex Web Service Configuration → enable &amp; copy your Token</li>
+              <li>Create an Activity Flex Query → note the Query ID</li>
             </ol>
           </div>
 
+          {/* Form */}
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
@@ -184,7 +264,7 @@ export default function IBKRScreen({ onBack }) {
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                Query ID (30 days) <span className="text-red-400">*</span>
+                Query ID <span className="text-red-400">*</span>
               </label>
               <input
                 type="text"
@@ -194,41 +274,42 @@ export default function IBKRScreen({ onBack }) {
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 font-mono"
               />
             </div>
+
+            {saveError && (
+              <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-600">
+                {saveError}
+              </div>
+            )}
           </div>
 
-          <button
-            onClick={handleConnect}
-            className="w-full bg-blue-600 text-white font-semibold py-3.5 rounded-xl text-sm hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            <span>Connect Interactive Brokers</span>
-          </button>
-
-          {token && queryId && (
+          <div className="flex gap-3">
             <button
-              onClick={handleTestSync}
-              disabled={syncing}
-              className="w-full border border-blue-200 text-blue-600 font-semibold py-3 rounded-xl text-sm hover:bg-blue-50 transition-colors disabled:opacity-50"
+              onClick={handleSaveCredentials}
+              disabled={saving}
+              className="flex-1 bg-blue-600 text-white font-semibold py-3 rounded-xl text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
             >
-              {syncing ? 'Testing...' : 'Test connection first'}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span>{saving ? 'Saving...' : 'Connect IBKR'}</span>
             </button>
-          )}
+
+            {token && queryId && (
+              <button
+                onClick={handleTestSync}
+                disabled={syncing}
+                className="border border-blue-200 text-blue-600 font-semibold py-3 px-4 rounded-xl text-sm hover:bg-blue-50 transition-colors disabled:opacity-50"
+              >
+                {syncing ? 'Testing...' : 'Test first'}
+              </button>
+            )}
+          </div>
 
           {syncResult && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-              <p className="text-sm font-semibold text-green-800 mb-2">Connection works!</p>
+              <p className="text-sm font-semibold text-green-800 mb-1">Connection works!</p>
               <p className="text-sm text-green-700">{syncResult.tradeCount} trades found</p>
               <p className="text-sm text-green-700">{syncResult.openPositionCount} open positions</p>
-              {syncResult.trades?.[0] && (
-                <div className="mt-3">
-                  <p className="text-xs font-semibold text-green-700 mb-1">Sample trade:</p>
-                  <pre className="text-xs text-green-700 bg-green-100 rounded-lg p-2 overflow-x-auto">
-                    {JSON.stringify(syncResult.trades[0], null, 2)}
-                  </pre>
-                </div>
-              )}
             </div>
           )}
 
