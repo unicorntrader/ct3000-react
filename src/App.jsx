@@ -2,13 +2,12 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from './lib/supabaseClient'
 import AuthScreen from './components/AuthScreen'
 
-// --- Your existing screen imports (adjust paths to match your project) ---
-import HomeScreen from './components/HomeScreen'
-import PlansScreen from './components/PlansScreen'
-import DailyViewScreen from './components/DailyViewScreen'
-import JournalScreen from './components/JournalScreen'
-import PerformanceScreen from './components/PerformanceScreen'
-import IBKRScreen from './components/IBKRScreen'
+import HomeScreen from './screens/HomeScreen'
+import PlansScreen from './screens/PlansScreen'
+import DailyViewScreen from './screens/DailyViewScreen'
+import JournalScreen from './screens/JournalScreen'
+import PerformanceScreen from './screens/PerformanceScreen'
+import IBKRScreen from './screens/IBKRScreen'
 
 // Nav icon SVGs (inline, no extra deps)
 const NavIcon = ({ icon }) => {
