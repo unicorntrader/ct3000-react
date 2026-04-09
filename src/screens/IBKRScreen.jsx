@@ -147,7 +147,7 @@ export default function IBKRScreen({ session }) {
   }
 
   return (
-    <div className="max-w-lg">
+    <div>
       <h2 className="text-xl font-semibold text-gray-900 mb-6">Interactive Brokers</h2>
 
       {connected ? (
