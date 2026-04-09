@@ -14,7 +14,6 @@ export default function IBKRScreen({ session }) {
   const [syncError, setSyncError] = useState(null);
   const [saveError, setSaveError] = useState(null);
 
-  // Load existing credentials on mount
   useEffect(() => {
     if (!session?.user?.id) return;
     loadCredentials();
@@ -46,7 +45,6 @@ export default function IBKRScreen({ session }) {
     setSaving(true);
     setSaveError(null);
 
-    // Store masked versions for display, full values for sync
     const tokenMasked = '•'.repeat(token.length - 4) + token.slice(-4);
     const queryIdMasked = '•'.repeat(Math.max(0, queryId.length - 2)) + queryId.slice(-2);
 
@@ -88,19 +86,30 @@ export default function IBKRScreen({ session }) {
     }
   };
 
+  // Fetch real credentials from Supabase, then pass to API
   const handleSync = async () => {
     setSyncing(true);
     setSyncResult(null);
     setSyncError(null);
     try {
-      const res = await fetch('/api/sync', {
-        headers: { 'x-user-id': session.user.id },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setSyncResult(data);
+      const { data, error } = await supabase
+        .from('user_ibkr_credentials')
+        .select('ibkr_token, query_id_30d')
+        .eq('user_id', session.user.id)
+        .single();
+
+      if (error || !data) {
+        setSyncError('Could not load IBKR credentials. Please reconnect.');
+        return;
+      }
+
+      const res = await fetch(`/api/sync?token=${data.ibkr_token}&queryId=${data.query_id_30d}`);
+      const result = await res.json();
+
+      if (result.success) {
+        setSyncResult(result);
       } else {
-        setSyncError(data.error);
+        setSyncError(result.error);
       }
     } catch (err) {
       setSyncError(err.message);
@@ -139,13 +148,10 @@ export default function IBKRScreen({ session }) {
 
   return (
     <div className="max-w-lg">
-      <div className="flex items-center space-x-3 mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">Interactive Brokers</h2>
-      </div>
+      <h2 className="text-xl font-semibold text-gray-900 mb-6">Interactive Brokers</h2>
 
       {connected ? (
         <div className="space-y-4">
-          {/* Connected status */}
           <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center space-x-3">
             <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
               <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -158,17 +164,13 @@ export default function IBKRScreen({ session }) {
             </div>
           </div>
 
-          {/* Credential details */}
           <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
             <div className="px-5 py-4 flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-900">Flex Query token</p>
                 <p className="text-xs text-gray-400 mt-0.5 font-mono">{maskedToken}</p>
               </div>
-              <button
-                onClick={handleRemove}
-                className="text-xs text-red-500 font-medium hover:underline"
-              >
+              <button onClick={handleRemove} className="text-xs text-red-500 font-medium hover:underline">
                 Remove
               </button>
             </div>
@@ -177,10 +179,7 @@ export default function IBKRScreen({ session }) {
                 <p className="text-sm font-medium text-gray-900">Query ID</p>
                 <p className="text-xs text-gray-400 mt-0.5 font-mono">{maskedQueryId}</p>
               </div>
-              <button
-                onClick={() => setConnected(false)}
-                className="text-xs text-blue-600 font-medium hover:underline"
-              >
+              <button onClick={() => setConnected(false)} className="text-xs text-blue-600 font-medium hover:underline">
                 Update
               </button>
             </div>
@@ -196,7 +195,6 @@ export default function IBKRScreen({ session }) {
             </div>
           </div>
 
-          {/* Sync now */}
           <button
             onClick={handleSync}
             disabled={syncing}
@@ -226,7 +224,6 @@ export default function IBKRScreen({ session }) {
 
       ) : (
         <div className="space-y-6">
-          {/* Not connected */}
           <div className="border-2 border-dashed border-gray-200 rounded-2xl p-8 text-center">
             <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <svg className="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -237,7 +234,6 @@ export default function IBKRScreen({ session }) {
             <p className="text-sm text-gray-400">Enter your Flex Query credentials to start importing trades automatically</p>
           </div>
 
-          {/* Instructions */}
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
             <p className="text-xs font-semibold text-blue-800 mb-2">How to get your credentials:</p>
             <ol className="text-xs text-blue-700 space-y-1.5 list-decimal list-inside">
@@ -248,7 +244,6 @@ export default function IBKRScreen({ session }) {
             </ol>
           </div>
 
-          {/* Form */}
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
