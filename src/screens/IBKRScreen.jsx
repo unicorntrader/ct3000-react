@@ -196,6 +196,29 @@ export default function IBKRScreen({ session }) {
         .eq('user_id', userId);
 
       setLastSyncAt(now);
+
+      // Step 6: Build logical trades from raw trades
+      const { data: allTrades, error: fetchError } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('user_id', userId)
+        .order('date_time', { ascending: true });
+
+      if (!fetchError && allTrades) {
+        const { buildLogicalTrades } = await import('../lib/logicalTradeBuilder');
+        const logical = buildLogicalTrades(allTrades, userId);
+
+        if (logical.length > 0) {
+          await supabase.from('logical_trades').delete().eq('user_id', userId);
+          const { error: logicalError } = await supabase
+            .from('logical_trades')
+            .insert(logical);
+          if (logicalError) {
+            console.error('Logical trades save failed:', logicalError.message);
+          }
+        }
+      }
+
       setSyncResult({
         tradeCount: result.trades.length,
         openPositionCount: result.openPositions.length,
