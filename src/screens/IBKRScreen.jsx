@@ -9,6 +9,7 @@ export default function IBKRScreen({ session }) {
   const [queryId, setQueryId] = useState('');
   const [maskedToken, setMaskedToken] = useState('');
   const [maskedQueryId, setMaskedQueryId] = useState('');
+  const [lastSyncAt, setLastSyncAt] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
   const [syncError, setSyncError] = useState(null);
@@ -23,7 +24,7 @@ export default function IBKRScreen({ session }) {
     setLoading(true);
     const { data, error } = await supabase
       .from('user_ibkr_credentials')
-      .select('token_masked, query_id_masked')
+      .select('token_masked, query_id_masked, last_sync_at')
       .eq('user_id', session.user.id)
       .single();
 
@@ -31,6 +32,7 @@ export default function IBKRScreen({ session }) {
       setConnected(true);
       setMaskedToken(data.token_masked || '');
       setMaskedQueryId(data.query_id_masked || '');
+      setLastSyncAt(data.last_sync_at);
     } else {
       setConnected(false);
     }
@@ -86,31 +88,119 @@ export default function IBKRScreen({ session }) {
     }
   };
 
-  // Fetch real credentials from Supabase, then pass to API
   const handleSync = async () => {
     setSyncing(true);
     setSyncResult(null);
     setSyncError(null);
     try {
-      const { data, error } = await supabase
+      // Step 1: Get credentials
+      const { data: creds, error: credsError } = await supabase
         .from('user_ibkr_credentials')
         .select('ibkr_token, query_id_30d')
         .eq('user_id', session.user.id)
         .single();
 
-      if (error || !data) {
+      if (credsError || !creds) {
         setSyncError('Could not load IBKR credentials. Please reconnect.');
         return;
       }
 
-      const res = await fetch(`/api/sync?token=${data.ibkr_token}&queryId=${data.query_id_30d}`);
+      // Step 2: Fetch from IBKR
+      const res = await fetch(`/api/sync?token=${creds.ibkr_token}&queryId=${creds.query_id_30d}`);
       const result = await res.json();
 
-      if (result.success) {
-        setSyncResult(result);
-      } else {
+      if (!result.success) {
         setSyncError(result.error);
+        return;
       }
+
+      const userId = session.user.id;
+
+      // Step 3: Upsert trades
+      if (result.trades.length > 0) {
+        const tradesToUpsert = result.trades
+          .filter(t => t.ibExecID)
+          .map(t => ({
+            user_id:                userId,
+            ib_exec_id:             t.ibExecID,
+            ib_order_id:            t.ibOrderID,
+            account_id:             t.accountId,
+            conid:                  t.conid,
+            symbol:                 t.symbol,
+            asset_category:         t.assetCategory,
+            buy_sell:               t.buySell,
+            open_close_indicator:   t.openCloseIndicator,
+            quantity:               t.quantity ? parseFloat(t.quantity) : null,
+            trade_price:            t.tradePrice ? parseFloat(t.tradePrice) : null,
+            date_time:              t.dateTime,
+            net_cash:               t.netCash ? parseFloat(t.netCash) : null,
+            fifo_pnl_realized:      t.fifoPnlRealized ? parseFloat(t.fifoPnlRealized) : null,
+            ib_commission:          t.ibCommission ? parseFloat(t.ibCommission) : null,
+            ib_commission_currency: t.ibCommissionCurrency,
+            currency:               t.currency,
+            transaction_type:       t.transactionType,
+            notes:                  t.notes,
+            multiplier:             t.multiplier ? parseFloat(t.multiplier) : null,
+            strike:                 t.strike ? parseFloat(t.strike) : null,
+            expiry:                 t.expiry,
+            put_call:               t.putCall,
+          }));
+
+        const { error: tradesError } = await supabase
+          .from('trades')
+          .upsert(tradesToUpsert, { onConflict: 'user_id,ib_exec_id' });
+
+        if (tradesError) {
+          setSyncError(`Trades save failed: ${tradesError.message}`);
+          return;
+        }
+      }
+
+      // Step 4: Replace open positions
+      await supabase.from('open_positions').delete().eq('user_id', userId);
+
+      if (result.openPositions.length > 0) {
+        const positionsToInsert = result.openPositions.map(p => ({
+          user_id:        userId,
+          account_id:     p.accountId,
+          conid:          p.conid,
+          symbol:         p.symbol,
+          asset_category: p.assetCategory,
+          position:       p.position ? parseFloat(p.position) : null,
+          avg_cost:       p.avgCost ? parseFloat(p.avgCost) : null,
+          market_value:   p.marketValue ? parseFloat(p.marketValue) : null,
+          unrealized_pnl: p.unrealizedPnl ? parseFloat(p.unrealizedPnl) : null,
+          currency:       p.currency,
+          updated_at:     new Date().toISOString(),
+        }));
+
+        const { error: positionsError } = await supabase
+          .from('open_positions')
+          .insert(positionsToInsert);
+
+        if (positionsError) {
+          setSyncError(`Positions save failed: ${positionsError.message}`);
+          return;
+        }
+      }
+
+      // Step 5: Update last_sync_at and account_id
+      const accountId = result.trades[0]?.accountId || result.openPositions[0]?.accountId;
+      const now = new Date().toISOString();
+      await supabase
+        .from('user_ibkr_credentials')
+        .update({
+          last_sync_at: now,
+          ...(accountId && { account_id: accountId }),
+        })
+        .eq('user_id', userId);
+
+      setLastSyncAt(now);
+      setSyncResult({
+        tradeCount: result.trades.length,
+        openPositionCount: result.openPositions.length,
+      });
+
     } catch (err) {
       setSyncError(err.message);
     } finally {
@@ -127,7 +217,7 @@ export default function IBKRScreen({ session }) {
       const res = await fetch(`/api/sync?token=${token}&queryId=${queryId}`);
       const data = await res.json();
       if (data.success) {
-        setSyncResult(data);
+        setSyncResult({ tradeCount: data.tradeCount, openPositionCount: data.openPositionCount });
       } else {
         setSyncError(data.error);
       }
@@ -136,6 +226,13 @@ export default function IBKRScreen({ session }) {
     } finally {
       setSyncing(false);
     }
+  };
+
+  const formatSyncTime = (ts) => {
+    if (!ts) return 'Never';
+    const d = new Date(ts);
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' at ' +
+      d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   };
 
   if (loading) {
@@ -160,7 +257,7 @@ export default function IBKRScreen({ session }) {
             </div>
             <div>
               <p className="text-sm font-medium text-green-800">IBKR account connected</p>
-              <p className="text-xs text-green-600 mt-0.5">Syncing daily at 4:30pm ET</p>
+              <p className="text-xs text-green-600 mt-0.5">Last sync: {formatSyncTime(lastSyncAt)}</p>
             </div>
           </div>
 
@@ -209,8 +306,8 @@ export default function IBKRScreen({ session }) {
           {syncResult && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4">
               <p className="text-sm font-semibold text-green-800 mb-2">Sync successful</p>
-              <p className="text-sm text-green-700">{syncResult.tradeCount} trades fetched</p>
-              <p className="text-sm text-green-700">{syncResult.openPositionCount} open positions</p>
+              <p className="text-sm text-green-700">{syncResult.tradeCount} trades saved to database</p>
+              <p className="text-sm text-green-700">{syncResult.openPositionCount} open positions updated</p>
             </div>
           )}
 
@@ -269,7 +366,6 @@ export default function IBKRScreen({ session }) {
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 font-mono"
               />
             </div>
-
             {saveError && (
               <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-600">
                 {saveError}
@@ -288,7 +384,6 @@ export default function IBKRScreen({ session }) {
               </svg>
               <span>{saving ? 'Saving...' : 'Connect IBKR'}</span>
             </button>
-
             {token && queryId && (
               <button
                 onClick={handleTestSync}
