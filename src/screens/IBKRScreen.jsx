@@ -187,10 +187,10 @@ export default function IBKRScreen({ session }) {
         }
       }
 
-      // Step 5: Update last_sync_at and account_id
+      // Step 5: Update last_sync_at, account_id, base_currency
       const accountId = result.trades[0]?.accountId || result.openPositions[0]?.accountId;
       const now = new Date().toISOString();
-      await supabase
+      const { error: credUpdateError } = await supabase
         .from('user_ibkr_credentials')
         .update({
           last_sync_at: now,
@@ -198,6 +198,10 @@ export default function IBKRScreen({ session }) {
           ...(result.baseCurrency && { base_currency: result.baseCurrency }),
         })
         .eq('user_id', userId);
+
+      if (credUpdateError) {
+        console.error('Failed to update credentials after sync:', credUpdateError.message);
+      }
 
       setLastSyncAt(now);
 
