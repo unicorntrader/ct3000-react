@@ -13,6 +13,7 @@ import DailyViewScreen from './screens/DailyViewScreen'
 import JournalScreen from './screens/JournalScreen'
 import PerformanceScreen from './screens/PerformanceScreen'
 import IBKRScreen from './screens/IBKRScreen'
+import SettingsScreen from './screens/SettingsScreen'
 
 function AppShell({ session }) {
   const [activeTab, setActiveTab] = useState('home')
@@ -33,7 +34,8 @@ function AppShell({ session }) {
       case 'daily':  return <DailyViewScreen session={session} />
       case 'sj':     return <JournalScreen session={session} />
       case 'perf':   return <PerformanceScreen session={session} />
-      case 'ibkr':   return <IBKRScreen session={session} />
+      case 'ibkr':     return <IBKRScreen session={session} />
+      case 'settings': return <SettingsScreen session={session} />
       default:       return <HomeScreen session={session} onTabChange={setActiveTab} onReviewOpen={() => setReviewSheetOpen(true)} reviewDismissed={reviewDismissed} />
     }
   }

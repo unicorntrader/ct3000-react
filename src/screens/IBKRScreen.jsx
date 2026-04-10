@@ -193,6 +193,7 @@ export default function IBKRScreen({ session }) {
         .update({
           last_sync_at: now,
           ...(accountId && { account_id: accountId }),
+          ...(result.baseCurrency && { base_currency: result.baseCurrency }),
         })
         .eq('user_id', userId);
 

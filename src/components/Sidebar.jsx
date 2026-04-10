@@ -92,8 +92,11 @@ export default function Sidebar({ isOpen, onClose, onTabChange, onSignOut, sessi
                 <p className="text-sm font-medium text-gray-900">Email</p>
                 <p className="text-sm text-gray-400 truncate max-w-36">{email}</p>
               </div>
-              <div className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50">
-                <p className="text-sm font-medium text-gray-900">Notifications</p>
+              <div
+                className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 rounded-b-xl"
+                onClick={() => { onClose(); onTabChange('settings'); }}
+              >
+                <p className="text-sm font-medium text-gray-900">Settings</p>
                 <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>

@@ -63,6 +63,12 @@ async function getStatement(refCode, token, maxRetries = 10, waitMs = 3000) {
   throw new Error('Timed out waiting for IBKR statement after ' + maxRetries + ' attempts');
 }
 
+function parseBaseCurrency(xml) {
+  // baseCurrency is an attribute on <FlexStatement ...> e.g. baseCurrency="USD"
+  const m = xml.match(/<FlexStatement[^>]+baseCurrency="([^"]+)"/);
+  return m ? m[1] : null;
+}
+
 function parseTrades(xml) {
   const trades = [];
   const tradeRegex = /<Trade\s([^>]+)\/>/g;
@@ -154,8 +160,9 @@ module.exports = async function handler(req, res) {
     console.log('Step 3: Parsing...');
     const trades = parseTrades(xml);
     const openPositions = parseOpenPositions(xml);
+    const baseCurrency = parseBaseCurrency(xml);
 
-    console.log(`Parsed ${trades.length} trades, ${openPositions.length} open positions`);
+    console.log(`Parsed ${trades.length} trades, ${openPositions.length} open positions, baseCurrency=${baseCurrency}`);
 
     return res.status(200).json({
       success: true,
@@ -163,6 +170,7 @@ module.exports = async function handler(req, res) {
       openPositionCount: openPositions.length,
       trades,
       openPositions,
+      baseCurrency,
     });
 
   } catch (err) {
