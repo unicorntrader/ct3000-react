@@ -7,7 +7,7 @@ const strategies = [
   { group: 'Thesis-driven', options: ['Value', 'Fundamental', 'Macro', 'Catalyst'] },
 ];
 
-export default function PlanSheet({ session, isOpen, onClose }) {
+export default function PlanSheet({ session, isOpen, onClose, onSaved }) {
   const [direction, setDirection] = useState('long');
   const [symbol, setSymbol] = useState('');
   const [strategy, setStrategy] = useState('');
@@ -51,12 +51,7 @@ export default function PlanSheet({ session, isOpen, onClose }) {
   const handleClose = () => { resetForm(); onClose(); };
 
   const handleSave = async () => {
-    console.log('[PlanSheet] handleSave triggered');
-    console.log('[PlanSheet] session:', session);
-    console.log('[PlanSheet] form values:', { symbol, direction, entry, target, stop, qty, strategy, thesis });
-
     if (!session?.user?.id) {
-      console.error('[PlanSheet] No session or user ID — cannot save');
       setError('Not logged in. Please refresh and try again.');
       return;
     }
@@ -66,36 +61,28 @@ export default function PlanSheet({ session, isOpen, onClose }) {
     setError(null);
     setSaving(true);
 
-    const payload = {
-      user_id:               session.user.id,
-      symbol:                symbol.trim().toUpperCase(),
-      direction:             direction.toUpperCase(),
-      asset_category:        'STK',
-      planned_entry_price:   e || null,
-      planned_target_price:  t || null,
-      planned_stop_loss:     s || null,
-      planned_quantity:      q || null,
-      strategy:              strategy || null,
-      thesis:                thesis.trim() || null,
-    };
-
-    console.log('[PlanSheet] inserting payload:', payload);
-
-    const { data, error: dbError } = await supabase
+    const { error: dbError } = await supabase
       .from('planned_trades')
-      .insert(payload)
-      .select();
-
-    console.log('[PlanSheet] insert result — data:', data, 'error:', dbError);
+      .insert({
+        user_id:               session.user.id,
+        symbol:                symbol.trim().toUpperCase(),
+        direction:             direction.toUpperCase(),
+        asset_category:        'STK',
+        planned_entry_price:   e || null,
+        planned_target_price:  t || null,
+        planned_stop_loss:     s || null,
+        planned_quantity:      q || null,
+        strategy:              strategy || null,
+        thesis:                thesis.trim() || null,
+      });
 
     setSaving(false);
     if (dbError) {
-      console.error('[PlanSheet] Supabase insert error:', dbError);
       setError(`Save failed: ${dbError.message} (code: ${dbError.code})`);
       return;
     }
     setSaved(true);
-    setTimeout(() => { handleClose(); }, 1200);
+    setTimeout(() => { handleClose(); onSaved?.(); }, 1200);
   };
 
   if (!isOpen) return null;

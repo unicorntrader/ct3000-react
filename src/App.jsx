@@ -20,6 +20,7 @@ function AppShell({ session }) {
   const [planSheetOpen, setPlanSheetOpen] = useState(false)
   const [reviewSheetOpen, setReviewSheetOpen] = useState(false)
   const [reviewDismissed, setReviewDismissed] = useState(false)
+  const [planRefreshKey, setPlanRefreshKey] = useState(0)
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -28,7 +29,7 @@ function AppShell({ session }) {
   const renderScreen = () => {
     switch (activeTab) {
       case 'home':   return <HomeScreen session={session} onTabChange={setActiveTab} onReviewOpen={() => setReviewSheetOpen(true)} reviewDismissed={reviewDismissed} />
-      case 'plans':  return <PlansScreen session={session} onNewPlan={() => setPlanSheetOpen(true)} />
+      case 'plans':  return <PlansScreen session={session} onNewPlan={() => setPlanSheetOpen(true)} refreshKey={planRefreshKey} />
       case 'daily':  return <DailyViewScreen session={session} />
       case 'sj':     return <JournalScreen session={session} />
       case 'perf':   return <PerformanceScreen session={session} />
@@ -57,6 +58,7 @@ function AppShell({ session }) {
         session={session}
         isOpen={planSheetOpen}
         onClose={() => setPlanSheetOpen(false)}
+        onSaved={() => setPlanRefreshKey(k => k + 1)}
       />
 
       <ReviewSheet

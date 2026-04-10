@@ -17,14 +17,14 @@ const statusStyles = {
   active: 'bg-blue-50 text-blue-600',
 };
 
-export default function PlansScreen({ session, onNewPlan }) {
+export default function PlansScreen({ session, onNewPlan, refreshKey }) {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!session?.user?.id) return;
     fetchPlans();
-  }, [session]);
+  }, [session, refreshKey]);
 
   const fetchPlans = async () => {
     const { data } = await supabase
@@ -37,29 +37,27 @@ export default function PlansScreen({ session, onNewPlan }) {
     setLoading(false);
   };
 
+  const entry_ = (plan) => plan.planned_entry_price ?? plan.entry_price ?? plan.entry ?? null;
+  const target_ = (plan) => plan.planned_target_price ?? plan.target_price ?? plan.target ?? null;
+  const stop_ = (plan) => plan.planned_stop_loss ?? plan.stop_price ?? plan.stop ?? null;
+  const qty_ = (plan) => plan.planned_quantity ?? plan.shares ?? plan.quantity ?? plan.total_opening_quantity ?? null;
+
   const computeRR = (plan) => {
-    const entry = plan.entry_price ?? plan.entry;
-    const target = plan.target_price ?? plan.target;
-    const stop = plan.stop_price ?? plan.stop;
+    const entry = entry_(plan); const target = target_(plan); const stop = stop_(plan);
     if (entry == null || target == null || stop == null) return null;
-    const reward = Math.abs(target - entry);
     const risk = Math.abs(entry - stop);
     if (risk === 0) return null;
-    return (reward / risk).toFixed(2);
+    return (Math.abs(target - entry) / risk).toFixed(2);
   };
 
   const computeRisk = (plan) => {
-    const entry = plan.entry_price ?? plan.entry;
-    const stop = plan.stop_price ?? plan.stop;
-    const qty = plan.shares ?? plan.quantity ?? plan.total_opening_quantity;
+    const entry = entry_(plan); const stop = stop_(plan); const qty = qty_(plan);
     if (entry == null || stop == null || qty == null) return null;
     return (stop - entry) * qty;
   };
 
   const computeReward = (plan) => {
-    const entry = plan.entry_price ?? plan.entry;
-    const target = plan.target_price ?? plan.target;
-    const qty = plan.shares ?? plan.quantity ?? plan.total_opening_quantity;
+    const entry = entry_(plan); const target = target_(plan); const qty = qty_(plan);
     if (entry == null || target == null || qty == null) return null;
     return (target - entry) * qty;
   };
@@ -106,7 +104,7 @@ export default function PlansScreen({ session, onNewPlan }) {
             const rr = computeRR(plan);
             const risk = computeRisk(plan);
             const reward = computeReward(plan);
-            const qty = plan.shares ?? plan.quantity ?? plan.total_opening_quantity;
+            const qty = qty_(plan);
 
             return (
               <div key={plan.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
@@ -132,9 +130,9 @@ export default function PlansScreen({ session, onNewPlan }) {
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
                   {[
-                    { label: 'Entry', value: fmtPrice(plan.entry_price ?? plan.entry) },
-                    { label: 'Target', value: fmtPrice(plan.target_price ?? plan.target), color: 'text-green-600' },
-                    { label: 'Stop', value: fmtPrice(plan.stop_price ?? plan.stop), color: 'text-red-500' },
+                    { label: 'Entry', value: fmtPrice(entry_(plan)) },
+                    { label: 'Target', value: fmtPrice(target_(plan)), color: 'text-green-600' },
+                    { label: 'Stop', value: fmtPrice(stop_(plan)), color: 'text-red-500' },
                     { label: 'Risk', value: fmtPnl(risk), color: 'text-red-500' },
                     { label: 'Reward', value: fmtPnl(reward), color: 'text-green-600' },
                     { label: 'R:R', value: rr ?? 'N/A', color: 'text-blue-600' },
