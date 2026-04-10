@@ -8,12 +8,13 @@ import {
 
 const PRESETS = ['1D', '1W', '1M', '3M', 'All'];
 
-const presetStartIso = (p) => {
+// Returns a YYYY-MM-DD string so we can compare against closed_at.slice(0,10)
+const presetStartDate = (p) => {
   const now = new Date();
-  if (p === '1D') { const d = new Date(now); d.setHours(0, 0, 0, 0); return d.toISOString(); }
-  if (p === '1W') { const d = new Date(now); d.setDate(d.getDate() - 7); return d.toISOString(); }
-  if (p === '1M') { const d = new Date(now); d.setMonth(d.getMonth() - 1); return d.toISOString(); }
-  if (p === '3M') { const d = new Date(now); d.setMonth(d.getMonth() - 3); return d.toISOString(); }
+  if (p === '1D') return now.toISOString().slice(0, 10); // today
+  if (p === '1W') { const d = new Date(now); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); }
+  if (p === '1M') { const d = new Date(now); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 10); }
+  if (p === '3M') { const d = new Date(now); d.setMonth(d.getMonth() - 3); return d.toISOString().slice(0, 10); }
   return null;
 };
 
@@ -104,7 +105,7 @@ export default function PerformanceScreen({ session }) {
     if (!session?.user?.id) return;
     supabase
       .from('logical_trades')
-      .select('id, symbol, direction, asset_category, status, closed_at, opened_at, total_realized_pnl, matching_status')
+      .select('id, symbol, direction, asset_category, currency, status, closed_at, opened_at, total_realized_pnl, matching_status')
       .eq('user_id', session.user.id)
       .eq('status', 'closed')
       .then(({ data }) => {
@@ -125,24 +126,19 @@ export default function PerformanceScreen({ session }) {
     if (from || to) setPreset('');
   };
 
-  // filtered trades by date window
+  // filtered trades by date window — compare date-only strings to avoid timezone/format issues
   const trades = useMemo(() => {
-    let start = null;
-    let end = null;
-    if (preset) {
-      start = presetStartIso(preset);
-    } else {
-      if (customFrom) start = new Date(customFrom).toISOString();
-      if (customTo) {
-        const d = new Date(customTo);
-        d.setHours(23, 59, 59, 999);
-        end = d.toISOString();
-      }
-    }
+    const startDate = preset ? presetStartDate(preset) : (customFrom || null);
+    const endDate   = (!preset && customTo) ? customTo : null;
+
     return allTrades.filter(t => {
       if (!t.closed_at) return false;
-      if (start && t.closed_at < start) return false;
-      if (end && t.closed_at > end) return false;
+      // Normalise to YYYY-MM-DD regardless of whether Supabase returns a full timestamp
+      const day = t.closed_at.slice(0, 10);
+      if (startDate && day < startDate) return false;
+      if (endDate   && day > endDate)   return false;
+      // Fix 2: skip non-USD trades so JPY values are never added to USD totals
+      if ((t.currency || 'USD') !== 'USD') return false;
       return true;
     });
   }, [allTrades, preset, customFrom, customTo]);
@@ -184,7 +180,9 @@ export default function PerformanceScreen({ session }) {
   const symbolRows = useMemo(() => {
     const map = new Map();
     for (const t of trades) {
-      const sym = t.symbol || '?';
+      // OPT symbols from IBKR look like "NVDA 260330P00170000" — display only the underlying
+      const raw = t.symbol || '?';
+      const sym = t.asset_category === 'OPT' ? raw.split(' ')[0] : raw;
       if (!map.has(sym)) map.set(sym, { symbol: sym, trades: 0, wins: 0, pnl: 0 });
       const s = map.get(sym);
       s.trades++;
@@ -338,6 +336,9 @@ export default function PerformanceScreen({ session }) {
           </div>
         ))}
       </div>
+      <p className="text-xs text-gray-400 -mt-3">
+        USD trades only &mdash; multi-currency support coming soon
+      </p>
 
       {/* ── cumulative P&L curve ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
