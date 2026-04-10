@@ -13,6 +13,7 @@ export default function IBKRScreen({ session }) {
   const [maskedQueryId, setMaskedQueryId] = useState('');
   const [lastSyncAt, setLastSyncAt] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
   const [syncError, setSyncError] = useState(null);
   const [saveError, setSaveError] = useState(null);
@@ -88,6 +89,76 @@ export default function IBKRScreen({ session }) {
       setSyncResult(null);
       setSyncError(null);
     }
+  };
+
+  // Returns an error string on failure, null on success.
+  // Fetches all raw trades, rebuilds logical_trades, runs plan matcher.
+  // Does NOT delete the existing logical_trades until the new build is ready.
+  const rebuildLogicalTrades = async (userId) => {
+    const { data: allTrades, error: fetchError } = await supabase
+      .from('trades')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date_time', { ascending: true });
+
+    if (fetchError) return `Could not fetch trades: ${fetchError.message}`;
+    if (!allTrades?.length) return null; // nothing to build
+
+    const logical = buildLogicalTrades(allTrades, userId);
+    if (!logical.length) return null;
+
+    // Delete only after the build succeeds in memory
+    const { error: deleteError } = await supabase
+      .from('logical_trades')
+      .delete()
+      .eq('user_id', userId);
+
+    if (deleteError) return `Could not clear old logical trades: ${deleteError.message}`;
+
+    const { error: insertError } = await supabase
+      .from('logical_trades')
+      .insert(logical);
+
+    if (insertError) return insertError.message;
+
+    // Run plan matcher
+    const { data: savedLogical } = await supabase
+      .from('logical_trades')
+      .select('*')
+      .eq('user_id', userId);
+
+    const { data: plannedTrades } = await supabase
+      .from('planned_trades')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (savedLogical && plannedTrades) {
+      const matchUpdates = matchPlansToTrades(savedLogical, plannedTrades);
+      for (const update of matchUpdates) {
+        await supabase
+          .from('logical_trades')
+          .update({
+            matching_status: update.matching_status,
+            planned_trade_id: update.planned_trade_id,
+          })
+          .eq('id', update.id);
+      }
+    }
+
+    return null;
+  };
+
+  const handleRebuild = async () => {
+    setRebuilding(true);
+    setSyncResult(null);
+    setSyncError(null);
+    const err = await rebuildLogicalTrades(session.user.id);
+    if (err) {
+      setSyncError(`Rebuild failed: ${err}`);
+    } else {
+      setSyncResult({ rebuilt: true });
+    }
+    setRebuilding(false);
   };
 
   const handleSync = async () => {
@@ -205,50 +276,11 @@ export default function IBKRScreen({ session }) {
 
       setLastSyncAt(now);
 
-      // Step 6: Build logical trades from raw trades
-      const { data: allTrades, error: fetchError } = await supabase
-        .from('trades')
-        .select('*')
-        .eq('user_id', userId)
-        .order('date_time', { ascending: true });
-
-      if (!fetchError && allTrades) {
-        const logical = buildLogicalTrades(allTrades, userId);
-
-        if (logical.length > 0) {
-          await supabase.from('logical_trades').delete().eq('user_id', userId);
-          const { error: logicalError } = await supabase
-            .from('logical_trades')
-            .insert(logical);
-          if (logicalError) {
-            console.error('Logical trades save failed:', logicalError.message);
-          } else {
-            // Step 7: Run plan matcher
-            const { data: savedLogical } = await supabase
-              .from('logical_trades')
-              .select('*')
-              .eq('user_id', userId);
-
-            const { data: plannedTrades } = await supabase
-              .from('planned_trades')
-              .select('*')
-              .eq('user_id', userId);
-
-            if (savedLogical && plannedTrades) {
-              const matchUpdates = matchPlansToTrades(savedLogical, plannedTrades);
-
-              for (const update of matchUpdates) {
-                await supabase
-                  .from('logical_trades')
-                  .update({
-                    matching_status: update.matching_status,
-                    planned_trade_id: update.planned_trade_id,
-                  })
-                  .eq('id', update.id);
-              }
-            }
-          }
-        }
+      // Step 6 & 7: Build logical trades + run plan matcher
+      const rebuildError = await rebuildLogicalTrades(userId);
+      if (rebuildError) {
+        setSyncError(`Trades synced but logical trade build failed: ${rebuildError}`);
+        return;
       }
 
       setSyncResult({
@@ -347,22 +379,41 @@ export default function IBKRScreen({ session }) {
             </div>
           </div>
 
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="w-full bg-blue-600 text-white font-semibold py-3 rounded-xl text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
-          >
-            <svg className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            <span>{syncing ? 'Syncing...' : 'Sync now'}</span>
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleSync}
+              disabled={syncing || rebuilding}
+              className="flex-1 bg-blue-600 text-white font-semibold py-3 rounded-xl text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+            >
+              <svg className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span>{syncing ? 'Syncing...' : 'Sync now'}</span>
+            </button>
+            <button
+              onClick={handleRebuild}
+              disabled={syncing || rebuilding}
+              className="border border-gray-200 text-gray-700 font-medium py-3 px-4 rounded-xl text-sm hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+              title="Rebuild logical trades from existing raw data (no IBKR connection needed)"
+            >
+              <svg className={`w-4 h-4 ${rebuilding ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              <span>{rebuilding ? 'Rebuilding...' : 'Rebuild'}</span>
+            </button>
+          </div>
 
           {syncResult && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-              <p className="text-sm font-semibold text-green-800 mb-2">Sync successful</p>
-              <p className="text-sm text-green-700">{syncResult.tradeCount} trades saved to database</p>
-              <p className="text-sm text-green-700">{syncResult.openPositionCount} open positions updated</p>
+              {syncResult.rebuilt ? (
+                <p className="text-sm font-semibold text-green-800">Logical trades rebuilt successfully</p>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-green-800 mb-2">Sync successful</p>
+                  <p className="text-sm text-green-700">{syncResult.tradeCount} trades saved to database</p>
+                  <p className="text-sm text-green-700">{syncResult.openPositionCount} open positions updated</p>
+                </>
+              )}
             </div>
           )}
 
