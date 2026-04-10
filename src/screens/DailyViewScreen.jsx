@@ -457,10 +457,11 @@ export default function DailyViewScreen({ session }) {
     }
 
     let result = Array.from(grouped.entries()).map(([dateKey, dayTrades]) => {
+      const pnlBase = (t) => (t.total_realized_pnl || 0) * (t.fx_rate_to_base || 1);
       const closed = dayTrades.filter(t => t.status === 'closed');
-      const wins = closed.filter(t => (t.total_realized_pnl || 0) > 0).length;
-      const losses = closed.filter(t => (t.total_realized_pnl || 0) <= 0).length;
-      const totalPnl = closed.reduce((sum, t) => sum + (t.total_realized_pnl || 0), 0);
+      const wins = closed.filter(t => pnlBase(t) > 0).length;
+      const losses = closed.filter(t => pnlBase(t) <= 0).length;
+      const totalPnl = closed.reduce((sum, t) => sum + pnlBase(t), 0);
       const needsReview = dayTrades.filter(
         t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'
       ).length;
@@ -481,7 +482,7 @@ export default function DailyViewScreen({ session }) {
           isOrphan,
           qty: t.total_opening_quantity,
           duration: calcDuration(t.opened_at, t.closed_at),
-          pnl: t.total_realized_pnl,
+          pnl: pnlBase(t),
           currency: t.currency || 'USD',
           status: t.matching_status || 'auto',
           tradeStatus: t.status,
