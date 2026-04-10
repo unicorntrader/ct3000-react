@@ -51,11 +51,22 @@ export default function PlanSheet({ session, isOpen, onClose }) {
   const handleClose = () => { resetForm(); onClose(); };
 
   const handleSave = async () => {
+    console.log('[PlanSheet] handleSave triggered');
+    console.log('[PlanSheet] session:', session);
+    console.log('[PlanSheet] form values:', { symbol, direction, entry, target, stop, qty, strategy, thesis });
+
+    if (!session?.user?.id) {
+      console.error('[PlanSheet] No session or user ID — cannot save');
+      setError('Not logged in. Please refresh and try again.');
+      return;
+    }
     if (!symbol.trim()) { setError('Ticker is required.'); return; }
     if (!e) { setError('Entry price is required.'); return; }
+
     setError(null);
     setSaving(true);
-    const { error: dbError } = await supabase.from('planned_trades').insert({
+
+    const payload = {
       user_id:               session.user.id,
       symbol:                symbol.trim().toUpperCase(),
       direction:             direction.toUpperCase(),
@@ -66,9 +77,23 @@ export default function PlanSheet({ session, isOpen, onClose }) {
       planned_quantity:      q || null,
       strategy:              strategy || null,
       thesis:                thesis.trim() || null,
-    });
+    };
+
+    console.log('[PlanSheet] inserting payload:', payload);
+
+    const { data, error: dbError } = await supabase
+      .from('planned_trades')
+      .insert(payload)
+      .select();
+
+    console.log('[PlanSheet] insert result — data:', data, 'error:', dbError);
+
     setSaving(false);
-    if (dbError) { setError(dbError.message); return; }
+    if (dbError) {
+      console.error('[PlanSheet] Supabase insert error:', dbError);
+      setError(`Save failed: ${dbError.message} (code: ${dbError.code})`);
+      return;
+    }
     setSaved(true);
     setTimeout(() => { handleClose(); }, 1200);
   };
