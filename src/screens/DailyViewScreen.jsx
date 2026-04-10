@@ -52,6 +52,16 @@ const parseIBKRDate = (dt) => {
   return `${d}T${t}Z`;
 };
 
+const calcDuration = (openedAt, closedAt) => {
+  if (!openedAt || !closedAt) return '—';
+  const diffMs = new Date(closedAt) - new Date(openedAt);
+  if (diffMs < 0) return '—';
+  const hours = diffMs / (1000 * 60 * 60);
+  if (hours < 1) return 'Intraday';
+  if (hours < 24) return 'Day';
+  return 'Swing';
+};
+
 // Build exit price map + set of order IDs that have real opening trades.
 const buildExitInfo = (logicalTrades, rawTrades) => {
   const closing = rawTrades
@@ -100,12 +110,28 @@ const getDisplayPrices = (trade, exitMap, openOrderIds) => {
   return { entry: trade.avg_entry_price, exit: exitFromRaw, isOrphan: false };
 };
 
+function AssetBadge({ category }) {
+  if (category === 'STK') {
+    return <span className="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold bg-gray-100 text-gray-600">S</span>;
+  }
+  if (category === 'OPT') {
+    return <span className="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold bg-purple-100 text-purple-700">O</span>;
+  }
+  if (category === 'FXCFD' || category === 'CASH') {
+    return <span className="inline-flex items-center justify-center h-6 px-1.5 rounded text-xs font-bold bg-blue-100 text-blue-700">FX</span>;
+  }
+  const label = category ? category.slice(0, 3) : '?';
+  return <span className="inline-flex items-center justify-center h-6 px-1 rounded text-xs font-bold bg-gray-100 text-gray-500">{label}</span>;
+}
+
+const COL_SPAN = 11; // TYPE TIME SYMBOL DIR ENTRY EXIT QTY DURATION P&L STATUS chevron
+
 function ExecSubTable({ execs }) {
   if (!execs || execs.length === 0) {
     return (
       <tr>
-        <td colSpan={9} className="px-6 py-3 bg-gray-50 border-t border-gray-100">
-          <p className="text-xs text-gray-400 italic pl-6">No raw executions found for this order.</p>
+        <td colSpan={COL_SPAN} className="px-6 py-3 bg-gray-50 border-t border-gray-100">
+          <p className="text-xs text-gray-400 italic pl-6">No raw executions found for this trade.</p>
         </td>
       </tr>
     );
@@ -113,7 +139,7 @@ function ExecSubTable({ execs }) {
 
   return (
     <tr>
-      <td colSpan={9} className="p-0 border-t border-gray-100">
+      <td colSpan={COL_SPAN} className="p-0 border-t border-gray-100">
         <div className="bg-gray-50 px-8 py-3">
           <table className="w-full">
             <thead>
@@ -125,7 +151,7 @@ function ExecSubTable({ execs }) {
             </thead>
             <tbody>
               {execs.map((ex, i) => {
-                const iso = parseIBKRDate(ex.date_time);
+                const iso = ex._iso;
                 const time = iso ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
                 const commission = parseFloat(ex.ib_commission);
                 const execIdShort = ex.ib_exec_id ? '…' + ex.ib_exec_id.slice(-10) : '—';
@@ -155,7 +181,7 @@ function ExecSubTable({ execs }) {
   );
 }
 
-function DayBlock({ day, rawByOrderId, onResolve }) {
+function DayBlock({ day, rawTradesWithIso, onResolve }) {
   const [note, setNote] = useState(day.note);
   const [editingNote, setEditingNote] = useState(false);
   const [noteInput, setNoteInput] = useState(day.note || '');
@@ -176,6 +202,20 @@ function DayBlock({ day, rawByOrderId, onResolve }) {
     if (!journalInput.trim()) return;
     setNote(journalInput);
     setJournalInput('');
+  };
+
+  // Get all executions for a logical trade by conid + date window
+  const getExecs = (row) => {
+    const { conid, openedAt, closedAt } = row;
+    if (!conid) return [];
+    const start = openedAt || '';
+    const end = closedAt || new Date().toISOString();
+    return rawTradesWithIso.filter(t =>
+      t.conid === conid &&
+      t._iso &&
+      t._iso >= start &&
+      t._iso <= end
+    );
   };
 
   return (
@@ -235,7 +275,7 @@ function DayBlock({ day, rawByOrderId, onResolve }) {
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              {['Time', 'Symbol', 'Dir', 'Entry', 'Exit', 'Qty', 'P&L', 'Status', ''].map((h, i) => (
+              {['Type', 'Time', 'Symbol', 'Dir', 'Entry', 'Exit', 'Qty', 'Duration', 'P&L', 'Status', ''].map((h, i) => (
                 <th key={i} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
               ))}
             </tr>
@@ -244,7 +284,7 @@ function DayBlock({ day, rawByOrderId, onResolve }) {
             {day.rows.map((row) => {
               const needsAction = row.status === 'unmatched' || row.status === 'ambiguous';
               const isExpanded = expandedRows.has(row.id);
-              const execs = rawByOrderId[row.openingOrderId] || [];
+              const execs = getExecs(row);
 
               return (
                 <React.Fragment key={row.id}>
@@ -252,6 +292,9 @@ function DayBlock({ day, rawByOrderId, onResolve }) {
                     className={`cursor-pointer select-none ${needsAction ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-gray-50'}`}
                     onClick={() => toggleExpand(row.id)}
                   >
+                    <td className="px-4 py-3.5">
+                      <AssetBadge category={row.assetCategory} />
+                    </td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.time}</td>
                     <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{row.symbol}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
@@ -262,6 +305,7 @@ function DayBlock({ day, rawByOrderId, onResolve }) {
                       {row.tradeStatus === 'open' ? '—' : fmtPrice(row.exit)}
                     </td>
                     <td className="px-4 py-3.5 text-sm text-gray-900">{row.qty}</td>
+                    <td className="px-4 py-3.5 text-sm text-gray-500">{row.duration}</td>
                     <td className={`px-4 py-3.5 text-sm font-medium ${(row.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                       {row.tradeStatus === 'open' ? '—' : fmtPnl(row.pnl, row.currency)}
                     </td>
@@ -294,7 +338,7 @@ function DayBlock({ day, rawByOrderId, onResolve }) {
 
                   {needsAction && openResolve === row.id && (
                     <tr className="bg-amber-50">
-                      <td colSpan={9} className="px-6 py-3">
+                      <td colSpan={COL_SPAN} className="px-6 py-3">
                         <div className={`bg-white rounded-xl p-4 border ${row.status === 'ambiguous' ? 'border-purple-200' : 'border-amber-200'}`}>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
                             Resolve {row.symbol} &middot; {fmtPnl(row.pnl, row.currency)}
@@ -374,7 +418,7 @@ export default function DailyViewScreen({ session }) {
         .order('opened_at', { ascending: false }),
       supabase
         .from('trades')
-        .select('ib_exec_id, ib_order_id, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, currency')
+        .select('ib_exec_id, ib_order_id, conid, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, currency')
         .eq('user_id', userId),
     ]);
     setTrades(logicalRes.data || []);
@@ -392,16 +436,11 @@ export default function DailyViewScreen({ session }) {
 
   const { exitMap, openOrderIds } = useMemo(() => buildExitInfo(trades, rawTrades), [trades, rawTrades]);
 
-  // Group raw trades by ib_order_id for drill-down lookup
-  const rawByOrderId = useMemo(() => {
-    const map = {};
-    for (const t of rawTrades) {
-      if (!t.ib_order_id) continue;
-      if (!map[t.ib_order_id]) map[t.ib_order_id] = [];
-      map[t.ib_order_id].push(t);
-    }
-    return map;
-  }, [rawTrades]);
+  // Pre-parse all raw trade timestamps once; passed to DayBlock for exec drill-down
+  const rawTradesWithIso = useMemo(() =>
+    rawTrades.map(t => ({ ...t, _iso: parseIBKRDate(t.date_time) })),
+    [rawTrades]
+  );
 
   const days = useMemo(() => {
     const filtered = trades.filter(t =>
@@ -430,7 +469,10 @@ export default function DailyViewScreen({ session }) {
         const { entry, exit, isOrphan } = getDisplayPrices(t, exitMap, openOrderIds);
         return {
           id: t.id,
-          openingOrderId: t.opening_ib_order_id,
+          conid: t.conid,
+          openedAt: t.opened_at,
+          closedAt: t.closed_at,
+          assetCategory: t.asset_category,
           time: fmtTime(t.opened_at),
           symbol: t.symbol,
           direction: t.direction,
@@ -438,6 +480,7 @@ export default function DailyViewScreen({ session }) {
           exit,
           isOrphan,
           qty: t.total_opening_quantity,
+          duration: calcDuration(t.opened_at, t.closed_at),
           pnl: t.total_realized_pnl,
           currency: t.currency || 'USD',
           status: t.matching_status || 'auto',
@@ -455,7 +498,7 @@ export default function DailyViewScreen({ session }) {
     );
 
     return result;
-  }, [trades, rawTrades, search, dateFilter, sortAsc, exitMap, openOrderIds]);
+  }, [trades, search, dateFilter, sortAsc, exitMap, openOrderIds]);
 
   const uniqueDates = useMemo(() =>
     [...new Set(trades.map(t => {
@@ -519,7 +562,7 @@ export default function DailyViewScreen({ session }) {
         </div>
       ) : (
         days.map(day => (
-          <DayBlock key={day.dateKey} day={day} rawByOrderId={rawByOrderId} onResolve={handleResolve} />
+          <DayBlock key={day.dateKey} day={day} rawTradesWithIso={rawTradesWithIso} onResolve={handleResolve} />
         ))
       )}
     </div>
