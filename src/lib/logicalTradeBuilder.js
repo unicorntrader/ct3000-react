@@ -200,7 +200,7 @@ export function buildLogicalTrades(rawTrades, userId) {
           total_closing_quantity: qty,
           remaining_quantity: 0,
           avg_entry_price: weightedAvgPrice(group),
-          total_realized_pnl: totalPnl,
+          total_realized_pnl: sumField(group, 'fifo_pnl_realized'),
           is_reversal: false,
           matching_status: 'unmatched',
           source_notes: 'No matching open trade found — outside query window',
