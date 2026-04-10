@@ -1,97 +1,249 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts';
 
-const PERIODS = ['All', '3M', '1M', '1W'];
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
-const periodStart = (p) => {
-  if (p === 'All') return null;
-  const d = new Date();
-  if (p === '1W') d.setDate(d.getDate() - 7);
-  if (p === '1M') d.setMonth(d.getMonth() - 1);
-  if (p === '3M') d.setMonth(d.getMonth() - 3);
-  return d.toISOString();
+const PRESETS = ['1D', '1W', '1M', '3M', 'All'];
+
+const presetStartIso = (p) => {
+  const now = new Date();
+  if (p === '1D') { const d = new Date(now); d.setHours(0, 0, 0, 0); return d.toISOString(); }
+  if (p === '1W') { const d = new Date(now); d.setDate(d.getDate() - 7); return d.toISOString(); }
+  if (p === '1M') { const d = new Date(now); d.setMonth(d.getMonth() - 1); return d.toISOString(); }
+  if (p === '3M') { const d = new Date(now); d.setMonth(d.getMonth() - 3); return d.toISOString(); }
+  return null;
 };
 
-const fmtPnl = (n) => {
+const fmt$ = (n) => {
   if (n == null || isNaN(n)) return '—';
   const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (n >= 0 ? '+$' : '-$') + abs;
 };
 
+const fmtShort = (n) => {
+  if (n == null || isNaN(n)) return '—';
+  const abs = Math.abs(n);
+  const sign = n >= 0 ? '+' : '-';
+  if (abs >= 1000) return sign + '$' + (abs / 1000).toFixed(1) + 'k';
+  return sign + '$' + abs.toFixed(0);
+};
+
+const fmtDay = (iso) => {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+const sortIcon = (active, dir) => (
+  <span className={`ml-1 inline-block ${active ? 'text-blue-600' : 'text-gray-300'}`}>
+    {active && dir === 'asc' ? '↑' : '↓'}
+  </span>
+);
+
+// ─── custom tooltip ────────────────────────────────────────────────────────────
+
+function CurveTip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3 text-xs pointer-events-none">
+      <p className="font-semibold text-gray-700 mb-1.5">{fmtDay(d.date)}</p>
+      <p className={`mb-0.5 ${(d.dayPnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+        Day P&L: {fmt$(d.dayPnl)}
+      </p>
+      <p className={`font-semibold ${(d.cumPnl || 0) >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
+        Cumulative: {fmt$(d.cumPnl)}
+      </p>
+    </div>
+  );
+}
+
+// ─── bar row (direction / asset class) ────────────────────────────────────────
+
+function BarRow({ label, pnl, trades, wins, maxAbsPnl }) {
+  const pct = maxAbsPnl > 0 ? (Math.abs(pnl) / maxAbsPnl) * 100 : 0;
+  const isPos = pnl >= 0;
+  const wr = trades > 0 ? Math.round((wins / trades) * 100) : 0;
+  return (
+    <div className="flex items-center gap-3 py-2.5 border-b border-gray-50 last:border-0">
+      <span className="w-16 text-xs font-medium text-gray-600 shrink-0">{label}</span>
+      <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+        <div
+          className={`h-1.5 rounded-full transition-all ${isPos ? 'bg-blue-500' : 'bg-red-400'}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className={`text-xs font-semibold w-20 text-right shrink-0 ${isPos ? 'text-green-600' : 'text-red-500'}`}>
+        {fmt$(pnl)}
+      </span>
+      <span className="text-xs text-gray-400 w-24 text-right shrink-0">
+        {trades}tr · {wr}% WR
+      </span>
+    </div>
+  );
+}
+
+// ─── main component ────────────────────────────────────────────────────────────
+
 export default function PerformanceScreen({ session }) {
   const [allTrades, setAllTrades] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState('All');
-  const [perfTab, setPerfTab] = useState('overview');
+
+  // period control
+  const [preset, setPreset] = useState('All');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
+  // by-symbol sort
+  const [sortCol, setSortCol] = useState('pnl');
+  const [sortDir, setSortDir] = useState('desc');
 
   useEffect(() => {
     if (!session?.user?.id) return;
-    fetchTrades();
+    supabase
+      .from('logical_trades')
+      .select('id, symbol, direction, asset_category, status, closed_at, opened_at, total_realized_pnl, matching_status')
+      .eq('user_id', session.user.id)
+      .eq('status', 'closed')
+      .then(({ data }) => {
+        setAllTrades(data || []);
+        setLoading(false);
+      });
   }, [session]);
 
-  const fetchTrades = async () => {
-    const { data } = await supabase
-      .from('logical_trades')
-      .select('total_realized_pnl, matching_status, status, closed_at, direction, asset_category, symbol')
-      .eq('user_id', session.user.id)
-      .eq('status', 'closed');
-
-    setAllTrades(data || []);
-    setLoading(false);
+  const handlePreset = (p) => {
+    setPreset(p);
+    setCustomFrom('');
+    setCustomTo('');
   };
 
+  const handleCustom = (from, to) => {
+    setCustomFrom(from);
+    setCustomTo(to);
+    if (from || to) setPreset('');
+  };
+
+  // filtered trades by date window
   const trades = useMemo(() => {
-    const start = periodStart(period);
-    if (!start) return allTrades;
-    return allTrades.filter(t => t.closed_at && t.closed_at >= start);
-  }, [allTrades, period]);
+    let start = null;
+    let end = null;
+    if (preset) {
+      start = presetStartIso(preset);
+    } else {
+      if (customFrom) start = new Date(customFrom).toISOString();
+      if (customTo) {
+        const d = new Date(customTo);
+        d.setHours(23, 59, 59, 999);
+        end = d.toISOString();
+      }
+    }
+    return allTrades.filter(t => {
+      if (!t.closed_at) return false;
+      if (start && t.closed_at < start) return false;
+      if (end && t.closed_at > end) return false;
+      return true;
+    });
+  }, [allTrades, preset, customFrom, customTo]);
 
+  // ── KPI stats ──
   const stats = useMemo(() => {
-    const closed = trades;
-    const total = closed.length;
-    if (total === 0) return null;
-
-    const winners = closed.filter(t => (t.total_realized_pnl || 0) > 0);
-    const losers  = closed.filter(t => (t.total_realized_pnl || 0) <= 0);
-
-    const grossProfit = winners.reduce((s, t) => s + t.total_realized_pnl, 0);
-    const grossLoss   = losers.reduce((s, t)  => s + t.total_realized_pnl, 0);
-    const netPnl      = grossProfit + grossLoss;
-
-    const avgWin  = winners.length > 0 ? grossProfit / winners.length : 0;
-    const avgLoss = losers.length  > 0 ? Math.abs(grossLoss / losers.length) : 0;
-
-    const profitFactor = grossLoss !== 0 ? Math.abs(grossProfit / grossLoss) : null;
-    const expectancy   = netPnl / total;
-
-    const matched   = closed.filter(t => t.matching_status === 'matched');
-    const unmatched = closed.filter(t => t.matching_status === 'unmatched');
-    const unplannedPnl = unmatched.reduce((s, t) => s + (t.total_realized_pnl || 0), 0);
-    const matchRate = Math.round((matched.length / total) * 100);
-
-    return {
-      total, winners: winners.length, losers: losers.length,
-      netPnl, grossProfit, grossLoss,
-      avgWin, avgLoss, profitFactor, expectancy,
-      matchRate, unplannedPnl,
-    };
+    const n = trades.length;
+    if (n === 0) return null;
+    const winners = trades.filter(t => (t.total_realized_pnl || 0) > 0);
+    const losers  = trades.filter(t => (t.total_realized_pnl || 0) <= 0);
+    const grossW = winners.reduce((s, t) => s + (t.total_realized_pnl || 0), 0);
+    const grossL = losers.reduce((s, t) => s + (t.total_realized_pnl || 0), 0);
+    const avgWin = winners.length > 0 ? grossW / winners.length : 0;
+    const avgLoss = losers.length > 0 ? Math.abs(grossL / losers.length) : 0;
+    const wlRatio = avgLoss > 0 ? (avgWin / avgLoss).toFixed(2) : '∞';
+    const winRate = Math.round((winners.length / n) * 100);
+    const netPnl = grossW + grossL;
+    const expectancy = netPnl / n;
+    return { n, winners: winners.length, losers: losers.length, netPnl, winRate, wlRatio, avgWin, avgLoss, expectancy };
   }, [trades]);
 
-  // Symbol breakdown for insights tab
-  const symbolStats = useMemo(() => {
+  // ── cumulative curve data ──
+  const curveData = useMemo(() => {
+    const sorted = [...trades].sort((a, b) => (a.closed_at > b.closed_at ? 1 : -1));
+    const dayMap = new Map();
+    for (const t of sorted) {
+      const day = t.closed_at.slice(0, 10);
+      dayMap.set(day, (dayMap.get(day) || 0) + (t.total_realized_pnl || 0));
+    }
+    const days = [...dayMap.entries()].sort(([a], [b]) => a.localeCompare(b));
+    let cum = 0;
+    return days.map(([day, dayPnl]) => {
+      cum += dayPnl;
+      return { date: day + 'T12:00:00Z', dayPnl, cumPnl: cum };
+    });
+  }, [trades]);
+
+  // ── by-symbol ──
+  const symbolRows = useMemo(() => {
     const map = new Map();
     for (const t of trades) {
-      if (!t.symbol) continue;
-      if (!map.has(t.symbol)) map.set(t.symbol, { symbol: t.symbol, trades: 0, wins: 0, pnl: 0 });
-      const s = map.get(t.symbol);
+      const sym = t.symbol || '?';
+      if (!map.has(sym)) map.set(sym, { symbol: sym, trades: 0, wins: 0, pnl: 0 });
+      const s = map.get(sym);
       s.trades++;
       s.pnl += t.total_realized_pnl || 0;
       if ((t.total_realized_pnl || 0) > 0) s.wins++;
     }
-    return [...map.values()]
-      .sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl))
-      .slice(0, 8);
+    const rows = [...map.values()].map(s => ({
+      ...s,
+      winRate: s.trades > 0 ? Math.round((s.wins / s.trades) * 100) : 0,
+    }));
+    const mult = sortDir === 'asc' ? 1 : -1;
+    rows.sort((a, b) => {
+      if (sortCol === 'symbol') return mult * a.symbol.localeCompare(b.symbol);
+      if (sortCol === 'trades') return mult * (a.trades - b.trades);
+      if (sortCol === 'winRate') return mult * (a.winRate - b.winRate);
+      return mult * (a.pnl - b.pnl); // pnl default
+    });
+    return rows;
+  }, [trades, sortCol, sortDir]);
+
+  const handleSort = (col) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('desc'); }
+  };
+
+  // ── by-direction ──
+  const dirRows = useMemo(() => {
+    const map = {};
+    for (const t of trades) {
+      const k = t.direction || 'UNKNOWN';
+      if (!map[k]) map[k] = { label: k, trades: 0, wins: 0, pnl: 0 };
+      map[k].trades++;
+      map[k].pnl += t.total_realized_pnl || 0;
+      if ((t.total_realized_pnl || 0) > 0) map[k].wins++;
+    }
+    return Object.values(map).sort((a, b) => b.pnl - a.pnl);
   }, [trades]);
+
+  // ── by-asset-class ──
+  const assetRows = useMemo(() => {
+    const map = {};
+    for (const t of trades) {
+      const k = t.asset_category || 'OTHER';
+      if (!map[k]) map[k] = { label: k, trades: 0, wins: 0, pnl: 0 };
+      map[k].trades++;
+      map[k].pnl += t.total_realized_pnl || 0;
+      if ((t.total_realized_pnl || 0) > 0) map[k].wins++;
+    }
+    return Object.values(map).sort((a, b) => b.pnl - a.pnl);
+  }, [trades]);
+
+  const maxDirAbs = Math.max(...dirRows.map(r => Math.abs(r.pnl)), 1);
+  const maxAssetAbs = Math.max(...assetRows.map(r => Math.abs(r.pnl)), 1);
+
+  // ── chart domain ──
+  const allCumVals = curveData.map(d => d.cumPnl);
+  const yMin = Math.min(0, ...allCumVals);
+  const yMax = Math.max(0, ...allCumVals);
+  const yPad = Math.max((yMax - yMin) * 0.1, 50);
 
   if (loading) {
     return (
@@ -101,42 +253,53 @@ export default function PerformanceScreen({ session }) {
     );
   }
 
-  const statCards = stats
-    ? [
-        { label: 'Net P&L', value: fmtPnl(stats.netPnl), sub: `${stats.total} closed trades`, color: stats.netPnl >= 0 ? 'text-green-600' : 'text-red-500' },
-        { label: 'Win rate', value: `${Math.round((stats.winners / stats.total) * 100)}%`, sub: `${stats.winners}W · ${stats.losers}L`, color: 'text-gray-900' },
-        { label: 'Profit factor', value: stats.profitFactor != null ? stats.profitFactor.toFixed(2) : '—', sub: `Avg win ${fmtPnl(stats.avgWin)}`, color: 'text-gray-900' },
-        { label: 'Expectancy', value: fmtPnl(stats.expectancy), sub: 'per trade', color: stats.expectancy >= 0 ? 'text-green-600' : 'text-red-500' },
-      ]
-    : [
-        { label: 'Net P&L', value: '—', sub: 'No data', color: 'text-gray-400' },
-        { label: 'Win rate', value: '—', sub: 'No data', color: 'text-gray-400' },
-        { label: 'Profit factor', value: '—', sub: 'No data', color: 'text-gray-400' },
-        { label: 'Expectancy', value: '—', sub: 'No data', color: 'text-gray-400' },
-      ];
+  const kpis = [
+    {
+      label: 'Net P&L',
+      value: stats ? fmt$(stats.netPnl) : '—',
+      sub: stats ? `${stats.n} closed trades` : 'No data',
+      color: stats ? (stats.netPnl >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400',
+    },
+    {
+      label: 'Win rate',
+      value: stats ? `${stats.winRate}%` : '—',
+      sub: stats ? `${stats.winners}W · ${stats.losers}L` : 'No data',
+      color: stats ? 'text-gray-900' : 'text-gray-400',
+    },
+    {
+      label: 'Avg W / L',
+      value: stats ? `${stats.wlRatio}` : '—',
+      sub: stats ? `${fmt$(stats.avgWin)} / ${fmt$(-stats.avgLoss)}` : 'No data',
+      color: stats ? 'text-gray-900' : 'text-gray-400',
+    },
+    {
+      label: 'Expectancy',
+      value: stats ? fmt$(stats.expectancy) : '—',
+      sub: 'per trade',
+      color: stats ? (stats.expectancy >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400',
+    },
+  ];
 
-  const breakdownRows = stats
-    ? [
-        { label: 'Gross profit',    value: fmtPnl(stats.grossProfit),  color: 'text-green-600' },
-        { label: 'Gross loss',      value: fmtPnl(stats.grossLoss),    color: 'text-red-500' },
-        { label: 'Avg winner',      value: fmtPnl(stats.avgWin),       color: 'text-green-600' },
-        { label: 'Avg loser',       value: fmtPnl(-stats.avgLoss),     color: 'text-red-500' },
-        { label: 'Plan match rate', value: `${stats.matchRate}%`,      color: 'text-blue-600' },
-        { label: 'Unplanned P&L',  value: fmtPnl(stats.unplannedPnl), color: stats.unplannedPnl >= 0 ? 'text-green-600' : 'text-red-500' },
-      ]
-    : [];
+  const SYM_COLS = [
+    { key: 'symbol', label: 'Symbol' },
+    { key: 'trades', label: 'Trades' },
+    { key: 'winRate', label: 'Win rate' },
+    { key: 'pnl', label: 'Net P&L' },
+  ];
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="space-y-6" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+
+      {/* ── header + period controls ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h2 className="text-xl font-semibold text-gray-900">Performance</h2>
-        <div className="flex space-x-2">
-          {PERIODS.map(p => (
+        <div className="flex flex-wrap items-center gap-2">
+          {PRESETS.map(p => (
             <button
               key={p}
-              onClick={() => setPeriod(p)}
-              className={`text-xs font-medium px-4 py-1.5 rounded-full whitespace-nowrap border transition-colors ${
-                period === p
+              onClick={() => handlePreset(p)}
+              className={`text-xs font-medium px-4 py-1.5 rounded-full border transition-colors whitespace-nowrap ${
+                preset === p
                   ? 'bg-blue-600 text-white border-transparent'
                   : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
               }`}
@@ -144,97 +307,142 @@ export default function PerformanceScreen({ session }) {
               {p}
             </button>
           ))}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {statCards.map(card => (
-          <div key={card.label} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-            <p className="text-xs font-medium text-gray-400 mb-1">{card.label}</p>
-            <p className={`text-2xl font-semibold ${card.color}`}>{card.value}</p>
-            <p className="text-xs text-gray-400 mt-1">{card.sub}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex border-b border-gray-200 mb-6">
-        {['overview', 'by symbol'].map(tab => (
-          <button
-            key={tab}
-            onClick={() => setPerfTab(tab)}
-            className={`text-sm font-medium px-5 py-3 border-b-2 transition-colors ${
-              perfTab === tab
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+          <span className="text-gray-200 text-sm">|</span>
+          <input
+            type="date"
+            value={customFrom}
+            onChange={e => handleCustom(e.target.value, customTo)}
+            className={`text-xs px-3 py-1.5 rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400 ${
+              !preset ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white text-gray-600'
             }`}
-          >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
+          />
+          <span className="text-xs text-gray-400">→</span>
+          <input
+            type="date"
+            value={customTo}
+            onChange={e => handleCustom(customFrom, e.target.value)}
+            className={`text-xs px-3 py-1.5 rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400 ${
+              !preset ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white text-gray-600'
+            }`}
+          />
+        </div>
+      </div>
+
+      {/* ── 4 KPI cards ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map(card => (
+          <div key={card.label} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <p className="text-xs font-medium text-gray-400 mb-1.5">{card.label}</p>
+            <p className={`text-2xl font-semibold leading-none mb-1 ${card.color}`}>{card.value}</p>
+            <p className="text-xs text-gray-400">{card.sub}</p>
+          </div>
         ))}
       </div>
 
-      {perfTab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">Performance breakdown</h3>
-            {!stats ? (
-              <p className="text-sm text-gray-400 py-4 text-center">No closed trades in this period</p>
-            ) : (
-              <div className="space-y-0">
-                {breakdownRows.map((row, i) => (
-                  <div key={row.label} className={`flex justify-between py-3 ${i < breakdownRows.length - 1 ? 'border-b border-gray-50' : ''}`}>
-                    <span className="text-sm text-gray-500">{row.label}</span>
-                    <span className={`text-sm font-semibold ${row.color}`}>{row.value}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+      {/* ── cumulative P&L curve ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h3 className="text-sm font-semibold text-gray-700 mb-4">Cumulative P&L</h3>
+        {curveData.length < 2 ? (
+          <div className="flex items-center justify-center h-48 text-sm text-gray-400">
+            Not enough data to plot a curve
           </div>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex items-center justify-center">
-            <div className="text-center py-8">
-              <svg className="w-10 h-10 text-gray-200 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              <p className="text-sm text-gray-400">Equity curve -- coming soon</p>
-            </div>
-          </div>
-        </div>
-      )}
+        ) : (
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={curveData} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+              <XAxis
+                dataKey="date"
+                tickFormatter={fmtDay}
+                tick={{ fontSize: 11, fill: '#9ca3af' }}
+                axisLine={false}
+                tickLine={false}
+                minTickGap={40}
+              />
+              <YAxis
+                tickFormatter={fmtShort}
+                tick={{ fontSize: 11, fill: '#9ca3af' }}
+                axisLine={false}
+                tickLine={false}
+                domain={[yMin - yPad, yMax + yPad]}
+                width={52}
+              />
+              <Tooltip content={<CurveTip />} cursor={{ stroke: '#e5e7eb', strokeWidth: 1 }} />
+              <Line
+                type="monotone"
+                dataKey="cumPnl"
+                stroke="#2563eb"
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 4, fill: '#2563eb', stroke: '#fff', strokeWidth: 2 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
 
-      {perfTab === 'by symbol' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          {symbolStats.length === 0 ? (
-            <div className="px-5 py-16 text-center">
-              <p className="text-sm text-gray-400">No closed trades in this period</p>
-            </div>
-          ) : (
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  {['Symbol', 'Trades', 'Win rate', 'Net P&L'].map(h => (
-                    <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
-                  ))}
+      {/* ── by-symbol table ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-700">By symbol</h3>
+        </div>
+        {symbolRows.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-12">No closed trades in this period</p>
+        ) : (
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                {SYM_COLS.map(col => (
+                  <th
+                    key={col.key}
+                    onClick={() => handleSort(col.key)}
+                    className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700"
+                  >
+                    {col.label}
+                    {sortIcon(sortCol === col.key, sortDir)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {symbolRows.map(row => (
+                <tr key={row.symbol} className="hover:bg-gray-50">
+                  <td className="px-5 py-3.5 text-sm font-semibold text-gray-900">{row.symbol}</td>
+                  <td className="px-5 py-3.5 text-sm text-gray-600">{row.trades}</td>
+                  <td className="px-5 py-3.5 text-sm text-gray-700">{row.winRate}%</td>
+                  <td className={`px-5 py-3.5 text-sm font-semibold ${row.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    {fmt$(row.pnl)}
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {symbolStats.map(s => {
-                  const wr = Math.round((s.wins / s.trades) * 100);
-                  return (
-                    <tr key={s.symbol} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm font-semibold text-gray-900">{s.symbol}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{s.trades}</td>
-                      <td className="px-6 py-4 text-sm text-gray-700">{wr}%</td>
-                      <td className={`px-6 py-4 text-sm font-semibold ${s.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                        {fmtPnl(s.pnl)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* ── by-direction + by-asset-class ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">By direction</h3>
+          {dirRows.length === 0 ? (
+            <p className="text-sm text-gray-400 py-4 text-center">No data</p>
+          ) : (
+            dirRows.map(r => (
+              <BarRow key={r.label} {...r} maxAbsPnl={maxDirAbs} />
+            ))
           )}
         </div>
-      )}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">By asset class</h3>
+          {assetRows.length === 0 ? (
+            <p className="text-sm text-gray-400 py-4 text-center">No data</p>
+          ) : (
+            assetRows.map(r => (
+              <BarRow key={r.label} {...r} maxAbsPnl={maxAssetAbs} />
+            ))
+          )}
+        </div>
+      </div>
+
     </div>
   );
 }
