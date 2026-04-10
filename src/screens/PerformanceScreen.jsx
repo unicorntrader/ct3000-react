@@ -105,7 +105,7 @@ export default function PerformanceScreen({ session }) {
     if (!session?.user?.id) return;
     supabase
       .from('logical_trades')
-      .select('id, symbol, direction, asset_category, currency, fx_rate_to_base, status, closed_at, opened_at, total_realized_pnl, matching_status')
+      .select('id, symbol, direction, asset_category, fx_rate_to_base, status, closed_at, opened_at, total_realized_pnl, matching_status')
       .eq('user_id', session.user.id)
       .eq('status', 'closed')
       .then(({ data }) => {
