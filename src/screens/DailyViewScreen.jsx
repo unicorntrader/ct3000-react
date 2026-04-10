@@ -31,15 +31,66 @@ const fmtDateLabel = (dateKey) => {
   });
 };
 
-// Approximate exit price from entry + pnl + qty
-const calcExit = (trade) => {
-  const entry = trade.avg_entry_price;
-  const pnl = trade.total_realized_pnl;
-  const qty = trade.total_closing_quantity || trade.total_opening_quantity;
-  if (entry == null || pnl == null || !qty) return null;
-  if (trade.direction === 'LONG') return entry + pnl / qty;
-  if (trade.direction === 'SHORT') return entry - pnl / qty;
-  return null;
+// Convert IBKR "20260408;100300" → ISO "2026-04-08T10:03:00Z"
+const parseIBKRDate = (dt) => {
+  if (!dt) return null;
+  const [date, time] = dt.split(';');
+  if (!date) return null;
+  const d = `${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}`;
+  const t = time ? `${time.slice(0,2)}:${time.slice(2,4)}:${time.slice(4,6)}` : '00:00:00';
+  return `${d}T${t}Z`;
+};
+
+// Build map: logical_trade.id → weighted-avg exit price from raw closing executions
+const buildExitMap = (logicalTrades, rawTrades) => {
+  const closing = rawTrades
+    .filter(t => (t.open_close_indicator || '').includes('C'))
+    .map(t => ({ ...t, _iso: parseIBKRDate(t.date_time) }))
+    .filter(t => t._iso);
+
+  const map = {};
+  for (const lt of logicalTrades) {
+    if (lt.status !== 'closed') continue;
+    const opp = lt.direction === 'LONG' ? 'SELL' : 'BUY';
+    const start = lt.opened_at || '';
+    const end   = lt.closed_at || '';
+    const matches = closing.filter(t =>
+      t.symbol === lt.symbol &&
+      t.buy_sell === opp &&
+      t._iso >= start &&
+      t._iso <= end
+    );
+    if (matches.length === 0) continue;
+    const totalQty = matches.reduce((s, t) => s + Math.abs(parseFloat(t.quantity) || 0), 0);
+    const totalVal = matches.reduce((s, t) =>
+      s + Math.abs(parseFloat(t.quantity) || 0) * (parseFloat(t.trade_price) || 0), 0);
+    if (totalQty > 0) map[lt.id] = totalVal / totalQty;
+  }
+  return map;
+};
+
+// Return {entry, exit} for display, handling orphan trades and open trades correctly.
+// Orphan trades: avg_entry_price in the DB is actually the CLOSING price (the opening
+// happened before the query window). We derive entry from exit + pnl.
+const getDisplayPrices = (trade, exitMap) => {
+  if (trade.status === 'open') {
+    return { entry: trade.avg_entry_price, exit: null };
+  }
+  const exitFromRaw = exitMap[trade.id] ?? null;
+  const isOrphan = trade.source_notes?.includes('outside query window');
+  if (isOrphan) {
+    const exitPrice = exitFromRaw ?? trade.avg_entry_price;
+    const qty = trade.total_closing_quantity || trade.total_opening_quantity;
+    const pnl = trade.total_realized_pnl;
+    let entryPrice = null;
+    if (exitPrice != null && pnl != null && qty) {
+      entryPrice = trade.direction === 'LONG'
+        ? exitPrice - pnl / qty
+        : exitPrice + pnl / qty;
+    }
+    return { entry: entryPrice, exit: exitPrice };
+  }
+  return { entry: trade.avg_entry_price, exit: exitFromRaw };
 };
 
 function DayBlock({ day, onResolve }) {
@@ -132,7 +183,7 @@ function DayBlock({ day, onResolve }) {
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">{row.symbol}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{row.direction}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">{fmtPrice(row.entry)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{row.status === 'open' ? <span className="text-blue-500 text-xs font-medium">Open</span> : fmtPrice(row.exit)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{row.tradeStatus === 'open' ? <span className="text-blue-500 text-xs font-medium">Open</span> : fmtPrice(row.exit)}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">{row.qty}</td>
                     <td className={`px-6 py-4 text-sm font-medium ${(row.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                       {row.tradeStatus === 'open' ? '—' : fmtPnl(row.pnl)}
@@ -215,6 +266,7 @@ function DayBlock({ day, onResolve }) {
 
 export default function DailyViewScreen({ session }) {
   const [trades, setTrades] = useState([]);
+  const [rawTrades, setRawTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
@@ -226,13 +278,20 @@ export default function DailyViewScreen({ session }) {
   }, [session]);
 
   const fetchTrades = async () => {
-    const { data } = await supabase
-      .from('logical_trades')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .order('opened_at', { ascending: false });
-
-    setTrades(data || []);
+    const userId = session.user.id;
+    const [logicalRes, rawRes] = await Promise.all([
+      supabase
+        .from('logical_trades')
+        .select('*')
+        .eq('user_id', userId)
+        .order('opened_at', { ascending: false }),
+      supabase
+        .from('trades')
+        .select('symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time')
+        .eq('user_id', userId),
+    ]);
+    setTrades(logicalRes.data || []);
+    setRawTrades(rawRes.data || []);
     setLoading(false);
   };
 
@@ -243,6 +302,8 @@ export default function DailyViewScreen({ session }) {
       .eq('id', tradeId);
     setTrades(prev => prev.map(t => t.id === tradeId ? { ...t, matching_status: newStatus } : t));
   };
+
+  const exitMap = useMemo(() => buildExitMap(trades, rawTrades), [trades, rawTrades]);
 
   // Group trades by day
   const days = useMemo(() => {
@@ -269,18 +330,21 @@ export default function DailyViewScreen({ session }) {
         t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'
       ).length;
 
-      const rows = dayTrades.map(t => ({
-        id: t.id,
-        time: fmtTime(t.opened_at),
-        symbol: t.symbol,
-        direction: t.direction,
-        entry: t.avg_entry_price,
-        exit: calcExit(t),
-        qty: t.total_opening_quantity,
-        pnl: t.total_realized_pnl,
-        status: t.matching_status || 'auto',
-        tradeStatus: t.status,
-      }));
+      const rows = dayTrades.map(t => {
+        const { entry, exit } = getDisplayPrices(t, exitMap);
+        return {
+          id: t.id,
+          time: fmtTime(t.opened_at),
+          symbol: t.symbol,
+          direction: t.direction,
+          entry,
+          exit,
+          qty: t.total_opening_quantity,
+          pnl: t.total_realized_pnl,
+          status: t.matching_status || 'auto',
+          tradeStatus: t.status,
+        };
+      });
 
       return { dateKey, dateLabel: fmtDateLabel(dateKey), rows, trades: dayTrades.length, wins, losses, pnl: totalPnl, needsReview, note: null };
     });
@@ -292,7 +356,7 @@ export default function DailyViewScreen({ session }) {
     );
 
     return result;
-  }, [trades, search, dateFilter, sortAsc]);
+  }, [trades, rawTrades, search, dateFilter, sortAsc, exitMap]);
 
   const uniqueDates = useMemo(() =>
     [...new Set(trades.map(t => {

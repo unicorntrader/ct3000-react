@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-const FILTERS = ['All', 'Wins', 'Losses', 'Matched', 'Unmatched', 'Ambiguous'];
+const FILTERS = ['All', 'Open', 'Wins', 'Losses', 'Matched', 'Unmatched', 'Ambiguous'];
 
 const planStyles = {
   matched: 'bg-blue-50 text-blue-600',
@@ -52,8 +52,7 @@ export default function JournalScreen({ session }) {
         .from('logical_trades')
         .select('*')
         .eq('user_id', userId)
-        .eq('status', 'closed')
-        .order('closed_at', { ascending: false }),
+        .order('opened_at', { ascending: false }),
       supabase
         .from('planned_trades')
         .select('id, entry_price, entry, stop_price, stop, symbol, direction')
@@ -69,8 +68,9 @@ export default function JournalScreen({ session }) {
 
   const filtered = useMemo(() => {
     switch (activeFilter) {
-      case 'Wins':      return trades.filter(t => (t.total_realized_pnl || 0) > 0);
-      case 'Losses':    return trades.filter(t => (t.total_realized_pnl || 0) <= 0);
+      case 'Open':      return trades.filter(t => t.status === 'open');
+      case 'Wins':      return trades.filter(t => t.status === 'closed' && (t.total_realized_pnl || 0) > 0);
+      case 'Losses':    return trades.filter(t => t.status === 'closed' && (t.total_realized_pnl || 0) <= 0);
       case 'Matched':   return trades.filter(t => t.matching_status === 'matched');
       case 'Unmatched': return trades.filter(t => t.matching_status === 'unmatched');
       case 'Ambiguous': return trades.filter(t => t.matching_status === 'ambiguous');
@@ -78,8 +78,9 @@ export default function JournalScreen({ session }) {
     }
   }, [trades, activeFilter]);
 
-  const wins = trades.filter(t => (t.total_realized_pnl || 0) > 0).length;
-  const winRate = trades.length > 0 ? Math.round((wins / trades.length) * 100) : null;
+  const closedTrades = trades.filter(t => t.status === 'closed');
+  const wins = closedTrades.filter(t => (t.total_realized_pnl || 0) > 0).length;
+  const winRate = closedTrades.length > 0 ? Math.round((wins / closedTrades.length) * 100) : null;
 
   if (loading) {
     return (
@@ -97,9 +98,9 @@ export default function JournalScreen({ session }) {
 
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[
-          { label: 'Trades', value: trades.length > 0 ? String(trades.length) : '—', color: 'text-gray-900' },
+          { label: 'Closed trades', value: closedTrades.length > 0 ? String(closedTrades.length) : '—', color: 'text-gray-900' },
           { label: 'Win rate', value: winRate != null ? `${winRate}%` : '—', color: 'text-green-600' },
-          { label: 'Matched', value: trades.length > 0 ? `${Math.round((trades.filter(t => t.matching_status === 'matched').length / trades.length) * 100)}%` : '—', color: 'text-blue-600' },
+          { label: 'Matched', value: closedTrades.length > 0 ? `${Math.round((closedTrades.filter(t => t.matching_status === 'matched').length / closedTrades.length) * 100)}%` : '—', color: 'text-blue-600' },
         ].map(c => (
           <div key={c.label} className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100">
             <p className="text-xs text-gray-400 mb-1">{c.label}</p>
@@ -127,7 +128,7 @@ export default function JournalScreen({ session }) {
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-16 text-center">
           <p className="text-sm font-medium text-gray-500 mb-1">
-            {trades.length === 0 ? 'No closed trades yet' : 'No trades match this filter'}
+            {trades.length === 0 ? 'No trades yet' : 'No trades match this filter'}
           </p>
           <p className="text-xs text-gray-400">
             {trades.length === 0 ? 'Sync your IBKR account to import trades' : 'Try a different filter'}
@@ -145,27 +146,33 @@ export default function JournalScreen({ session }) {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((trade) => {
-                const pnl = trade.total_realized_pnl || 0;
-                const isWin = pnl > 0;
+                const isOpen = trade.status === 'open';
+                const pnl = trade.total_realized_pnl;
+                const isWin = (pnl || 0) > 0;
                 const plan = plansMap[trade.planned_trade_id];
-                const rMultiple = calcR(trade, plan);
+                const rMultiple = isOpen ? null : calcR(trade, plan);
                 const matchStatus = trade.matching_status || 'auto';
+                const dateDisplay = fmtDate(isOpen ? trade.opened_at : trade.closed_at);
 
                 return (
                   <tr key={trade.id} className="hover:bg-gray-50 cursor-pointer">
-                    <td className="px-6 py-4 text-sm text-gray-600">{fmtDate(trade.closed_at)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{dateDisplay}</td>
                     <td className="px-6 py-4 text-sm font-semibold text-gray-900">{trade.symbol}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
-                    <td className={`px-6 py-4 text-sm font-semibold ${isWin ? 'text-green-600' : 'text-red-500'}`}>
-                      {fmtPnl(pnl)}
+                    <td className={`px-6 py-4 text-sm font-semibold ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>
+                      {isOpen ? '—' : fmtPnl(pnl)}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{rMultiple ?? '—'}</td>
                     <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 text-xs rounded-full font-medium ${
-                        isWin ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'
-                      }`}>
-                        {isWin ? 'win' : 'loss'}
-                      </span>
+                      {isOpen ? (
+                        <span className="px-2.5 py-1 text-xs rounded-full font-medium bg-blue-50 text-blue-600">open</span>
+                      ) : (
+                        <span className={`px-2.5 py-1 text-xs rounded-full font-medium ${
+                          isWin ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {isWin ? 'win' : 'loss'}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${planStyles[matchStatus] || 'bg-gray-100 text-gray-500'}`}>
