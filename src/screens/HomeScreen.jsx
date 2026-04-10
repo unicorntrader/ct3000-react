@@ -20,11 +20,14 @@ const thirtyDaysAgo = () => {
   return d.toISOString();
 };
 
+const PAGE_SIZE = 10;
+
 export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewDismissed }) {
   const [positions, setPositions] = useState([]);
   const [plans, setPlans] = useState([]);
   const [logicalTrades, setLogicalTrades] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [posSort, setPosSort] = useState('size'); // 'size' | 'date'
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -136,35 +139,78 @@ export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewD
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-700">Open positions</h3>
-            <button onClick={() => onTabChange('daily')} className="text-xs text-blue-600 font-medium hover:underline">View all &rarr;</button>
+            {positions.length > 0 && (
+              <div className="flex items-center space-x-2">
+                <span className="text-xs text-gray-400">Sort:</span>
+                <button
+                  onClick={() => setPosSort('size')}
+                  className={`text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${
+                    posSort === 'size' ? 'bg-blue-600 text-white border-transparent' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  Size
+                </button>
+                <button
+                  onClick={() => setPosSort('date')}
+                  className={`text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${
+                    posSort === 'date' ? 'bg-blue-600 text-white border-transparent' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  Date
+                </button>
+              </div>
+            )}
           </div>
           {positions.length === 0 ? (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-8 text-center">
               <p className="text-sm text-gray-400">No open positions</p>
             </div>
-          ) : (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-50">
-              {positions.map(pos => {
-                const isLong = (pos.position || 0) >= 0;
-                const qty = Math.abs(pos.position || 0);
-                const pnl = pos.unrealized_pnl || 0;
-                return (
-                  <div key={pos.id || pos.symbol} className="flex items-center justify-between px-5 py-3">
-                    <div>
-                      <p className="font-semibold text-gray-900">{pos.symbol}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {isLong ? 'Long' : 'Short'} &middot; {qty} {pos.asset_category === 'STK' ? 'shares' : 'contracts'}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className={`font-semibold ${pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmt(pnl)}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">avg {fmtPrice(pos.avg_cost)}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          ) : (() => {
+            const sorted = [...positions].sort((a, b) => {
+              if (posSort === 'size') {
+                const sizeA = Math.abs(a.market_value ?? (a.position * a.avg_cost) ?? 0);
+                const sizeB = Math.abs(b.market_value ?? (b.position * b.avg_cost) ?? 0);
+                return sizeB - sizeA;
+              }
+              // date: most recent updated_at first
+              return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
+            });
+            const visible = sorted.slice(0, PAGE_SIZE);
+            const overflow = positions.length > PAGE_SIZE;
+            return (
+              <>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-50">
+                  {visible.map(pos => {
+                    const isLong = (pos.position || 0) >= 0;
+                    const qty = Math.abs(pos.position || 0);
+                    const pnl = pos.unrealized_pnl || 0;
+                    return (
+                      <div key={pos.id || pos.symbol} className="flex items-center justify-between px-5 py-3">
+                        <div>
+                          <p className="font-semibold text-gray-900">{pos.symbol}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {isLong ? 'Long' : 'Short'} &middot; {qty} {pos.asset_category === 'STK' ? 'shares' : 'contracts'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className={`font-semibold ${pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmt(pnl)}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">avg {fmtPrice(pos.avg_cost)}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {overflow && (
+                  <button
+                    onClick={() => onTabChange('daily')}
+                    className="mt-2 text-xs text-blue-600 font-medium hover:underline w-full text-center py-1"
+                  >
+                    View all {positions.length} positions &rarr;
+                  </button>
+                )}
+              </>
+            );
+          })()}
         </div>
 
         <div>

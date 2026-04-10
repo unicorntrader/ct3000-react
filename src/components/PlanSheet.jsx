@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const strategies = [
   { group: 'Timeframe', options: ['Day Trade', 'Swing', 'Position'] },
@@ -28,13 +28,31 @@ export default function PlanSheet({ isOpen, onClose }) {
 
   const showCalc = e > 0 && q > 0;
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (ev) => { if (ev.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
   return (
-    <>
-      <div className={`overlay-bg ${isOpen ? 'open' : ''}`} onClick={onClose} />
-      <div className={`slide-up ${isOpen ? 'open' : ''}`}>
-        <div className="px-5 pt-3 pb-8">
-          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">New plan</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+
+      {/* Modal */}
+      <div className="relative z-10 w-full max-w-lg bg-white rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="px-6 pt-6 pb-8">
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="text-lg font-semibold text-gray-900">New plan</h3>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 -mr-1">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
 
           <div className="space-y-4">
             <div>
@@ -151,6 +169,6 @@ export default function PlanSheet({ isOpen, onClose }) {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
