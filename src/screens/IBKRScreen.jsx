@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { buildLogicalTrades } from '../lib/logicalTradeBuilder';
+import { matchPlansToTrades } from '../lib/planMatcher';
 
 export default function IBKRScreen({ session }) {
   const [connected, setConnected] = useState(false);
@@ -207,7 +209,6 @@ export default function IBKRScreen({ session }) {
         .order('date_time', { ascending: true });
 
       if (!fetchError && allTrades) {
-        const { buildLogicalTrades } = await import('../lib/logicalTradeBuilder');
         const logical = buildLogicalTrades(allTrades, userId);
 
         if (logical.length > 0) {
@@ -230,7 +231,6 @@ export default function IBKRScreen({ session }) {
               .eq('user_id', userId);
 
             if (savedLogical && plannedTrades) {
-              const { matchPlansToTrades } = await import('../lib/planMatcher');
               const matchUpdates = matchPlansToTrades(savedLogical, plannedTrades);
 
               for (const update of matchUpdates) {
