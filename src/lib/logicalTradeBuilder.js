@@ -61,12 +61,16 @@ export function buildLogicalTrades(rawTrades, userId) {
   };
 
   // Weighted average FX rate across executions (weight = |qty|).
-  // Defaults to 1.0 when the field is absent (USD trades).
+  // Returns null when ALL rows have null/missing fx_rate_to_base — meaning the raw trades
+  // were synced before the column existed and need a full re-sync to populate.
+  // Returns 1.0 only when at least one row has a real value (i.e. USD trades).
   const weightedAvgFxRate = (trades) => {
-    const totalQty = trades.reduce((sum, t) => sum + Math.abs(parseFloat(t.quantity) || 0), 0);
-    if (totalQty === 0) return 1.0;
-    const totalFx = trades.reduce((sum, t) =>
-      sum + Math.abs(parseFloat(t.quantity) || 0) * (parseFloat(t.fx_rate_to_base) || 1.0), 0);
+    const withRate = trades.filter(t => t.fx_rate_to_base != null && !isNaN(parseFloat(t.fx_rate_to_base)));
+    if (withRate.length === 0) return null; // signal: data missing, not defaulted
+    const totalQty = withRate.reduce((sum, t) => sum + Math.abs(parseFloat(t.quantity) || 0), 0);
+    if (totalQty === 0) return null;
+    const totalFx = withRate.reduce((sum, t) =>
+      sum + Math.abs(parseFloat(t.quantity) || 0) * parseFloat(t.fx_rate_to_base), 0);
     return totalFx / totalQty;
   };
 

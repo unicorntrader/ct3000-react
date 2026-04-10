@@ -104,6 +104,16 @@ export default function IBKRScreen({ session }) {
     if (fetchError) return `Could not fetch trades: ${fetchError.message}`;
     if (!allTrades?.length) return null; // nothing to build
 
+    // Warn if raw trades are missing fx_rate_to_base — happens when the column was added
+    // after the last sync. A full Sync Now is required to repopulate the rates.
+    const missingFxRate = allTrades.filter(t => t.fx_rate_to_base == null).length;
+    if (missingFxRate > 0) {
+      console.warn(
+        `[rebuild] ${missingFxRate} raw trade(s) have no fx_rate_to_base. ` +
+        `Run a full Sync to populate rates for non-USD trades.`
+      );
+    }
+
     const logical = buildLogicalTrades(allTrades, userId);
     if (!logical.length) return null;
 
@@ -120,6 +130,10 @@ export default function IBKRScreen({ session }) {
       .insert(logical);
 
     if (insertError) return insertError.message;
+
+    if (missingFxRate > 0) {
+      return `__warn__${missingFxRate} trade(s) have no FX rate — run Sync Now to fix non-USD P&L`;
+    }
 
     // Run plan matcher
     const { data: savedLogical } = await supabase
@@ -152,9 +166,11 @@ export default function IBKRScreen({ session }) {
     setRebuilding(true);
     setSyncResult(null);
     setSyncError(null);
-    const err = await rebuildLogicalTrades(session.user.id);
-    if (err) {
-      setSyncError(`Rebuild failed: ${err}`);
+    const result = await rebuildLogicalTrades(session.user.id);
+    if (result?.startsWith('__warn__')) {
+      setSyncResult({ rebuilt: true, warning: result.slice(8) });
+    } else if (result) {
+      setSyncError(`Rebuild failed: ${result}`);
     } else {
       setSyncResult({ rebuilt: true });
     }
@@ -406,7 +422,14 @@ export default function IBKRScreen({ session }) {
           {syncResult && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4">
               {syncResult.rebuilt ? (
-                <p className="text-sm font-semibold text-green-800">Logical trades rebuilt successfully</p>
+                <>
+                  <p className="text-sm font-semibold text-green-800">Logical trades rebuilt successfully</p>
+                  {syncResult.warning && (
+                    <p className="text-xs text-amber-700 mt-1.5 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      ⚠ {syncResult.warning}
+                    </p>
+                  )}
+                </>
               ) : (
                 <>
                   <p className="text-sm font-semibold text-green-800 mb-2">Sync successful</p>
