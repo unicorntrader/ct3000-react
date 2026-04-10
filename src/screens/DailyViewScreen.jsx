@@ -41,14 +41,16 @@ const parseIBKRDate = (dt) => {
   return `${d}T${t}Z`;
 };
 
-// Build map: logical_trade.id → weighted-avg exit price from raw closing executions
-const buildExitMap = (logicalTrades, rawTrades) => {
+// Build exit price map + set of order IDs that have real opening trades.
+// Returns { exitMap, openOrderIds }.
+const buildExitInfo = (logicalTrades, rawTrades) => {
+  // Weighted-avg exit price per logical trade id
   const closing = rawTrades
     .filter(t => (t.open_close_indicator || '').includes('C'))
     .map(t => ({ ...t, _iso: parseIBKRDate(t.date_time) }))
     .filter(t => t._iso);
 
-  const map = {};
+  const exitMap = {};
   for (const lt of logicalTrades) {
     if (lt.status !== 'closed') continue;
     const opp = lt.direction === 'LONG' ? 'SELL' : 'BUY';
@@ -64,33 +66,39 @@ const buildExitMap = (logicalTrades, rawTrades) => {
     const totalQty = matches.reduce((s, t) => s + Math.abs(parseFloat(t.quantity) || 0), 0);
     const totalVal = matches.reduce((s, t) =>
       s + Math.abs(parseFloat(t.quantity) || 0) * (parseFloat(t.trade_price) || 0), 0);
-    if (totalQty > 0) map[lt.id] = totalVal / totalQty;
+    if (totalQty > 0) exitMap[lt.id] = totalVal / totalQty;
   }
-  return map;
+
+  // Set of ib_order_ids that have at least one opening execution in raw trades.
+  // A closed logical trade whose opening_ib_order_id is absent from this set is an orphan
+  // (the position was opened before the Flex Query window).
+  const openOrderIds = new Set(
+    rawTrades
+      .filter(t => (t.open_close_indicator || '').includes('O'))
+      .map(t => t.ib_order_id)
+      .filter(Boolean)
+  );
+
+  return { exitMap, openOrderIds };
 };
 
-// Return {entry, exit} for display, handling orphan trades and open trades correctly.
-// Orphan trades: avg_entry_price in the DB is actually the CLOSING price (the opening
-// happened before the query window). We derive entry from exit + pnl.
-const getDisplayPrices = (trade, exitMap) => {
+// Return { entry, exit, isOrphan } for display.
+// Orphan: closed trade with no opening execution in raw trades.
+//   - entry: null (unknown — show "N/A")
+//   - exit:  actual closing price from raw trades
+// Normal closed: entry = avg_entry_price, exit from raw trades.
+// Open: entry = avg_entry_price, exit = null.
+const getDisplayPrices = (trade, exitMap, openOrderIds) => {
   if (trade.status === 'open') {
-    return { entry: trade.avg_entry_price, exit: null };
+    return { entry: trade.avg_entry_price, exit: null, isOrphan: false };
   }
   const exitFromRaw = exitMap[trade.id] ?? null;
-  const isOrphan = trade.source_notes?.includes('outside query window');
+  const isOrphan = trade.status === 'closed' &&
+    !openOrderIds.has(trade.opening_ib_order_id);
   if (isOrphan) {
-    const exitPrice = exitFromRaw ?? trade.avg_entry_price;
-    const qty = trade.total_closing_quantity || trade.total_opening_quantity;
-    const pnl = trade.total_realized_pnl;
-    let entryPrice = null;
-    if (exitPrice != null && pnl != null && qty) {
-      entryPrice = trade.direction === 'LONG'
-        ? exitPrice - pnl / qty
-        : exitPrice + pnl / qty;
-    }
-    return { entry: entryPrice, exit: exitPrice };
+    return { entry: null, exit: exitFromRaw, isOrphan: true };
   }
-  return { entry: trade.avg_entry_price, exit: exitFromRaw };
+  return { entry: trade.avg_entry_price, exit: exitFromRaw, isOrphan: false };
 };
 
 function DayBlock({ day, onResolve }) {
@@ -182,7 +190,7 @@ function DayBlock({ day, onResolve }) {
                     <td className="px-6 py-4 text-sm text-gray-600">{row.time}</td>
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">{row.symbol}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{row.direction}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{fmtPrice(row.entry)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{row.isOrphan ? <span className="text-gray-400">N/A</span> : fmtPrice(row.entry)}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">{row.tradeStatus === 'open' ? <span className="text-blue-500 text-xs font-medium">Open</span> : fmtPrice(row.exit)}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">{row.qty}</td>
                     <td className={`px-6 py-4 text-sm font-medium ${(row.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
@@ -287,7 +295,7 @@ export default function DailyViewScreen({ session }) {
         .order('opened_at', { ascending: false }),
       supabase
         .from('trades')
-        .select('symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time')
+        .select('ib_order_id, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time')
         .eq('user_id', userId),
     ]);
     setTrades(logicalRes.data || []);
@@ -303,7 +311,7 @@ export default function DailyViewScreen({ session }) {
     setTrades(prev => prev.map(t => t.id === tradeId ? { ...t, matching_status: newStatus } : t));
   };
 
-  const exitMap = useMemo(() => buildExitMap(trades, rawTrades), [trades, rawTrades]);
+  const { exitMap, openOrderIds } = useMemo(() => buildExitInfo(trades, rawTrades), [trades, rawTrades]);
 
   // Group trades by day
   const days = useMemo(() => {
@@ -331,7 +339,7 @@ export default function DailyViewScreen({ session }) {
       ).length;
 
       const rows = dayTrades.map(t => {
-        const { entry, exit } = getDisplayPrices(t, exitMap);
+        const { entry, exit, isOrphan } = getDisplayPrices(t, exitMap, openOrderIds);
         return {
           id: t.id,
           time: fmtTime(t.opened_at),
@@ -339,6 +347,7 @@ export default function DailyViewScreen({ session }) {
           direction: t.direction,
           entry,
           exit,
+          isOrphan,
           qty: t.total_opening_quantity,
           pnl: t.total_realized_pnl,
           status: t.matching_status || 'auto',
