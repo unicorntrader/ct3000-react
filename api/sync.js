@@ -90,6 +90,7 @@ function parseTrades(xml) {
       ibCommission:         get('ibCommission'),
       ibCommissionCurrency: get('ibCommissionCurrency'),
       currency:             get('currency'),
+      fxRateToBase:         get('fxRateToBase'),
       transactionType:      get('transactionType'),
       notes:                get('notes'),
       multiplier:           get('multiplier'),

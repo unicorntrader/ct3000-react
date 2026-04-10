@@ -138,6 +138,7 @@ export default function IBKRScreen({ session }) {
             ib_commission:          t.ibCommission ? parseFloat(t.ibCommission) : null,
             ib_commission_currency: t.ibCommissionCurrency,
             currency:               t.currency,
+            fx_rate_to_base:        t.fxRateToBase ? parseFloat(t.fxRateToBase) : 1.0,
             transaction_type:       t.transactionType,
             notes:                  t.notes,
             multiplier:             t.multiplier ? parseFloat(t.multiplier) : null,

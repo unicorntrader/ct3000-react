@@ -60,6 +60,16 @@ export function buildLogicalTrades(rawTrades, userId) {
     return totalValue / totalQty;
   };
 
+  // Weighted average FX rate across executions (weight = |qty|).
+  // Defaults to 1.0 when the field is absent (USD trades).
+  const weightedAvgFxRate = (trades) => {
+    const totalQty = trades.reduce((sum, t) => sum + Math.abs(parseFloat(t.quantity) || 0), 0);
+    if (totalQty === 0) return 1.0;
+    const totalFx = trades.reduce((sum, t) =>
+      sum + Math.abs(parseFloat(t.quantity) || 0) * (parseFloat(t.fx_rate_to_base) || 1.0), 0);
+    return totalFx / totalQty;
+  };
+
   const sumField = (trades, field) =>
     trades.reduce((sum, t) => sum + (parseFloat(t[field]) || 0), 0);
 
@@ -96,6 +106,7 @@ export function buildLogicalTrades(rawTrades, userId) {
       if (opens.length > 0) {
         let closingQty = Math.abs(sumField(closeTrades, 'quantity'));
         const totalPnl = sumField(closeTrades, 'fifo_pnl_realized');
+        const coFxRate = weightedAvgFxRate(closeTrades);
 
         while (closingQty > 0 && opens.length > 0) {
           const oldest = opens[0];
@@ -104,6 +115,7 @@ export function buildLogicalTrades(rawTrades, userId) {
           oldest.remaining_quantity -= used;
           oldest.total_closing_quantity = (oldest.total_closing_quantity || 0) + used;
           oldest.total_realized_pnl = (oldest.total_realized_pnl || 0) + totalPnl * (used / Math.abs(sumField(closeTrades, 'quantity')));
+          oldest.fx_rate_to_base = coFxRate;
           oldest.closed_at = parseDateTime(firstTrade.date_time);
           closingQty -= used;
 
@@ -135,6 +147,7 @@ export function buildLogicalTrades(rawTrades, userId) {
         remaining_quantity: qty,
         avg_entry_price: weightedAvgPrice(group),
         total_realized_pnl: 0,
+        fx_rate_to_base: weightedAvgFxRate(group),
         is_reversal: true,
         matching_status: 'auto',
         source_notes: `C;O reversal from order ${firstTrade.ib_order_id}`,
@@ -165,6 +178,7 @@ export function buildLogicalTrades(rawTrades, userId) {
         remaining_quantity: qty,
         avg_entry_price: weightedAvgPrice(group),
         total_realized_pnl: pnl,
+        fx_rate_to_base: weightedAvgFxRate(group),
         is_reversal: false,
         matching_status: 'auto',
         source_notes: null,
@@ -201,6 +215,7 @@ export function buildLogicalTrades(rawTrades, userId) {
           remaining_quantity: 0,
           avg_entry_price: weightedAvgPrice(group),
           total_realized_pnl: sumField(group, 'fifo_pnl_realized'),
+          fx_rate_to_base: weightedAvgFxRate(group),
           is_reversal: false,
           matching_status: 'unmatched',
           source_notes: 'No matching open trade found — outside query window',
@@ -209,6 +224,7 @@ export function buildLogicalTrades(rawTrades, userId) {
       } else {
         // FIFO cascade
         const originalClosingQty = closingQty;
+        const closingFxRate = weightedAvgFxRate(group);
         while (closingQty > 0 && opens.length > 0) {
           const oldest = opens[0];
           const available = oldest.remaining_quantity;
@@ -218,6 +234,8 @@ export function buildLogicalTrades(rawTrades, userId) {
           oldest.remaining_quantity -= used;
           oldest.total_closing_quantity = (oldest.total_closing_quantity || 0) + used;
           oldest.total_realized_pnl = (oldest.total_realized_pnl || 0) + pnlPortion;
+          // Use the FX rate at close time — that's when P&L was realized
+          oldest.fx_rate_to_base = closingFxRate;
           oldest.closed_at = parseDateTime(firstTrade.date_time);
           closingQty -= used;
 

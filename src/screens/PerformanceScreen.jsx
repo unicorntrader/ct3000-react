@@ -105,7 +105,7 @@ export default function PerformanceScreen({ session }) {
     if (!session?.user?.id) return;
     supabase
       .from('logical_trades')
-      .select('id, symbol, direction, asset_category, currency, status, closed_at, opened_at, total_realized_pnl, matching_status')
+      .select('id, symbol, direction, asset_category, currency, fx_rate_to_base, status, closed_at, opened_at, total_realized_pnl, matching_status')
       .eq('user_id', session.user.id)
       .eq('status', 'closed')
       .then(({ data }) => {
@@ -137,20 +137,21 @@ export default function PerformanceScreen({ session }) {
       const day = t.closed_at.slice(0, 10);
       if (startDate && day < startDate) return false;
       if (endDate   && day > endDate)   return false;
-      // Fix 2: skip non-USD trades so JPY values are never added to USD totals
-      if ((t.currency || 'USD') !== 'USD') return false;
       return true;
     });
   }, [allTrades, preset, customFrom, customTo]);
+
+  // P&L converted to base currency using IBKR's fxRateToBase recorded at execution time
+  const pnlBase = (t) => (t.total_realized_pnl || 0) * (t.fx_rate_to_base || 1);
 
   // ── KPI stats ──
   const stats = useMemo(() => {
     const n = trades.length;
     if (n === 0) return null;
-    const winners = trades.filter(t => (t.total_realized_pnl || 0) > 0);
-    const losers  = trades.filter(t => (t.total_realized_pnl || 0) <= 0);
-    const grossW = winners.reduce((s, t) => s + (t.total_realized_pnl || 0), 0);
-    const grossL = losers.reduce((s, t) => s + (t.total_realized_pnl || 0), 0);
+    const winners = trades.filter(t => pnlBase(t) > 0);
+    const losers  = trades.filter(t => pnlBase(t) <= 0);
+    const grossW = winners.reduce((s, t) => s + pnlBase(t), 0);
+    const grossL = losers.reduce((s, t) => s + pnlBase(t), 0);
     const avgWin = winners.length > 0 ? grossW / winners.length : 0;
     const avgLoss = losers.length > 0 ? Math.abs(grossL / losers.length) : 0;
     const wlRatio = avgLoss > 0 ? (avgWin / avgLoss).toFixed(2) : '∞';
@@ -166,7 +167,7 @@ export default function PerformanceScreen({ session }) {
     const dayMap = new Map();
     for (const t of sorted) {
       const day = t.closed_at.slice(0, 10);
-      dayMap.set(day, (dayMap.get(day) || 0) + (t.total_realized_pnl || 0));
+      dayMap.set(day, (dayMap.get(day) || 0) + pnlBase(t));
     }
     const days = [...dayMap.entries()].sort(([a], [b]) => a.localeCompare(b));
     let cum = 0;
@@ -186,8 +187,8 @@ export default function PerformanceScreen({ session }) {
       if (!map.has(sym)) map.set(sym, { symbol: sym, trades: 0, wins: 0, pnl: 0 });
       const s = map.get(sym);
       s.trades++;
-      s.pnl += t.total_realized_pnl || 0;
-      if ((t.total_realized_pnl || 0) > 0) s.wins++;
+      s.pnl += pnlBase(t);
+      if (pnlBase(t) > 0) s.wins++;
     }
     const rows = [...map.values()].map(s => ({
       ...s,
@@ -215,8 +216,8 @@ export default function PerformanceScreen({ session }) {
       const k = t.direction || 'UNKNOWN';
       if (!map[k]) map[k] = { label: k, trades: 0, wins: 0, pnl: 0 };
       map[k].trades++;
-      map[k].pnl += t.total_realized_pnl || 0;
-      if ((t.total_realized_pnl || 0) > 0) map[k].wins++;
+      map[k].pnl += pnlBase(t);
+      if (pnlBase(t) > 0) map[k].wins++;
     }
     return Object.values(map).sort((a, b) => b.pnl - a.pnl);
   }, [trades]);
@@ -228,8 +229,8 @@ export default function PerformanceScreen({ session }) {
       const k = t.asset_category || 'OTHER';
       if (!map[k]) map[k] = { label: k, trades: 0, wins: 0, pnl: 0 };
       map[k].trades++;
-      map[k].pnl += t.total_realized_pnl || 0;
-      if ((t.total_realized_pnl || 0) > 0) map[k].wins++;
+      map[k].pnl += pnlBase(t);
+      if (pnlBase(t) > 0) map[k].wins++;
     }
     return Object.values(map).sort((a, b) => b.pnl - a.pnl);
   }, [trades]);
@@ -336,9 +337,6 @@ export default function PerformanceScreen({ session }) {
           </div>
         ))}
       </div>
-      <p className="text-xs text-gray-400 -mt-3">
-        USD trades only &mdash; multi-currency support coming soon
-      </p>
 
       {/* ── cumulative P&L curve ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
