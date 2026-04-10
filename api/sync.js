@@ -64,8 +64,8 @@ async function getStatement(refCode, token, maxRetries = 10, waitMs = 3000) {
 }
 
 function parseBaseCurrency(xml) {
-  // baseCurrency is an attribute on <FlexStatement ...> e.g. baseCurrency="USD"
-  const m = xml.match(/<FlexStatement[^>]+baseCurrency="([^"]+)"/);
+  // currency is an attribute on <AccountInformation ...> e.g. currency="USD"
+  const m = xml.match(/<AccountInformation[^>]+currency="([^"]+)"/);
   return m ? m[1] : null;
 }
 
@@ -162,9 +162,9 @@ module.exports = async function handler(req, res) {
     const openPositions = parseOpenPositions(xml);
     const baseCurrency = parseBaseCurrency(xml);
 
-    // Debug: show the FlexStatement opening tag so we can verify regex match
-    const flexStatementSnippet = xml.match(/<FlexStatement[^>]{0,200}/)?.[0] || 'NO <FlexStatement> TAG FOUND';
-    console.log('[sync] FlexStatement snippet:', flexStatementSnippet);
+    // Debug: show the AccountInformation opening tag so we can verify regex match
+    const acctInfoSnippet = xml.match(/<AccountInformation[^>]{0,200}/)?.[0] || 'NO <AccountInformation> TAG FOUND';
+    console.log('[sync] AccountInformation snippet:', acctInfoSnippet);
     console.log(`[sync] Parsed ${trades.length} trades, ${openPositions.length} open positions, baseCurrency=${baseCurrency}`);
 
     return res.status(200).json({
