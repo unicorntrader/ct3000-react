@@ -9,15 +9,26 @@ const statusStyles = {
   manual: 'bg-green-50 text-green-700',
 };
 
+const currencySymbol = (c) => {
+  switch (c) {
+    case 'USD': return '$';
+    case 'JPY': return '¥';
+    case 'EUR': return '€';
+    case 'GBP': return '£';
+    default: return c ? c + ' ' : '$';
+  }
+};
+
 const fmtPrice = (n) => {
   if (n == null) return '—';
   return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
-const fmtPnl = (n) => {
+const fmtPnl = (n, currency = 'USD') => {
   if (n == null) return '—';
+  const sym = currencySymbol(currency);
   const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return (n >= 0 ? '+$' : '-$') + abs;
+  return (n >= 0 ? '+' : '-') + sym + abs;
 };
 
 const fmtTime = (iso) => {
@@ -42,9 +53,7 @@ const parseIBKRDate = (dt) => {
 };
 
 // Build exit price map + set of order IDs that have real opening trades.
-// Returns { exitMap, openOrderIds }.
 const buildExitInfo = (logicalTrades, rawTrades) => {
-  // Weighted-avg exit price per logical trade id
   const closing = rawTrades
     .filter(t => (t.open_close_indicator || '').includes('C'))
     .map(t => ({ ...t, _iso: parseIBKRDate(t.date_time) }))
@@ -69,9 +78,6 @@ const buildExitInfo = (logicalTrades, rawTrades) => {
     if (totalQty > 0) exitMap[lt.id] = totalVal / totalQty;
   }
 
-  // Set of ib_order_ids that have at least one opening execution in raw trades.
-  // A closed logical trade whose opening_ib_order_id is absent from this set is an orphan
-  // (the position was opened before the Flex Query window).
   const openOrderIds = new Set(
     rawTrades
       .filter(t => (t.open_close_indicator || '').includes('O'))
@@ -82,37 +88,90 @@ const buildExitInfo = (logicalTrades, rawTrades) => {
   return { exitMap, openOrderIds };
 };
 
-// Return { entry, exit, isOrphan } for display.
-// Orphan: closed trade with no opening execution in raw trades.
-//   - entry: null (unknown — show "N/A")
-//   - exit:  actual closing price from raw trades
-// Normal closed: entry = avg_entry_price, exit from raw trades.
-// Open: entry = avg_entry_price, exit = null.
 const getDisplayPrices = (trade, exitMap, openOrderIds) => {
   if (trade.status === 'open') {
     return { entry: trade.avg_entry_price, exit: null, isOrphan: false };
   }
   const exitFromRaw = exitMap[trade.id] ?? null;
-  const isOrphan = trade.status === 'closed' &&
-    !openOrderIds.has(trade.opening_ib_order_id);
+  const isOrphan = !openOrderIds.has(trade.opening_ib_order_id);
   if (isOrphan) {
     return { entry: null, exit: exitFromRaw, isOrphan: true };
   }
   return { entry: trade.avg_entry_price, exit: exitFromRaw, isOrphan: false };
 };
 
-function DayBlock({ day, onResolve }) {
+function ExecSubTable({ execs }) {
+  if (!execs || execs.length === 0) {
+    return (
+      <tr>
+        <td colSpan={9} className="px-6 py-3 bg-gray-50 border-t border-gray-100">
+          <p className="text-xs text-gray-400 italic pl-6">No raw executions found for this order.</p>
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr>
+      <td colSpan={9} className="p-0 border-t border-gray-100">
+        <div className="bg-gray-50 px-8 py-3">
+          <table className="w-full">
+            <thead>
+              <tr>
+                {['Time', 'Exec Price', 'Qty', 'Type', 'Indicator', 'Commission', 'Exec ID'].map(h => (
+                  <th key={h} className="pb-1.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wide pr-4">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {execs.map((ex, i) => {
+                const iso = parseIBKRDate(ex.date_time);
+                const time = iso ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
+                const commission = parseFloat(ex.ib_commission);
+                const execIdShort = ex.ib_exec_id ? '…' + ex.ib_exec_id.slice(-10) : '—';
+                return (
+                  <tr key={i} className="border-t border-gray-100 first:border-0">
+                    <td className="py-1.5 pr-4 text-xs text-gray-600">{time}</td>
+                    <td className="py-1.5 pr-4 text-xs text-gray-800 font-medium">{fmtPrice(parseFloat(ex.trade_price))}</td>
+                    <td className="py-1.5 pr-4 text-xs text-gray-600">{Math.abs(parseFloat(ex.quantity) || 0)}</td>
+                    <td className="py-1.5 pr-4">
+                      <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${ex.buy_sell === 'BUY' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                        {ex.buy_sell}
+                      </span>
+                    </td>
+                    <td className="py-1.5 pr-4 text-xs text-gray-500">{ex.open_close_indicator || '—'}</td>
+                    <td className="py-1.5 pr-4 text-xs text-gray-500">
+                      {!isNaN(commission) ? fmtPnl(commission) : '—'}
+                    </td>
+                    <td className="py-1.5 text-xs text-gray-400 font-mono">{execIdShort}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function DayBlock({ day, rawByOrderId, onResolve }) {
   const [note, setNote] = useState(day.note);
   const [editingNote, setEditingNote] = useState(false);
   const [noteInput, setNoteInput] = useState(day.note || '');
   const [journalInput, setJournalInput] = useState('');
   const [openResolve, setOpenResolve] = useState(null);
+  const [expandedRows, setExpandedRows] = useState(new Set());
 
-  const handleSaveNote = () => {
-    setNote(noteInput);
-    setEditingNote(false);
+  const toggleExpand = (id) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   };
 
+  const handleSaveNote = () => { setNote(noteInput); setEditingNote(false); };
   const handleSaveJournal = () => {
     if (!journalInput.trim()) return;
     setNote(journalInput);
@@ -176,27 +235,37 @@ function DayBlock({ day, onResolve }) {
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              {['Time', 'Symbol', 'Dir', 'Entry', 'Exit', 'Qty', 'P&L', 'Status'].map(h => (
-                <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
+              {['Time', 'Symbol', 'Dir', 'Entry', 'Exit', 'Qty', 'P&L', 'Status', ''].map((h, i) => (
+                <th key={i} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {day.rows.map((row) => {
               const needsAction = row.status === 'unmatched' || row.status === 'ambiguous';
+              const isExpanded = expandedRows.has(row.id);
+              const execs = rawByOrderId[row.openingOrderId] || [];
+
               return (
                 <React.Fragment key={row.id}>
-                  <tr className={needsAction ? 'bg-amber-50' : 'hover:bg-gray-50'}>
-                    <td className="px-6 py-4 text-sm text-gray-600">{row.time}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">{row.symbol}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{row.direction}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{row.isOrphan ? <span className="text-gray-400">N/A</span> : fmtPrice(row.entry)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{row.tradeStatus === 'open' ? <span className="text-blue-500 text-xs font-medium">Open</span> : fmtPrice(row.exit)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{row.qty}</td>
-                    <td className={`px-6 py-4 text-sm font-medium ${(row.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {row.tradeStatus === 'open' ? '—' : fmtPnl(row.pnl)}
+                  <tr
+                    className={`cursor-pointer select-none ${needsAction ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-gray-50'}`}
+                    onClick={() => toggleExpand(row.id)}
+                  >
+                    <td className="px-4 py-3.5 text-sm text-gray-600">{row.time}</td>
+                    <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{row.symbol}</td>
+                    <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
+                    <td className="px-4 py-3.5 text-sm text-gray-900">
+                      {row.isOrphan ? <span className="text-gray-400">N/A</span> : fmtPrice(row.entry)}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-3.5 text-sm text-gray-900">
+                      {row.tradeStatus === 'open' ? '—' : fmtPrice(row.exit)}
+                    </td>
+                    <td className="px-4 py-3.5 text-sm text-gray-900">{row.qty}</td>
+                    <td className={`px-4 py-3.5 text-sm font-medium ${(row.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                      {row.tradeStatus === 'open' ? '—' : fmtPnl(row.pnl, row.currency)}
+                    </td>
+                    <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center space-x-2">
                         <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${statusStyles[row.status] || 'bg-gray-100 text-gray-500'}`}>
                           {row.status.charAt(0).toUpperCase() + row.status.slice(1)}
@@ -211,14 +280,24 @@ function DayBlock({ day, onResolve }) {
                         )}
                       </div>
                     </td>
+                    <td className="px-4 py-3.5 text-gray-300 text-sm">
+                      <svg
+                        className={`w-4 h-4 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`}
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </td>
                   </tr>
+
+                  {isExpanded && <ExecSubTable execs={execs} />}
 
                   {needsAction && openResolve === row.id && (
                     <tr className="bg-amber-50">
-                      <td colSpan={8} className="px-6 py-3">
+                      <td colSpan={9} className="px-6 py-3">
                         <div className={`bg-white rounded-xl p-4 border ${row.status === 'ambiguous' ? 'border-purple-200' : 'border-amber-200'}`}>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                            Resolve {row.symbol} &middot; {fmtPnl(row.pnl)}
+                            Resolve {row.symbol} &middot; {fmtPnl(row.pnl, row.currency)}
                           </p>
                           <p className="text-sm text-gray-500 mb-3">
                             {row.status === 'unmatched'
@@ -295,7 +374,7 @@ export default function DailyViewScreen({ session }) {
         .order('opened_at', { ascending: false }),
       supabase
         .from('trades')
-        .select('ib_order_id, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time')
+        .select('ib_exec_id, ib_order_id, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, currency')
         .eq('user_id', userId),
     ]);
     setTrades(logicalRes.data || []);
@@ -313,7 +392,17 @@ export default function DailyViewScreen({ session }) {
 
   const { exitMap, openOrderIds } = useMemo(() => buildExitInfo(trades, rawTrades), [trades, rawTrades]);
 
-  // Group trades by day
+  // Group raw trades by ib_order_id for drill-down lookup
+  const rawByOrderId = useMemo(() => {
+    const map = {};
+    for (const t of rawTrades) {
+      if (!t.ib_order_id) continue;
+      if (!map[t.ib_order_id]) map[t.ib_order_id] = [];
+      map[t.ib_order_id].push(t);
+    }
+    return map;
+  }, [rawTrades]);
+
   const days = useMemo(() => {
     const filtered = trades.filter(t =>
       !search || t.symbol?.toLowerCase().includes(search.toLowerCase())
@@ -321,7 +410,6 @@ export default function DailyViewScreen({ session }) {
 
     const grouped = new Map();
     for (const t of filtered) {
-      // Use closed_at date for closed trades, opened_at for open ones
       const anchor = (t.status === 'closed' ? t.closed_at : t.opened_at) || t.opened_at;
       if (!anchor) continue;
       const dateKey = anchor.slice(0, 10);
@@ -342,6 +430,7 @@ export default function DailyViewScreen({ session }) {
         const { entry, exit, isOrphan } = getDisplayPrices(t, exitMap, openOrderIds);
         return {
           id: t.id,
+          openingOrderId: t.opening_ib_order_id,
           time: fmtTime(t.opened_at),
           symbol: t.symbol,
           direction: t.direction,
@@ -350,6 +439,7 @@ export default function DailyViewScreen({ session }) {
           isOrphan,
           qty: t.total_opening_quantity,
           pnl: t.total_realized_pnl,
+          currency: t.currency || 'USD',
           status: t.matching_status || 'auto',
           tradeStatus: t.status,
         };
@@ -365,7 +455,7 @@ export default function DailyViewScreen({ session }) {
     );
 
     return result;
-  }, [trades, rawTrades, search, dateFilter, sortAsc, exitMap]);
+  }, [trades, rawTrades, search, dateFilter, sortAsc, exitMap, openOrderIds]);
 
   const uniqueDates = useMemo(() =>
     [...new Set(trades.map(t => {
@@ -429,7 +519,7 @@ export default function DailyViewScreen({ session }) {
         </div>
       ) : (
         days.map(day => (
-          <DayBlock key={day.dateKey} day={day} onResolve={handleResolve} />
+          <DayBlock key={day.dateKey} day={day} rawByOrderId={rawByOrderId} onResolve={handleResolve} />
         ))
       )}
     </div>
