@@ -40,20 +40,29 @@ export default function SettingsScreen({ session }) {
   const [baseCurrency, setBaseCurrency] = useState(null);
   const [accountId, setAccountId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
 
-  useEffect(() => {
+  const fetchSettings = () => {
     if (!session?.user?.id) return;
+    setLoading(true);
+    setFetchError(null);
     supabase
       .from('user_ibkr_credentials')
       .select('base_currency, account_id')
       .eq('user_id', session.user.id)
       .single()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error && error.code !== 'PGRST116') {
+          // PGRST116 = no rows found — that's fine, show defaults
+          setFetchError(error.message);
+        }
         setBaseCurrency(data?.base_currency || null);
         setAccountId(data?.account_id || null);
         setLoading(false);
       });
-  }, [session]);
+  };
+
+  useEffect(fetchSettings, [session?.user?.id]);
 
   if (loading) {
     return (
@@ -65,7 +74,21 @@ export default function SettingsScreen({ session }) {
 
   return (
     <div className="space-y-6 max-w-lg" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      <h2 className="text-xl font-semibold text-gray-900">Settings</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-gray-900">Settings</h2>
+        <button
+          onClick={fetchSettings}
+          className="text-xs text-blue-600 font-medium px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {fetchError && (
+        <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-600">
+          Failed to load settings: {fetchError}
+        </div>
+      )}
 
       {/* ── Account ── */}
       <Section title="Account">

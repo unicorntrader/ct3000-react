@@ -162,7 +162,10 @@ module.exports = async function handler(req, res) {
     const openPositions = parseOpenPositions(xml);
     const baseCurrency = parseBaseCurrency(xml);
 
-    console.log(`Parsed ${trades.length} trades, ${openPositions.length} open positions, baseCurrency=${baseCurrency}`);
+    // Debug: show the FlexStatement opening tag so we can verify regex match
+    const flexStatementSnippet = xml.match(/<FlexStatement[^>]{0,200}/)?.[0] || 'NO <FlexStatement> TAG FOUND';
+    console.log('[sync] FlexStatement snippet:', flexStatementSnippet);
+    console.log(`[sync] Parsed ${trades.length} trades, ${openPositions.length} open positions, baseCurrency=${baseCurrency}`);
 
     return res.status(200).json({
       success: true,
