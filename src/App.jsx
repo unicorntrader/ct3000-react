@@ -54,6 +54,7 @@ function AppShell({ session }) {
       />
 
       <PlanSheet
+        session={session}
         isOpen={planSheetOpen}
         onClose={() => setPlanSheetOpen(false)}
       />
