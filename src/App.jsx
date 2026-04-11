@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from './lib/supabaseClient'
+import { PrivacyProvider } from './lib/PrivacyContext'
 import AuthScreen from './components/AuthScreen'
 import Header from './components/Header'
 import MobileNav from './components/MobileNav'
@@ -116,5 +117,9 @@ export default function App() {
     return <AuthScreen />
   }
 
-  return <AppShell session={session} />
+  return (
+    <PrivacyProvider>
+      <AppShell session={session} />
+    </PrivacyProvider>
+  )
 }

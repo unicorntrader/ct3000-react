@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPrice, fmtPnl, fmtDateLong } from '../lib/formatters';
+import PrivacyValue from '../components/PrivacyValue';
 
 const statusStyles = {
   planned: 'bg-blue-50 text-blue-600',
@@ -103,23 +104,25 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
                     </div>
                     <p className="text-xs text-gray-400">
                       {fmtDateLong(plan.created_at)}
-                      {qty != null && <> &middot; {qty} {plan.asset_category === 'OPT' ? 'contracts' : 'shares'}</>}
+                      {qty != null && <> &middot; <PrivacyValue value={qty} /> {plan.asset_category === 'OPT' ? 'contracts' : 'shares'}</>}
                       {rr != null && <> &middot; R:R {rr}</>}
                     </p>
                   </div>
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
                   {[
-                    { label: 'Entry', value: fmtPrice(plan.planned_entry_price) },
-                    { label: 'Target', value: fmtPrice(plan.planned_target_price), color: 'text-green-600' },
-                    { label: 'Stop', value: fmtPrice(plan.planned_stop_loss), color: 'text-red-500' },
-                    { label: 'Risk', value: fmtPnl(risk), color: 'text-red-500' },
-                    { label: 'Reward', value: fmtPnl(reward), color: 'text-green-600' },
-                    { label: 'R:R', value: rr ?? 'N/A', color: 'text-blue-600' },
+                    { label: 'Entry', value: fmtPrice(plan.planned_entry_price), mask: true },
+                    { label: 'Target', value: fmtPrice(plan.planned_target_price), color: 'text-green-600', mask: true },
+                    { label: 'Stop', value: fmtPrice(plan.planned_stop_loss), color: 'text-red-500', mask: true },
+                    { label: 'Risk', value: fmtPnl(risk), color: 'text-red-500', mask: true },
+                    { label: 'Reward', value: fmtPnl(reward), color: 'text-green-600', mask: true },
+                    { label: 'R:R', value: rr ?? 'N/A', color: 'text-blue-600', mask: false },
                   ].map(f => (
                     <div key={f.label} className="text-center bg-gray-50 rounded-lg py-2">
                       <p className="text-xs text-gray-400 mb-1">{f.label}</p>
-                      <p className={`text-sm font-medium ${f.color || ''}`}>{f.value}</p>
+                      <p className={`text-sm font-medium ${f.color || ''}`}>
+                        {f.mask ? <PrivacyValue value={f.value} /> : f.value}
+                      </p>
                     </div>
                   ))}
                 </div>

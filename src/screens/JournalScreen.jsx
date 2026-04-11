@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtDate } from '../lib/formatters';
+import PrivacyValue from '../components/PrivacyValue';
 
 const FILTERS = ['All', 'Open', 'Wins', 'Losses', 'Matched', 'Unmatched', 'Ambiguous'];
 
@@ -149,7 +150,7 @@ export default function JournalScreen({ session }) {
                     <td className="px-6 py-4 text-sm font-semibold text-gray-900">{trade.symbol}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
                     <td className={`px-6 py-4 text-sm font-semibold ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>
-                      {isOpen ? '—' : fmtPnl(pnl)}
+                      {isOpen ? '—' : <PrivacyValue value={fmtPnl(pnl)} />}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{rMultiple ?? '—'}</td>
                     <td className="px-6 py-4">

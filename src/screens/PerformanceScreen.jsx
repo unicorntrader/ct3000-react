@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { pnlBase, fmtPnl, fmtShort } from '../lib/formatters';
+import PrivacyValue from '../components/PrivacyValue';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -39,10 +40,10 @@ function CurveTip({ active, payload, baseCurrency = 'USD' }) {
     <div className="bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3 text-xs pointer-events-none">
       <p className="font-semibold text-gray-700 mb-1.5">{fmtDay(d.date)}</p>
       <p className={`mb-0.5 ${(d.dayPnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-        Day P&L: {fmtPnl(d.dayPnl, baseCurrency)}
+        Day P&L: <PrivacyValue value={fmtPnl(d.dayPnl, baseCurrency)} />
       </p>
       <p className={`font-semibold ${(d.cumPnl || 0) >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
-        Cumulative: {fmtPnl(d.cumPnl, baseCurrency)}
+        Cumulative: <PrivacyValue value={fmtPnl(d.cumPnl, baseCurrency)} />
       </p>
     </div>
   );
@@ -64,7 +65,7 @@ function BarRow({ label, pnl, trades, wins, maxAbsPnl, baseCurrency = 'USD' }) {
         />
       </div>
       <span className={`text-xs font-semibold w-20 text-right shrink-0 ${isPos ? 'text-green-600' : 'text-red-500'}`}>
-        {fmtPnl(pnl, baseCurrency)}
+        <PrivacyValue value={fmtPnl(pnl, baseCurrency)} />
       </span>
       <span className="text-xs text-gray-400 w-24 text-right shrink-0">
         {trades}tr · {wr}% WR
@@ -251,24 +252,29 @@ export default function PerformanceScreen({ session }) {
       value: stats ? fmtPnl(stats.netPnl, baseCurrency) : '—',
       sub: stats ? `${stats.n} closed trades` : 'No data',
       color: stats ? (stats.netPnl >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400',
+      maskValue: true,
     },
     {
       label: 'Win rate',
       value: stats ? `${stats.winRate}%` : '—',
       sub: stats ? `${stats.winners}W · ${stats.losers}L` : 'No data',
       color: stats ? 'text-gray-900' : 'text-gray-400',
+      maskValue: false,
     },
     {
       label: 'Avg W / L',
       value: stats ? `${stats.wlRatio}` : '—',
       sub: stats ? `${fmtPnl(stats.avgWin, baseCurrency)} / ${fmtPnl(-stats.avgLoss, baseCurrency)}` : 'No data',
       color: stats ? 'text-gray-900' : 'text-gray-400',
+      maskValue: false,
+      maskSub: true,
     },
     {
       label: 'Expectancy',
       value: stats ? fmtPnl(stats.expectancy, baseCurrency) : '—',
       sub: 'per trade',
       color: stats ? (stats.expectancy >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400',
+      maskValue: true,
     },
   ];
 
@@ -325,8 +331,12 @@ export default function PerformanceScreen({ session }) {
         {kpis.map(card => (
           <div key={card.label} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
             <p className="text-xs font-medium text-gray-400 mb-1.5">{card.label}</p>
-            <p className={`text-2xl font-semibold leading-none mb-1 ${card.color}`}>{card.value}</p>
-            <p className="text-xs text-gray-400">{card.sub}</p>
+            <p className={`text-2xl font-semibold leading-none mb-1 ${card.color}`}>
+              {card.maskValue ? <PrivacyValue value={card.value} /> : card.value}
+            </p>
+            <p className="text-xs text-gray-400">
+              {card.maskSub ? <PrivacyValue value={card.sub} /> : card.sub}
+            </p>
           </div>
         ))}
       </div>
@@ -402,7 +412,7 @@ export default function PerformanceScreen({ session }) {
                   <td className="px-5 py-3.5 text-sm text-gray-600">{row.trades}</td>
                   <td className="px-5 py-3.5 text-sm text-gray-700">{row.winRate}%</td>
                   <td className={`px-5 py-3.5 text-sm font-semibold ${row.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                    {fmtPnl(row.pnl, baseCurrency)}
+                    <PrivacyValue value={fmtPnl(row.pnl, baseCurrency)} />
                   </td>
                 </tr>
               ))}

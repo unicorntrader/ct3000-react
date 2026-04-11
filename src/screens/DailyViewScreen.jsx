@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { pnlBase, currencySymbol, fmtPrice, fmtPnl } from '../lib/formatters';
+import PrivacyValue from '../components/PrivacyValue';
 
 const statusStyles = {
   matched: 'bg-blue-50 text-blue-600',
@@ -137,8 +138,8 @@ function ExecSubTable({ execs, baseCurrency = 'USD' }) {
                 return (
                   <tr key={i} className="border-t border-gray-100 first:border-0">
                     <td className="py-1.5 pr-4 text-xs text-gray-600">{time}</td>
-                    <td className="py-1.5 pr-4 text-xs text-gray-800 font-medium">{fmtPrice(parseFloat(ex.trade_price), baseCurrency)}</td>
-                    <td className="py-1.5 pr-4 text-xs text-gray-600">{Math.abs(parseFloat(ex.quantity) || 0)}</td>
+                    <td className="py-1.5 pr-4 text-xs text-gray-800 font-medium"><PrivacyValue value={fmtPrice(parseFloat(ex.trade_price), baseCurrency)} /></td>
+                    <td className="py-1.5 pr-4 text-xs text-gray-600"><PrivacyValue value={Math.abs(parseFloat(ex.quantity) || 0)} /></td>
                     <td className="py-1.5 pr-4">
                       <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${ex.buy_sell === 'BUY' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
                         {ex.buy_sell}
@@ -146,7 +147,7 @@ function ExecSubTable({ execs, baseCurrency = 'USD' }) {
                     </td>
                     <td className="py-1.5 pr-4 text-xs text-gray-500">{ex.open_close_indicator || '—'}</td>
                     <td className="py-1.5 pr-4 text-xs text-gray-500">
-                      {!isNaN(commission) ? fmtPnl(commission, baseCurrency) : '—'}
+                      <PrivacyValue value={!isNaN(commission) ? fmtPnl(commission, baseCurrency) : '—'} />
                     </td>
                     <td className="py-1.5 text-xs text-gray-400 font-mono">{execIdShort}</td>
                   </tr>
@@ -211,7 +212,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, baseCurrency = 'USD' }) {
         </div>
         <div className="text-right">
           <p className={`text-2xl font-bold ${day.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-            {fmtPnl(day.pnl, baseCurrency)}
+            <PrivacyValue value={fmtPnl(day.pnl, baseCurrency)} />
           </p>
           <p className="text-sm text-gray-400">Daily P&L</p>
         </div>
@@ -278,15 +279,15 @@ function DayBlock({ day, rawTradesWithIso, onResolve, baseCurrency = 'USD' }) {
                     <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{row.symbol}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-900">
-                      {row.isOrphan ? <span className="text-gray-400">N/A</span> : fmtPrice(row.entry, baseCurrency)}
+                      {row.isOrphan ? <span className="text-gray-400">N/A</span> : <PrivacyValue value={fmtPrice(row.entry, baseCurrency)} />}
                     </td>
                     <td className="px-4 py-3.5 text-sm text-gray-900">
-                      {row.tradeStatus === 'open' ? '—' : fmtPrice(row.exit, baseCurrency)}
+                      {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPrice(row.exit, baseCurrency)} />}
                     </td>
-                    <td className="px-4 py-3.5 text-sm text-gray-900">{row.qty}</td>
+                    <td className="px-4 py-3.5 text-sm text-gray-900"><PrivacyValue value={row.qty} /></td>
                     <td className="px-4 py-3.5 text-sm text-gray-500">{row.duration}</td>
                     <td className={`px-4 py-3.5 text-sm font-medium ${(row.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {row.tradeStatus === 'open' ? '—' : fmtPnl(row.pnl, baseCurrency)}
+                      {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPnl(row.pnl, baseCurrency)} />}
                     </td>
                     <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center space-x-2">
@@ -320,7 +321,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, baseCurrency = 'USD' }) {
                       <td colSpan={COL_SPAN} className="px-6 py-3">
                         <div className={`bg-white rounded-xl p-4 border ${row.status === 'ambiguous' ? 'border-purple-200' : 'border-amber-200'}`}>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                            Resolve {row.symbol} &middot; {fmtPnl(row.pnl, baseCurrency)}
+                            Resolve {row.symbol} &middot; <PrivacyValue value={fmtPnl(row.pnl, baseCurrency)} />
                           </p>
                           <p className="text-sm text-gray-500 mb-3">
                             {row.status === 'unmatched'
