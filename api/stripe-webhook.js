@@ -1,73 +1,85 @@
-const stripe = require('./lib/stripe');
-const supabaseAdmin = require('./lib/supabaseAdmin');
+const Stripe = require('stripe');
+const { createClient } = require('@supabase/supabase-js');
 
-// Vercel serverless: disable body parsing so we get the raw buffer for signature verification
-module.exports.config = { api: { bodyParser: false } };
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+const supabaseAdmin = createClient(
+  process.env.REACT_APP_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 function getRawBody(req) {
   return new Promise((resolve, reject) => {
-    let data = '';
-    req.setEncoding('utf8');
-    req.on('data', chunk => { data += chunk; });
-    req.on('end', () => resolve(data));
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
 }
 
-module.exports = async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const sig = req.headers['stripe-signature'];
   if (!sig) return res.status(400).json({ error: 'Missing stripe-signature header' });
 
+  // Read raw body as Buffer — required for signature verification
   const rawBody = await getRawBody(req);
+  console.log('[webhook] received body length:', rawBody.length);
 
   let event;
   try {
     event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
+    console.error('[webhook] signature verification failed:', err.message);
     return res.status(400).json({ error: `Webhook Error: ${err.message}` });
   }
+  console.log('[webhook] verified event type:', event.type, '| id:', event.id);
 
   try {
     switch (event.type) {
+
       case 'checkout.session.completed': {
         const session = event.data.object;
         const customerId = session.customer;
         const subscriptionId = session.subscription;
+        console.log('[webhook] checkout.session.completed — customerId:', customerId, '| subscriptionId:', subscriptionId);
+        console.log('[webhook] session.metadata:', JSON.stringify(session.metadata));
 
-        // Primary: user ID from session metadata
+        // Primary: get userId from session metadata
         let userId = session.metadata?.supabase_user_id;
-        console.log('[webhook] checkout.session.completed — customerId:', customerId, '| userId from metadata:', userId);
+        console.log('[webhook] userId from metadata:', userId);
 
-        // Fallback: look up by stripe_customer_id saved at customer-creation time
+        // Fallback: look up by stripe_customer_id (written at customer-creation time)
         if (!userId) {
-          console.log('[webhook] metadata missing, falling back to stripe_customer_id lookup');
-          const { data: existingRow, error: lookupError } = await supabaseAdmin
+          console.log('[webhook] metadata missing — falling back to stripe_customer_id lookup');
+          const { data: row, error: lookupErr } = await supabaseAdmin
             .from('user_subscriptions')
             .select('user_id')
             .eq('stripe_customer_id', customerId)
             .maybeSingle();
-          if (lookupError) console.error('[webhook] lookup error:', lookupError.message);
-          userId = existingRow?.user_id;
-          console.log('[webhook] fallback lookup result — userId:', userId);
+          if (lookupErr) console.error('[webhook] fallback lookup error:', lookupErr.message);
+          userId = row?.user_id;
+          console.log('[webhook] fallback lookup userId:', userId);
         }
 
         if (!userId) {
-          console.error('[webhook] cannot identify user — no metadata and no matching customer row');
-          break;
+          console.error('[webhook] FATAL: cannot identify user — no metadata and no matching customer row. customerId:', customerId);
+          // Return 200 so Stripe doesn't retry — this is a data issue, not a transient error
+          return res.status(200).json({ received: true, warning: 'user not identified' });
         }
 
-        // Retrieve subscription to get trial/active status and period end
+        // Fetch subscription from Stripe to get accurate status + dates
+        console.log('[webhook] retrieving subscription:', subscriptionId);
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-        const status = subscription.status; // 'trialing' or 'active'
+        const status = subscription.status;
         const periodEnd = subscription.current_period_end
           ? new Date(subscription.current_period_end * 1000).toISOString() : null;
         const trialEnd = subscription.trial_end
           ? new Date(subscription.trial_end * 1000).toISOString() : null;
+        console.log('[webhook] subscription status:', status, '| trialEnd:', trialEnd, '| periodEnd:', periodEnd);
 
-        await supabaseAdmin
+        const { error: upsertErr } = await supabaseAdmin
           .from('user_subscriptions')
           .upsert(
             {
@@ -75,12 +87,16 @@ module.exports = async function handler(req, res) {
               stripe_customer_id: customerId,
               stripe_subscription_id: subscriptionId,
               subscription_status: status,
-              current_period_ends_at: periodEnd,
               trial_ends_at: trialEnd,
+              current_period_ends_at: periodEnd,
             },
             { onConflict: 'user_id' }
           );
-        console.log('[webhook] upserted user_subscriptions for userId:', userId, '| status:', status);
+        if (upsertErr) {
+          console.error('[webhook] upsert error:', upsertErr.message);
+          return res.status(500).json({ error: upsertErr.message });
+        }
+        console.log('[webhook] upserted user_subscriptions — userId:', userId, '| status:', status);
         break;
       }
 
@@ -90,36 +106,48 @@ module.exports = async function handler(req, res) {
           ? new Date(subscription.current_period_end * 1000).toISOString() : null;
         const trialEnd = subscription.trial_end
           ? new Date(subscription.trial_end * 1000).toISOString() : null;
+        console.log('[webhook] subscription.updated — id:', subscription.id, '| status:', subscription.status);
 
-        await supabaseAdmin
+        const { error: updateErr } = await supabaseAdmin
           .from('user_subscriptions')
           .update({
             subscription_status: subscription.status,
-            current_period_ends_at: periodEnd,
             trial_ends_at: trialEnd,
+            current_period_ends_at: periodEnd,
           })
           .eq('stripe_subscription_id', subscription.id);
+        if (updateErr) console.error('[webhook] update error:', updateErr.message);
+        else console.log('[webhook] updated subscription status:', subscription.status);
         break;
       }
 
       case 'customer.subscription.deleted': {
         const subscription = event.data.object;
+        console.log('[webhook] subscription.deleted — id:', subscription.id);
 
-        await supabaseAdmin
+        const { error: deleteErr } = await supabaseAdmin
           .from('user_subscriptions')
           .update({ subscription_status: 'canceled' })
           .eq('stripe_subscription_id', subscription.id);
+        if (deleteErr) console.error('[webhook] delete update error:', deleteErr.message);
+        else console.log('[webhook] marked subscription as canceled');
         break;
       }
 
       default:
-        // Ignore unhandled event types
+        console.log('[webhook] unhandled event type:', event.type, '— ignoring');
         break;
     }
 
     return res.status(200).json({ received: true });
   } catch (err) {
-    console.error('Webhook handler error:', err.message);
+    console.error('[webhook] handler error:', err.message, err.stack);
     return res.status(500).json({ error: err.message });
   }
-};
+}
+
+// Config must be set on the function BEFORE exporting — not after — to avoid
+// module.exports reassignment destroying the property.
+handler.config = { api: { bodyParser: false } };
+
+module.exports = handler;

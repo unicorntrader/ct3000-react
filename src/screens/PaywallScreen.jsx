@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-export default function PaywallScreen() {
+export default function PaywallScreen({ timedOut = false }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -47,6 +47,11 @@ export default function PaywallScreen() {
 
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+          {timedOut && (
+            <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-sm text-amber-700 mb-4">
+              Your payment was received but account activation is taking longer than expected. Try refreshing in a minute, or contact support.
+            </div>
+          )}
           <h2 className="text-xl font-semibold text-gray-900 mb-1">Subscribe to CT3000</h2>
           <p className="text-sm text-gray-500 mb-6">$30/month. Cancel anytime.</p>
 
