@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { PrivacyProvider } from './lib/PrivacyContext'
 import AuthScreen from './components/AuthScreen'
@@ -7,6 +7,7 @@ import MobileNav from './components/MobileNav'
 import Sidebar from './components/Sidebar'
 import PlanSheet from './components/PlanSheet'
 import ReviewSheet from './components/ReviewSheet'
+import PaywallScreen from './screens/PaywallScreen'
 
 import HomeScreen from './screens/HomeScreen'
 import PlansScreen from './screens/PlansScreen'
@@ -82,23 +83,78 @@ function AppShell({ session }) {
   )
 }
 
+function isSubscriptionActive(sub) {
+  if (!sub) return false;
+  const { subscription_status, trial_ends_at, current_period_ends_at } = sub;
+  if (subscription_status === 'active') return true;
+  if (subscription_status === 'trialing') {
+    const endsAt = trial_ends_at || current_period_ends_at;
+    return endsAt ? new Date(endsAt) > new Date() : false;
+  }
+  return false;
+}
+
 export default function App() {
   const [session, setSession] = useState(undefined)
+  // undefined = loading, null = no subscription / paywall, object = subscription row
+  const [subscription, setSubscription] = useState(undefined)
+
+  const checkSubscription = useCallback(async (userId) => {
+    const { data, error } = await supabase
+      .from('user_subscriptions')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('Subscription check error:', error.message);
+      setSubscription(null);
+      return;
+    }
+
+    if (!data) {
+      // First login — create a trialing row
+      const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: newRow } = await supabase
+        .from('user_subscriptions')
+        .insert({ user_id: userId, subscription_status: 'trialing', trial_ends_at: trialEndsAt })
+        .select()
+        .single();
+      setSubscription(newRow);
+    } else {
+      setSubscription(data);
+    }
+  }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
+      if (session?.user?.id) checkSubscription(session.user.id)
+      else setSubscription(null)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
+      if (session?.user?.id) checkSubscription(session.user.id)
+      else setSubscription(null)
     })
 
-    return () => subscription.unsubscribe()
-  }, [])
+    return () => authSub.unsubscribe()
+  }, [checkSubscription])
+
+  // Re-check subscription on window focus (e.g. after returning from Stripe)
+  useEffect(() => {
+    const onFocus = () => {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user?.id) checkSubscription(session.user.id)
+      })
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [checkSubscription])
 
   // Loading splash
-  if (session === undefined) {
+  if (session === undefined || (session && subscription === undefined)) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -115,6 +171,10 @@ export default function App() {
 
   if (!session) {
     return <AuthScreen />
+  }
+
+  if (!isSubscriptionActive(subscription)) {
+    return <PaywallScreen />
   }
 
   return (
