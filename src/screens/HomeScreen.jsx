@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtPrice } from '../lib/formatters';
+import PrivacyValue from '../components/PrivacyValue';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -62,24 +63,29 @@ export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewD
     {
       label: "Today's P&L",
       value: todayTrades.length > 0 ? fmtPnl(todayPnl) : '—',
+      maskValue: todayTrades.length > 0,
       sub: todayTrades.length > 0 ? `${todayTrades.length} trade${todayTrades.length !== 1 ? 's' : ''}` : 'No trades today',
       color: todayPnl >= 0 ? 'text-green-600' : 'text-red-500',
     },
     {
       label: 'Open positions',
       value: String(positions.length),
+      maskValue: false,
       sub: positions.length > 0 ? fmtPnl(totalUnrealized) + ' unrealized' : 'No open positions',
+      maskSub: positions.length > 0,
       color: 'text-blue-600',
     },
     {
       label: 'Active plans',
       value: String(plans.length),
+      maskValue: false,
       sub: plans.length > 0 ? 'Ready to execute' : 'No plans yet',
       color: 'text-gray-900',
     },
     {
       label: 'Win rate (30d)',
       value: winRate != null ? `${winRate}%` : '—',
+      maskValue: false,
       sub: closedLast30.length > 0 ? `${wins}W · ${losses}L` : 'No closed trades',
       color: winRate != null && winRate >= 50 ? 'text-green-600' : 'text-red-500',
     },
@@ -119,8 +125,12 @@ export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewD
         {statCards.map(card => (
           <div key={card.label} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
             <p className="text-xs font-medium text-gray-400 mb-1">{card.label}</p>
-            <p className={`text-2xl font-semibold ${card.color}`}>{card.value}</p>
-            <p className="text-xs text-gray-400 mt-1">{card.sub}</p>
+            <p className={`text-2xl font-semibold ${card.color}`}>
+              {card.maskValue ? <PrivacyValue value={card.value} /> : card.value}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {card.maskSub ? <PrivacyValue value={card.sub} /> : card.sub}
+            </p>
           </div>
         ))}
       </div>
@@ -179,12 +189,12 @@ export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewD
                         <div>
                           <p className="font-semibold text-gray-900">{pos.symbol}</p>
                           <p className="text-xs text-gray-400 mt-0.5">
-                            {isLong ? 'Long' : 'Short'} &middot; {qty} {pos.asset_category === 'STK' ? 'shares' : 'contracts'}
+                            {isLong ? 'Long' : 'Short'} &middot; <PrivacyValue value={qty} /> {pos.asset_category === 'STK' ? 'shares' : 'contracts'}
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className={`font-semibold ${pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmtPnl(pnl)}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">avg {fmtPrice(pos.avg_cost)}</p>
+                          <p className={`font-semibold ${pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}><PrivacyValue value={fmtPnl(pnl)} /></p>
+                          <p className="text-xs text-gray-400 mt-0.5">avg <PrivacyValue value={fmtPrice(pos.avg_cost)} /></p>
                         </div>
                       </div>
                     );
@@ -229,15 +239,15 @@ export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewD
                     <div className="grid grid-cols-3 gap-2 mb-2">
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
                         <p className="text-xs text-gray-400 mb-0.5">Entry</p>
-                        <p className="text-sm font-medium">{fmtPrice(plan.planned_entry_price)}</p>
+                        <p className="text-sm font-medium"><PrivacyValue value={fmtPrice(plan.planned_entry_price)} /></p>
                       </div>
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
                         <p className="text-xs text-gray-400 mb-0.5">Target</p>
-                        <p className="text-sm font-medium text-green-600">{fmtPrice(plan.planned_target_price)}</p>
+                        <p className="text-sm font-medium text-green-600"><PrivacyValue value={fmtPrice(plan.planned_target_price)} /></p>
                       </div>
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
                         <p className="text-xs text-gray-400 mb-0.5">Stop</p>
-                        <p className="text-sm font-medium text-red-500">{fmtPrice(plan.planned_stop_loss)}</p>
+                        <p className="text-sm font-medium text-red-500"><PrivacyValue value={fmtPrice(plan.planned_stop_loss)} /></p>
                       </div>
                     </div>
                     {(plan.notes || plan.thesis) && (
