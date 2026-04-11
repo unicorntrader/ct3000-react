@@ -7,6 +7,6 @@ import { usePrivacy } from '../lib/PrivacyContext';
  */
 export default function PrivacyValue({ value }) {
   const { isPrivate } = usePrivacy();
-  if (isPrivate) return <span className="tracking-widest select-none">••••</span>;
+  if (isPrivate) return <span className="tracking-widest select-none text-gray-400">••••</span>;
   return <>{value}</>;
 }

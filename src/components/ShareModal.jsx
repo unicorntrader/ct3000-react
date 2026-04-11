@@ -10,7 +10,7 @@ export default function ShareModal({ row, plannedStop, baseCurrency = 'USD', onC
 
   const pnl = row.pnl;
   const isWin = (pnl || 0) >= 0;
-  const outcomeEmoji = isWin ? '✅' : '❌';
+  const outcomeEmoji = isPrivate ? '•' : (isWin ? '✅' : '❌');
   const dirLabel = (row.direction || '').toUpperCase();
   const displaySymbol = (row.symbol || '').split(' ')[0];
 
@@ -70,7 +70,7 @@ export default function ShareModal({ row, plannedStop, baseCurrency = 'USD', onC
           <div className="flex items-center space-x-2 mb-3">
             <span className="text-xl font-bold text-gray-900">{displaySymbol}</span>
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-              dirLabel === 'LONG' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+              isPrivate ? 'bg-gray-100 text-gray-500' : dirLabel === 'LONG' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
             }`}>
               {dirLabel}
             </span>
@@ -87,11 +87,11 @@ export default function ShareModal({ row, plannedStop, baseCurrency = 'USD', onC
             </div>
             <div>
               <p className="text-xs text-gray-400 mb-0.5">P&L</p>
-              <p className={`font-semibold ${isWin ? 'text-green-600' : 'text-red-500'}`}>{pnlDisplay}</p>
+              <p className={`font-semibold ${isPrivate ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>{pnlDisplay}</p>
             </div>
             <div>
               <p className="text-xs text-gray-400 mb-0.5">Return</p>
-              <p className={`font-medium ${isWin ? 'text-green-600' : 'text-red-500'}`}>{pctDisplay}</p>
+              <p className={`font-medium ${isPrivate ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>{pctDisplay}</p>
             </div>
             {rDisplay != null && (
               <div>
