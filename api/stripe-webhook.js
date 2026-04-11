@@ -36,10 +36,26 @@ module.exports = async function handler(req, res) {
         const session = event.data.object;
         const customerId = session.customer;
         const subscriptionId = session.subscription;
-        const userId = session.metadata?.supabase_user_id;
+
+        // Primary: user ID from session metadata
+        let userId = session.metadata?.supabase_user_id;
+        console.log('[webhook] checkout.session.completed — customerId:', customerId, '| userId from metadata:', userId);
+
+        // Fallback: look up by stripe_customer_id saved at customer-creation time
+        if (!userId) {
+          console.log('[webhook] metadata missing, falling back to stripe_customer_id lookup');
+          const { data: existingRow, error: lookupError } = await supabaseAdmin
+            .from('user_subscriptions')
+            .select('user_id')
+            .eq('stripe_customer_id', customerId)
+            .maybeSingle();
+          if (lookupError) console.error('[webhook] lookup error:', lookupError.message);
+          userId = existingRow?.user_id;
+          console.log('[webhook] fallback lookup result — userId:', userId);
+        }
 
         if (!userId) {
-          console.error('checkout.session.completed: missing supabase_user_id in session metadata');
+          console.error('[webhook] cannot identify user — no metadata and no matching customer row');
           break;
         }
 
@@ -64,6 +80,7 @@ module.exports = async function handler(req, res) {
             },
             { onConflict: 'user_id' }
           );
+        console.log('[webhook] upserted user_subscriptions for userId:', userId, '| status:', status);
         break;
       }
 
