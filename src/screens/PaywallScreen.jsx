@@ -47,8 +47,8 @@ export default function PaywallScreen() {
 
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-1">Start your free trial</h2>
-          <p className="text-sm text-gray-500 mb-6">Full access for 7 days, then $30/month.</p>
+          <h2 className="text-xl font-semibold text-gray-900 mb-1">Subscribe to CT3000</h2>
+          <p className="text-sm text-gray-500 mb-6">$30/month. Cancel anytime.</p>
 
           <ul className="space-y-3 mb-8">
             {[
@@ -83,12 +83,12 @@ export default function PaywallScreen() {
                 Redirecting...
               </span>
             ) : (
-              'Start free trial'
+              'Subscribe now'
             )}
           </button>
 
           <p className="text-xs text-gray-400 text-center mt-4">
-            No charge for 7 days. Cancel anytime.
+            Cancel anytime from your billing portal.
           </p>
         </div>
 

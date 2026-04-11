@@ -112,35 +112,13 @@ export default function App() {
 
       if (error) {
         console.warn('[subscription] Error reading user_subscriptions (code:', error.code, '):', error.message);
-        console.warn('[subscription] If code is 42P01, the table does not exist — run the migration.');
-        console.warn('[subscription] If code is PGRST301, RLS is blocking the read — check RLS policies.');
-        // On any error, show paywall so we don't silently grant access
+        // On any DB error, fail closed — show paywall
         setSubscription(null);
         return;
       }
 
-      if (!data) {
-        console.log('[subscription] No row found — creating trialing row for new user');
-        const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-        const { data: newRow, error: insertError } = await supabase
-          .from('user_subscriptions')
-          .insert({ user_id: userId, subscription_status: 'trialing', trial_ends_at: trialEndsAt })
-          .select()
-          .single();
-
-        if (insertError) {
-          console.warn('[subscription] Insert failed (code:', insertError.code, '):', insertError.message);
-          console.warn('[subscription] If PGRST301, RLS is blocking the insert — check insert policy.');
-          setSubscription(null);
-          return;
-        }
-
-        console.log('[subscription] Created new row:', newRow);
-        setSubscription(newRow);
-      } else {
-        console.log('[subscription] Existing row:', data);
-        setSubscription(data);
-      }
+      // No row = never subscribed; show paywall
+      setSubscription(data ?? null);
     } catch (err) {
       console.error('[subscription] Unexpected error in checkSubscription:', err);
       setSubscription(null);
