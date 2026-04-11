@@ -64,7 +64,7 @@ async function getStatement(refCode, token, maxRetries = 10, waitMs = 3000) {
 const xmlParser = new XMLParser({
   ignoreAttributes:    false,
   attributeNamePrefix: '',
-  isArray: (name) => name === 'Trade' || name === 'OpenPosition',
+  isArray: (name) => ['Trade', 'OpenPosition', 'FlexStatement', 'Trades', 'OpenPositions'].includes(name),
   parseAttributeValue: false, // keep all values as strings — matches regex behaviour
   trimValues:          true,
 });
