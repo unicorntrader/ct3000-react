@@ -1,5 +1,4 @@
 const https = require('https');
-const { XMLParser } = require('fast-xml-parser');
 
 const BASE_URL = 'https://gdcdyn.interactivebrokers.com/Universal/servlet';
 const SEND_URL = `${BASE_URL}/FlexStatementService.SendRequest`;
@@ -37,19 +36,23 @@ async function getStatement(refCode, token, maxRetries = 10, waitMs = 3000) {
   for (let i = 0; i < maxRetries; i++) {
     const xml = await httpsGet(url);
 
+    // IBKR returns FlexStatementResponse while processing OR when done
     if (xml.includes('<FlexStatementResponse')) {
       const statusMatch = xml.match(/<Status>([^<]+)<\/Status>/);
       const status = statusMatch?.[1];
 
       if (status === 'Success' || status === 'Complete') {
+        // Data is embedded inside this response — return it
         return xml;
       }
 
+      // Still processing — wait and retry
       console.log(`Attempt ${i + 1}: Status=${status}, waiting...`);
       await sleep(waitMs);
       continue;
     }
 
+    // Direct FlexQueryResponse — also valid
     if (xml.includes('<FlexQueryResponse') || xml.includes('<FlexStatement ')) {
       return xml;
     }
@@ -60,78 +63,76 @@ async function getStatement(refCode, token, maxRetries = 10, waitMs = 3000) {
   throw new Error('Timed out waiting for IBKR statement after ' + maxRetries + ' attempts');
 }
 
-// ── XML parser ────────────────────────────────────────────────────────────────
-const xmlParser = new XMLParser({
-  ignoreAttributes:    false,
-  attributeNamePrefix: '',
-  isArray: (name) => ['Trade', 'OpenPosition', 'FlexStatement', 'Trades', 'OpenPositions'].includes(name),
-  parseAttributeValue: false, // keep all values as strings — matches regex behaviour
-  trimValues:          true,
-});
+function parseBaseCurrency(xml) {
+  // currency is an attribute on <AccountInformation ...> e.g. currency="USD"
+  const m = xml.match(/<AccountInformation[^>]+currency="([^"]+)"/);
+  return m ? m[1] : null;
+}
 
-// Depth-first search for all nodes with a given tag name (handles any IBKR nesting)
-function collectNodes(obj, tagName) {
-  const results = [];
-  if (!obj || typeof obj !== 'object') return results;
-  for (const [key, val] of Object.entries(obj)) {
-    if (key === tagName) {
-      const arr = Array.isArray(val) ? val : [val];
-      results.push(...arr.filter(v => v && typeof v === 'object'));
-    } else {
-      results.push(...collectNodes(val, tagName));
-    }
+function parseTrades(xml) {
+  const trades = [];
+  const tradeRegex = /<Trade\s([^>]+)\/>/g;
+  let match;
+  while ((match = tradeRegex.exec(xml)) !== null) {
+    const attrs = match[1];
+    const get = (field) => {
+      const m = attrs.match(new RegExp(`${field}="([^"]*)"`));
+      return m ? m[1] : null;
+    };
+    trades.push({
+      ibExecID:             get('ibExecID'),
+      ibOrderID:            get('ibOrderID'),
+      accountId:            get('accountId'),
+      conid:                get('conid'),
+      symbol:               get('symbol'),
+      assetCategory:        get('assetCategory'),
+      buySell:              get('buySell'),
+      openCloseIndicator:   get('openCloseIndicator'),
+      quantity:             get('quantity'),
+      tradePrice:           get('tradePrice'),
+      dateTime:             get('dateTime'),
+      netCash:              get('netCash'),
+      fifoPnlRealized:      get('fifoPnlRealized'),
+      ibCommission:         get('ibCommission'),
+      ibCommissionCurrency: get('ibCommissionCurrency'),
+      currency:             get('currency'),
+      fxRateToBase:         get('fxRateToBase'),
+      transactionType:      get('transactionType'),
+      notes:                get('notes'),
+      multiplier:           get('multiplier'),
+      strike:               get('strike'),
+      expiry:               get('expiry'),
+      putCall:              get('putCall'),
+    });
   }
-  return results;
+  return trades;
 }
 
-function parseTrades(parsed) {
-  return collectNodes(parsed, 'Trade').map(t => ({
-    ibExecID:             t.ibExecID             ?? null,
-    ibOrderID:            t.ibOrderID            ?? null,
-    accountId:            t.accountId            ?? null,
-    conid:                t.conid                ?? null,
-    symbol:               t.symbol               ?? null,
-    assetCategory:        t.assetCategory        ?? null,
-    buySell:              t.buySell              ?? null,
-    openCloseIndicator:   t.openCloseIndicator   ?? null,
-    quantity:             t.quantity             ?? null,
-    tradePrice:           t.tradePrice           ?? null,
-    dateTime:             t.dateTime             ?? null,
-    netCash:              t.netCash              ?? null,
-    fifoPnlRealized:      t.fifoPnlRealized      ?? null,
-    ibCommission:         t.ibCommission         ?? null,
-    ibCommissionCurrency: t.ibCommissionCurrency ?? null,
-    currency:             t.currency             ?? null,
-    fxRateToBase:         t.fxRateToBase         ?? null,
-    transactionType:      t.transactionType      ?? null,
-    notes:                t.notes                ?? null,
-    multiplier:           t.multiplier           ?? null,
-    strike:               t.strike               ?? null,
-    expiry:               t.expiry               ?? null,
-    putCall:              t.putCall              ?? null,
-  }));
+function parseOpenPositions(xml) {
+  const positions = [];
+  const posRegex = /<OpenPosition\s([^>]+)\/>/g;
+  let match;
+  while ((match = posRegex.exec(xml)) !== null) {
+    const attrs = match[1];
+    const get = (field) => {
+      const m = attrs.match(new RegExp(`${field}="([^"]*)"`));
+      return m ? m[1] : null;
+    };
+    positions.push({
+      accountId:     get('accountId'),
+      conid:         get('conid'),
+      symbol:        get('symbol'),
+      assetCategory: get('assetCategory'),
+      position:      get('position'),
+      avgCost:       get('avgCost') || get('openPrice'),
+      marketValue:   get('marketValue') || get('positionValue'),
+      unrealizedPnl: get('unrealizedPnl') || get('fifoPnlUnrealized'),
+      currency:      get('currency'),
+    });
+  }
+  return positions;
 }
 
-function parseOpenPositions(parsed) {
-  return collectNodes(parsed, 'OpenPosition').map(p => ({
-    accountId:     p.accountId                          ?? null,
-    conid:         p.conid                              ?? null,
-    symbol:        p.symbol                             ?? null,
-    assetCategory: p.assetCategory                      ?? null,
-    position:      p.position                           ?? null,
-    avgCost:       p.avgCost      ?? p.openPrice        ?? null,
-    marketValue:   p.marketValue  ?? p.positionValue    ?? null,
-    unrealizedPnl: p.unrealizedPnl ?? p.fifoPnlUnrealized ?? null,
-    currency:      p.currency                           ?? null,
-  }));
-}
-
-function parseBaseCurrency(parsed) {
-  const acctInfo = collectNodes(parsed, 'AccountInformation')[0];
-  return acctInfo?.currency ?? null;
-}
-
-// ── Handler ───────────────────────────────────────────────────────────────────
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -157,21 +158,13 @@ module.exports = async function handler(req, res) {
     console.log('XML length:', xml.length);
 
     console.log('Step 3: Parsing...');
-    let parsed;
-    try {
-      parsed = xmlParser.parse(xml);
-    } catch (parseErr) {
-      console.error('XML parse error:', parseErr.message);
-      return res.status(422).json({ success: false, error: 'Failed to parse IBKR response — the data format may have changed' });
-    }
+    const trades = parseTrades(xml);
+    const openPositions = parseOpenPositions(xml);
+    const baseCurrency = parseBaseCurrency(xml);
 
-    const trades        = parseTrades(parsed);
-    const openPositions = parseOpenPositions(parsed);
-    const baseCurrency  = parseBaseCurrency(parsed);
-
-    // Debug: log AccountInformation for verification
-    const acctInfo = collectNodes(parsed, 'AccountInformation')[0];
-    console.log('[sync] AccountInformation:', JSON.stringify(acctInfo ?? 'NOT FOUND'));
+    // Debug: show the AccountInformation opening tag so we can verify regex match
+    const acctInfoSnippet = xml.match(/<AccountInformation[^>]{0,200}/)?.[0] || 'NO <AccountInformation> TAG FOUND';
+    console.log('[sync] AccountInformation snippet:', acctInfoSnippet);
     console.log(`[sync] Parsed ${trades.length} trades, ${openPositions.length} open positions, baseCurrency=${baseCurrency}`);
 
     return res.status(200).json({
