@@ -27,20 +27,19 @@ export default function ShareModal({ row, plannedStop, baseCurrency = 'USD', onC
       })()
     : null;
 
-  const fmtVal = (raw, formatted) => isPrivate ? MASK : formatted;
-  const entryDisplay = row.entry != null ? fmtVal(row.entry, fmtPrice(row.entry, baseCurrency)) : '—';
-  const exitDisplay = row.exit != null ? fmtVal(row.exit, fmtPrice(row.exit, baseCurrency)) : '—';
-  const pnlDisplay = fmtVal(pnl, fmtPnl(pnl, baseCurrency));
-  const pctDisplay = pctReturn != null ? (isPrivate ? MASK : `${pctReturn}%`) : '—';
-  const rDisplay = rMultiple != null ? (isPrivate ? MASK : `${rMultiple}R`) : null;
+  const entryDisplay = row.entry != null ? (isPrivate ? MASK : fmtPrice(row.entry, baseCurrency)) : '—';
+  const exitDisplay = row.exit != null ? (isPrivate ? MASK : fmtPrice(row.exit, baseCurrency)) : '—';
+  const pnlDisplay = isPrivate ? MASK : fmtPnl(pnl, baseCurrency);
+  const pctDisplay = pctReturn != null ? `${pctReturn}%` : '—';
+  const rDisplay = rMultiple != null ? `${rMultiple}R` : null;
 
   const handleShareOnX = () => {
     const p = isPrivate ? MASK : fmtPnl(pnl, baseCurrency);
-    const pct = pctReturn != null ? (isPrivate ? MASK : `${pctReturn}%`) : '—';
+    const pct = pctReturn != null ? `${pctReturn}%` : '—';
     const en = row.entry != null ? (isPrivate ? MASK : fmtPrice(row.entry, baseCurrency)) : '—';
     const ex = row.exit != null ? (isPrivate ? MASK : fmtPrice(row.exit, baseCurrency)) : '—';
     let text = `${displaySymbol} ${dirLabel} ${outcomeEmoji}\nEntry: ${en} → Exit: ${ex}\nP&L: ${p} (${pct})`;
-    if (rMultiple != null) text += `\nR: ${isPrivate ? MASK : rMultiple}R`;
+    if (rMultiple != null) text += `\nR: ${rMultiple}R`;
     text += '\n#CT3000';
     window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
   };
