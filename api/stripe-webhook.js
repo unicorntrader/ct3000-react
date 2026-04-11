@@ -36,6 +36,12 @@ module.exports = async function handler(req, res) {
         const session = event.data.object;
         const customerId = session.customer;
         const subscriptionId = session.subscription;
+        const userId = session.metadata?.supabase_user_id;
+
+        if (!userId) {
+          console.error('checkout.session.completed: missing supabase_user_id in session metadata');
+          break;
+        }
 
         // Retrieve subscription to get trial/active status and period end
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
@@ -49,13 +55,14 @@ module.exports = async function handler(req, res) {
           .from('user_subscriptions')
           .upsert(
             {
+              user_id: userId,
               stripe_customer_id: customerId,
               stripe_subscription_id: subscriptionId,
               subscription_status: status,
               current_period_ends_at: periodEnd,
               trial_ends_at: trialEnd,
             },
-            { onConflict: 'stripe_customer_id' }
+            { onConflict: 'user_id' }
           );
         break;
       }
