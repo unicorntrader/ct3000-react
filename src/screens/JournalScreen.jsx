@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { fmtPnl, fmtDate } from '../lib/formatters';
 
 const FILTERS = ['All', 'Open', 'Wins', 'Losses', 'Matched', 'Unmatched', 'Ambiguous'];
 
@@ -9,17 +10,6 @@ const planStyles = {
   ambiguous: 'bg-purple-50 text-purple-600',
   auto: 'bg-gray-100 text-gray-500',
   manual: 'bg-green-50 text-green-700',
-};
-
-const fmtPnl = (n) => {
-  if (n == null) return '—';
-  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return (n >= 0 ? '+$' : '-$') + abs;
-};
-
-const fmtDate = (iso) => {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
 const calcR = (trade, plan) => {

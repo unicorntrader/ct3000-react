@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { pnlBase } from '../lib/formatters';
+import { pnlBase, fmtPnl, fmtShort } from '../lib/formatters';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -17,32 +17,6 @@ const presetStartDate = (p) => {
   if (p === '1M') { const d = new Date(now); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 10); }
   if (p === '3M') { const d = new Date(now); d.setMonth(d.getMonth() - 3); return d.toISOString().slice(0, 10); }
   return null;
-};
-
-const currencySymbol = (c) => {
-  switch (c) {
-    case 'USD': return '$';
-    case 'JPY': return '¥';
-    case 'EUR': return '€';
-    case 'GBP': return '£';
-    default: return c ? c + ' ' : '$';
-  }
-};
-
-const fmt$ = (n, currency = 'USD') => {
-  if (n == null || isNaN(n)) return '—';
-  const sym = currencySymbol(currency);
-  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return (n >= 0 ? '+' : '-') + sym + abs;
-};
-
-const fmtShort = (n, currency = 'USD') => {
-  if (n == null || isNaN(n)) return '—';
-  const sym = currencySymbol(currency);
-  const abs = Math.abs(n);
-  const sign = n >= 0 ? '+' : '-';
-  if (abs >= 1000) return sign + sym + (abs / 1000).toFixed(1) + 'k';
-  return sign + sym + abs.toFixed(0);
 };
 
 const fmtDay = (iso) => {
@@ -65,10 +39,10 @@ function CurveTip({ active, payload, baseCurrency = 'USD' }) {
     <div className="bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3 text-xs pointer-events-none">
       <p className="font-semibold text-gray-700 mb-1.5">{fmtDay(d.date)}</p>
       <p className={`mb-0.5 ${(d.dayPnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-        Day P&L: {fmt$(d.dayPnl, baseCurrency)}
+        Day P&L: {fmtPnl(d.dayPnl, baseCurrency)}
       </p>
       <p className={`font-semibold ${(d.cumPnl || 0) >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
-        Cumulative: {fmt$(d.cumPnl, baseCurrency)}
+        Cumulative: {fmtPnl(d.cumPnl, baseCurrency)}
       </p>
     </div>
   );
@@ -90,7 +64,7 @@ function BarRow({ label, pnl, trades, wins, maxAbsPnl, baseCurrency = 'USD' }) {
         />
       </div>
       <span className={`text-xs font-semibold w-20 text-right shrink-0 ${isPos ? 'text-green-600' : 'text-red-500'}`}>
-        {fmt$(pnl, baseCurrency)}
+        {fmtPnl(pnl, baseCurrency)}
       </span>
       <span className="text-xs text-gray-400 w-24 text-right shrink-0">
         {trades}tr · {wr}% WR
@@ -274,7 +248,7 @@ export default function PerformanceScreen({ session }) {
   const kpis = [
     {
       label: 'Net P&L',
-      value: stats ? fmt$(stats.netPnl, baseCurrency) : '—',
+      value: stats ? fmtPnl(stats.netPnl, baseCurrency) : '—',
       sub: stats ? `${stats.n} closed trades` : 'No data',
       color: stats ? (stats.netPnl >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400',
     },
@@ -287,12 +261,12 @@ export default function PerformanceScreen({ session }) {
     {
       label: 'Avg W / L',
       value: stats ? `${stats.wlRatio}` : '—',
-      sub: stats ? `${fmt$(stats.avgWin, baseCurrency)} / ${fmt$(-stats.avgLoss, baseCurrency)}` : 'No data',
+      sub: stats ? `${fmtPnl(stats.avgWin, baseCurrency)} / ${fmtPnl(-stats.avgLoss, baseCurrency)}` : 'No data',
       color: stats ? 'text-gray-900' : 'text-gray-400',
     },
     {
       label: 'Expectancy',
-      value: stats ? fmt$(stats.expectancy, baseCurrency) : '—',
+      value: stats ? fmtPnl(stats.expectancy, baseCurrency) : '—',
       sub: 'per trade',
       color: stats ? (stats.expectancy >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400',
     },
@@ -428,7 +402,7 @@ export default function PerformanceScreen({ session }) {
                   <td className="px-5 py-3.5 text-sm text-gray-600">{row.trades}</td>
                   <td className="px-5 py-3.5 text-sm text-gray-700">{row.winRate}%</td>
                   <td className={`px-5 py-3.5 text-sm font-semibold ${row.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                    {fmt$(row.pnl, baseCurrency)}
+                    {fmtPnl(row.pnl, baseCurrency)}
                   </td>
                 </tr>
               ))}

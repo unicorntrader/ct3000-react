@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { pnlBase } from '../lib/formatters';
+import { pnlBase, currencySymbol, fmtPrice, fmtPnl } from '../lib/formatters';
 
 const statusStyles = {
   matched: 'bg-blue-50 text-blue-600',
@@ -8,28 +8,6 @@ const statusStyles = {
   ambiguous: 'bg-purple-50 text-purple-700',
   auto: 'bg-gray-100 text-gray-500',
   manual: 'bg-green-50 text-green-700',
-};
-
-const currencySymbol = (c) => {
-  switch (c) {
-    case 'USD': return '$';
-    case 'JPY': return '¥';
-    case 'EUR': return '€';
-    case 'GBP': return '£';
-    default: return c ? c + ' ' : '$';
-  }
-};
-
-const fmtPrice = (n, currency = 'USD') => {
-  if (n == null) return '—';
-  return currencySymbol(currency) + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
-
-const fmtPnl = (n, currency = 'USD') => {
-  if (n == null) return '—';
-  const sym = currencySymbol(currency);
-  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return (n >= 0 ? '+' : '-') + sym + abs;
 };
 
 const fmtTime = (iso) => {

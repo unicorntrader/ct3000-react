@@ -1,16 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-
-const fmt = (n) => {
-  if (n == null) return 'N/A';
-  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return (n >= 0 ? '+$' : '-$') + abs;
-};
-
-const fmtPrice = (n) => {
-  if (n == null) return 'N/A';
-  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
+import { fmtPnl, fmtPrice } from '../lib/formatters';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -71,14 +61,14 @@ export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewD
   const statCards = [
     {
       label: "Today's P&L",
-      value: todayTrades.length > 0 ? fmt(todayPnl) : '—',
+      value: todayTrades.length > 0 ? fmtPnl(todayPnl) : '—',
       sub: todayTrades.length > 0 ? `${todayTrades.length} trade${todayTrades.length !== 1 ? 's' : ''}` : 'No trades today',
       color: todayPnl >= 0 ? 'text-green-600' : 'text-red-500',
     },
     {
       label: 'Open positions',
       value: String(positions.length),
-      sub: positions.length > 0 ? fmt(totalUnrealized) + ' unrealized' : 'No open positions',
+      sub: positions.length > 0 ? fmtPnl(totalUnrealized) + ' unrealized' : 'No open positions',
       color: 'text-blue-600',
     },
     {
@@ -193,7 +183,7 @@ export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewD
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className={`font-semibold ${pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmt(pnl)}</p>
+                          <p className={`font-semibold ${pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmtPnl(pnl)}</p>
                           <p className="text-xs text-gray-400 mt-0.5">avg {fmtPrice(pos.avg_cost)}</p>
                         </div>
                       </div>

@@ -1,21 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-
-const fmtPnl = (n) => {
-  if (n == null) return '—';
-  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return (n >= 0 ? '+$' : '-$') + abs;
-};
-
-const fmtPrice = (n) => {
-  if (n == null) return null;
-  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
-
-const fmtDate = (iso) => {
-  if (!iso) return null;
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-};
+import { fmtPnl, fmtPrice, fmtDate } from '../lib/formatters';
 
 function TradeCard({ trade }) {
   const pnl = trade.total_realized_pnl || 0;
@@ -38,7 +23,7 @@ function TradeCard({ trade }) {
         </span>
       </div>
       <div className="grid grid-cols-3 gap-2">
-        {fmtPrice(trade.avg_entry_price) && (
+        {trade.avg_entry_price != null && (
           <div className="text-center"><p className="text-xs text-gray-400">Entry</p><p className="text-sm font-medium mt-0.5">{fmtPrice(trade.avg_entry_price)}</p></div>
         )}
         {trade.total_opening_quantity && (

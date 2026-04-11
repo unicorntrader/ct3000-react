@@ -1,15 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-
-const fmtPrice = (n) => {
-  if (n == null) return 'N/A';
-  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
-
-const fmtDate = (iso) => {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-};
+import { fmtPrice, fmtPnl, fmtDateLong } from '../lib/formatters';
 
 const statusStyles = {
   planned: 'bg-blue-50 text-blue-600',
@@ -55,12 +46,6 @@ export default function PlansScreen({ session, onNewPlan, refreshKey }) {
     const { planned_entry_price: entry, planned_target_price: target, planned_quantity: qty } = plan;
     if (entry == null || target == null || qty == null) return null;
     return (target - entry) * qty;
-  };
-
-  const fmtPnl = (n) => {
-    if (n == null) return 'N/A';
-    const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return (n >= 0 ? '+$' : '-$') + abs;
   };
 
   if (loading) {
@@ -117,7 +102,7 @@ export default function PlansScreen({ session, onNewPlan, refreshKey }) {
                       </span>
                     </div>
                     <p className="text-xs text-gray-400">
-                      {fmtDate(plan.created_at)}
+                      {fmtDateLong(plan.created_at)}
                       {qty != null && <> &middot; {qty} {plan.asset_category === 'OPT' ? 'contracts' : 'shares'}</>}
                       {rr != null && <> &middot; R:R {rr}</>}
                     </p>
