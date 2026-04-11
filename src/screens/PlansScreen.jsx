@@ -37,13 +37,8 @@ export default function PlansScreen({ session, onNewPlan, refreshKey }) {
     setLoading(false);
   };
 
-  const entry_ = (plan) => plan.planned_entry_price ?? plan.entry_price ?? plan.entry ?? null;
-  const target_ = (plan) => plan.planned_target_price ?? plan.target_price ?? plan.target ?? null;
-  const stop_ = (plan) => plan.planned_stop_loss ?? plan.stop_price ?? plan.stop ?? null;
-  const qty_ = (plan) => plan.planned_quantity ?? plan.shares ?? plan.quantity ?? plan.total_opening_quantity ?? null;
-
   const computeRR = (plan) => {
-    const entry = entry_(plan); const target = target_(plan); const stop = stop_(plan);
+    const { planned_entry_price: entry, planned_target_price: target, planned_stop_loss: stop } = plan;
     if (entry == null || target == null || stop == null) return null;
     const risk = Math.abs(entry - stop);
     if (risk === 0) return null;
@@ -51,13 +46,13 @@ export default function PlansScreen({ session, onNewPlan, refreshKey }) {
   };
 
   const computeRisk = (plan) => {
-    const entry = entry_(plan); const stop = stop_(plan); const qty = qty_(plan);
+    const { planned_entry_price: entry, planned_stop_loss: stop, planned_quantity: qty } = plan;
     if (entry == null || stop == null || qty == null) return null;
     return (stop - entry) * qty;
   };
 
   const computeReward = (plan) => {
-    const entry = entry_(plan); const target = target_(plan); const qty = qty_(plan);
+    const { planned_entry_price: entry, planned_target_price: target, planned_quantity: qty } = plan;
     if (entry == null || target == null || qty == null) return null;
     return (target - entry) * qty;
   };
@@ -104,7 +99,7 @@ export default function PlansScreen({ session, onNewPlan, refreshKey }) {
             const rr = computeRR(plan);
             const risk = computeRisk(plan);
             const reward = computeReward(plan);
-            const qty = qty_(plan);
+            const qty = plan.planned_quantity;
 
             return (
               <div key={plan.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
@@ -130,9 +125,9 @@ export default function PlansScreen({ session, onNewPlan, refreshKey }) {
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
                   {[
-                    { label: 'Entry', value: fmtPrice(entry_(plan)) },
-                    { label: 'Target', value: fmtPrice(target_(plan)), color: 'text-green-600' },
-                    { label: 'Stop', value: fmtPrice(stop_(plan)), color: 'text-red-500' },
+                    { label: 'Entry', value: fmtPrice(plan.planned_entry_price) },
+                    { label: 'Target', value: fmtPrice(plan.planned_target_price), color: 'text-green-600' },
+                    { label: 'Stop', value: fmtPrice(plan.planned_stop_loss), color: 'text-red-500' },
                     { label: 'Risk', value: fmtPnl(risk), color: 'text-red-500' },
                     { label: 'Reward', value: fmtPnl(reward), color: 'text-green-600' },
                     { label: 'R:R', value: rr ?? 'N/A', color: 'text-blue-600' },

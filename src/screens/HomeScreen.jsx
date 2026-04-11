@@ -239,15 +239,15 @@ export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewD
                     <div className="grid grid-cols-3 gap-2 mb-2">
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
                         <p className="text-xs text-gray-400 mb-0.5">Entry</p>
-                        <p className="text-sm font-medium">{fmtPrice(plan.entry_price ?? plan.entry)}</p>
+                        <p className="text-sm font-medium">{fmtPrice(plan.planned_entry_price)}</p>
                       </div>
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
                         <p className="text-xs text-gray-400 mb-0.5">Target</p>
-                        <p className="text-sm font-medium text-green-600">{fmtPrice(plan.target_price ?? plan.target)}</p>
+                        <p className="text-sm font-medium text-green-600">{fmtPrice(plan.planned_target_price)}</p>
                       </div>
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
                         <p className="text-xs text-gray-400 mb-0.5">Stop</p>
-                        <p className="text-sm font-medium text-red-500">{fmtPrice(plan.stop_price ?? plan.stop)}</p>
+                        <p className="text-sm font-medium text-red-500">{fmtPrice(plan.planned_stop_loss)}</p>
                       </div>
                     </div>
                     {(plan.notes || plan.thesis) && (

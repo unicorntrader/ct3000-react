@@ -24,8 +24,7 @@ const fmtDate = (iso) => {
 
 const calcR = (trade, plan) => {
   if (!plan) return null;
-  const entry = plan.entry_price ?? plan.entry;
-  const stop = plan.stop_price ?? plan.stop;
+  const { planned_entry_price: entry, planned_stop_loss: stop } = plan;
   const qty = trade.total_closing_quantity || trade.total_opening_quantity;
   if (entry == null || stop == null || !qty) return null;
   const riskPerShare = Math.abs(entry - stop);
@@ -55,7 +54,7 @@ export default function JournalScreen({ session }) {
         .order('opened_at', { ascending: false }),
       supabase
         .from('planned_trades')
-        .select('id, entry_price, entry, stop_price, stop, symbol, direction')
+        .select('id, planned_entry_price, planned_stop_loss, symbol, direction')
         .eq('user_id', userId),
     ]);
 

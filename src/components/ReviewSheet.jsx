@@ -90,7 +90,7 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
     if (tradeList.length > 0) {
       const { data: allPlans } = await supabase
         .from('planned_trades')
-        .select('id, symbol, direction, asset_category, entry_price, entry, created_at, notes, thesis')
+        .select('id, symbol, direction, asset_category, planned_entry_price, created_at, notes, thesis')
         .eq('user_id', session.user.id);
 
       const plans = allPlans || [];
@@ -255,7 +255,7 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
                           </p>
                           <p className="text-xs text-gray-400 mt-0.5">
                             {fmtDate(plan.created_at)}
-                            {(plan.entry_price ?? plan.entry) != null && ` · Entry ${fmtPrice(plan.entry_price ?? plan.entry)}`}
+                            {plan.planned_entry_price != null && ` · Entry ${fmtPrice(plan.planned_entry_price)}`}
                             {(plan.notes || plan.thesis) && ` · ${(plan.notes || plan.thesis).slice(0, 40)}`}
                           </p>
                         </div>
