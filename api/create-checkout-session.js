@@ -46,7 +46,7 @@ module.exports = async function handler(req, res) {
     const session = await stripe.checkout.sessions.create({
       customer: customer.id,
       mode: 'subscription',
-      line_items: [{ price: 'price_1TL4NdAu7jOW9xbVqx8Ml6IJ', quantity: 1 }],
+      line_items: [{ price: 'price_1TL652Au7jOW9xbVPjCEQLiP', quantity: 1 }],
       subscription_data: { trial_period_days: 7 },
       success_url: 'https://ct3000-react.vercel.app?session_id={CHECKOUT_SESSION_ID}',
       cancel_url: 'https://ct3000-react.vercel.app',
