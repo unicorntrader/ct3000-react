@@ -203,8 +203,6 @@ export default function IBKRScreen({ session }) {
         return;
       }
 
-      console.log('[Sync] API result.baseCurrency:', result.baseCurrency);
-
       const userId = session.user.id;
 
       // Step 3: Upsert trades
@@ -284,7 +282,6 @@ export default function IBKRScreen({ session }) {
         ...(accountId && { account_id: accountId }),
         ...(result.baseCurrency && { base_currency: result.baseCurrency }),
       };
-      console.log('[Sync] credentials update payload:', JSON.stringify(credPayload));
       const { error: credUpdateError } = await supabase
         .from('user_ibkr_credentials')
         .update(credPayload)
