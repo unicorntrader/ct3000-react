@@ -40,7 +40,10 @@ module.exports = async function handler(req, res) {
         // Retrieve subscription to get trial/active status and period end
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
         const status = subscription.status; // 'trialing' or 'active'
-        const periodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+        const periodEnd = subscription.current_period_end
+          ? new Date(subscription.current_period_end * 1000).toISOString() : null;
+        const trialEnd = subscription.trial_end
+          ? new Date(subscription.trial_end * 1000).toISOString() : null;
 
         await supabaseAdmin
           .from('user_subscriptions')
@@ -50,6 +53,7 @@ module.exports = async function handler(req, res) {
               stripe_subscription_id: subscriptionId,
               subscription_status: status,
               current_period_ends_at: periodEnd,
+              trial_ends_at: trialEnd,
             },
             { onConflict: 'stripe_customer_id' }
           );
@@ -58,13 +62,17 @@ module.exports = async function handler(req, res) {
 
       case 'customer.subscription.updated': {
         const subscription = event.data.object;
-        const periodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+        const periodEnd = subscription.current_period_end
+          ? new Date(subscription.current_period_end * 1000).toISOString() : null;
+        const trialEnd = subscription.trial_end
+          ? new Date(subscription.trial_end * 1000).toISOString() : null;
 
         await supabaseAdmin
           .from('user_subscriptions')
           .update({
             subscription_status: subscription.status,
             current_period_ends_at: periodEnd,
+            trial_ends_at: trialEnd,
           })
           .eq('stripe_subscription_id', subscription.id);
         break;
