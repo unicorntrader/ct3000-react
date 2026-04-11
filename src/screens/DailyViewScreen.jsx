@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { pnlBase } from '../lib/formatters';
 
 const statusStyles = {
   matched: 'bg-blue-50 text-blue-600',
@@ -464,7 +465,6 @@ export default function DailyViewScreen({ session }) {
     }
 
     let result = Array.from(grouped.entries()).map(([dateKey, dayTrades]) => {
-      const pnlBase = (t) => (t.total_realized_pnl || 0) * (t.fx_rate_to_base || 1);
       const closed = dayTrades.filter(t => t.status === 'closed');
       const wins = closed.filter(t => pnlBase(t) > 0).length;
       const losses = closed.filter(t => pnlBase(t) <= 0).length;

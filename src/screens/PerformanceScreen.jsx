@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { pnlBase } from '../lib/formatters';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -161,9 +162,6 @@ export default function PerformanceScreen({ session }) {
       return true;
     });
   }, [allTrades, preset, customFrom, customTo]);
-
-  // P&L converted to base currency using IBKR's fxRateToBase recorded at execution time
-  const pnlBase = (t) => (t.total_realized_pnl || 0) * (t.fx_rate_to_base || 1);
 
   // ── KPI stats ──
   const stats = useMemo(() => {
