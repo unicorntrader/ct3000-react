@@ -7,9 +7,12 @@ const strategies = [
   { group: 'Thesis-driven', options: ['Value', 'Fundamental', 'Macro', 'Catalyst'] },
 ];
 
-export default function PlanSheet({ session, isOpen, onClose, onSaved }) {
+export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
+  const isEdit = !!plan?.id;
+
   const [direction, setDirection] = useState('long');
   const [symbol, setSymbol] = useState('');
+  const [assetCategory, setAssetCategory] = useState('STK');
   const [strategy, setStrategy] = useState('');
   const [entry, setEntry] = useState('');
   const [target, setTarget] = useState('');
@@ -19,6 +22,29 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Populate form when sheet opens
+  useEffect(() => {
+    if (!isOpen) return;
+    if (plan) {
+      setDirection((plan.direction || 'LONG').toLowerCase());
+      setSymbol(plan.symbol || '');
+      setAssetCategory(plan.asset_category || 'STK');
+      setStrategy(plan.strategy || '');
+      setEntry(plan.planned_entry_price != null ? String(plan.planned_entry_price) : '');
+      setTarget(plan.planned_target_price != null ? String(plan.planned_target_price) : '');
+      setStop(plan.planned_stop_loss != null ? String(plan.planned_stop_loss) : '');
+      setQty(plan.planned_quantity != null ? String(plan.planned_quantity) : '');
+      setThesis(plan.thesis ?? plan.notes ?? '');
+    } else {
+      resetForm();
+    }
+    setError(null);
+    setSaved(false);
+    setConfirmDelete(false);
+  }, [isOpen, plan?.id]);
 
   const e = parseFloat(entry) || 0;
   const t = parseFloat(target) || 0;
@@ -37,15 +63,15 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved }) {
 
   useEffect(() => {
     if (!isOpen) return;
-    const handleKeyDown = (ev) => { if (ev.key === 'Escape') onClose(); };
+    const handleKeyDown = (ev) => { if (ev.key === 'Escape') handleClose(); };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
   const resetForm = () => {
-    setSymbol(''); setStrategy(''); setDirection('long');
+    setSymbol(''); setStrategy(''); setDirection('long'); setAssetCategory('STK');
     setEntry(''); setTarget(''); setStop(''); setQty(''); setThesis('');
-    setError(null); setSaved(false);
+    setError(null); setSaved(false); setConfirmDelete(false);
   };
 
   const handleClose = () => { resetForm(); onClose(); };
@@ -61,20 +87,31 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved }) {
     setError(null);
     setSaving(true);
 
-    const { error: dbError } = await supabase
-      .from('planned_trades')
-      .insert({
-        user_id:               session.user.id,
-        symbol:                symbol.trim().toUpperCase(),
-        direction:             direction.toUpperCase(),
-        asset_category:        'STK',
-        planned_entry_price:   e || null,
-        planned_target_price:  t || null,
-        planned_stop_loss:     s || null,
-        planned_quantity:      q || null,
-        strategy:              strategy || null,
-        thesis:                thesis.trim() || null,
-      });
+    const payload = {
+      user_id:               session.user.id,
+      symbol:                symbol.trim().toUpperCase(),
+      direction:             direction.toUpperCase(),
+      asset_category:        assetCategory,
+      planned_entry_price:   e || null,
+      planned_target_price:  t || null,
+      planned_stop_loss:     s || null,
+      planned_quantity:      q || null,
+      strategy:              strategy || null,
+      thesis:                thesis.trim() || null,
+    };
+
+    let dbError;
+    if (isEdit) {
+      ({ error: dbError } = await supabase
+        .from('planned_trades')
+        .update(payload)
+        .eq('id', plan.id)
+        .eq('user_id', session.user.id));
+    } else {
+      ({ error: dbError } = await supabase
+        .from('planned_trades')
+        .insert(payload));
+    }
 
     setSaving(false);
     if (dbError) {
@@ -83,6 +120,27 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved }) {
     }
     setSaved(true);
     setTimeout(() => { handleClose(); onSaved?.(); }, 1200);
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setDeleting(true);
+    const { error: dbError } = await supabase
+      .from('planned_trades')
+      .delete()
+      .eq('id', plan.id)
+      .eq('user_id', session.user.id);
+    setDeleting(false);
+    if (dbError) {
+      setError(`Delete failed: ${dbError.message}`);
+      setConfirmDelete(false);
+      return;
+    }
+    handleClose();
+    onSaved?.();
   };
 
   if (!isOpen) return null;
@@ -94,7 +152,9 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved }) {
       <div className="relative z-10 w-full max-w-lg bg-white rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="px-6 pt-6 pb-8">
           <div className="flex items-center justify-between mb-5">
-            <h3 className="text-lg font-semibold text-gray-900">New plan</h3>
+            <h3 className="text-lg font-semibold text-gray-900">
+              {isEdit ? 'Edit plan' : 'New plan'}
+            </h3>
             <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 p-1 -mr-1">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -109,7 +169,9 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved }) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <p className="text-sm font-semibold text-gray-900">Plan saved</p>
+              <p className="text-sm font-semibold text-gray-900">
+                {isEdit ? 'Plan updated' : 'Plan saved'}
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -237,8 +299,22 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved }) {
                 disabled={saving}
                 className="w-full bg-blue-600 text-white font-semibold py-3.5 rounded-xl text-sm hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
-                {saving ? 'Saving...' : 'Save plan'}
+                {saving ? 'Saving...' : isEdit ? 'Save changes' : 'Save plan'}
               </button>
+
+              {isEdit && (
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className={`w-full font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-50 ${
+                    confirmDelete
+                      ? 'bg-red-600 text-white hover:bg-red-700'
+                      : 'border border-red-200 text-red-500 hover:bg-red-50'
+                  }`}
+                >
+                  {deleting ? 'Deleting...' : confirmDelete ? 'Tap again to confirm delete' : 'Delete plan'}
+                </button>
+              )}
             </div>
           )}
         </div>

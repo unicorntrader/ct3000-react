@@ -8,7 +8,7 @@ const statusStyles = {
   active: 'bg-blue-50 text-blue-600',
 };
 
-export default function PlansScreen({ session, onNewPlan, refreshKey }) {
+export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey }) {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -87,7 +87,7 @@ export default function PlansScreen({ session, onNewPlan, refreshKey }) {
             const qty = plan.planned_quantity;
 
             return (
-              <div key={plan.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+              <div key={plan.id} onClick={() => onEditPlan?.(plan)} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 cursor-pointer hover:border-blue-200 hover:shadow-md transition-all">
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <div className="flex items-center space-x-3 mb-1">
