@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPnl, fmtPrice } from '../lib/formatters';
+import { fmtPnl, fmtPrice, currencySymbol } from '../lib/formatters';
 import PrivacyValue from '../components/PrivacyValue';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -189,12 +189,16 @@ export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewD
                         <div>
                           <p className="font-semibold text-gray-900">{pos.symbol}</p>
                           <p className="text-xs text-gray-400 mt-0.5">
-                            {isLong ? 'Long' : 'Short'} &middot; <PrivacyValue value={qty} /> {pos.asset_category === 'STK' ? 'shares' : 'contracts'}
+                            {isLong ? 'Long' : 'Short'} &middot; <PrivacyValue value={qty} /> {pos.asset_category === 'STK' ? 'shares' : pos.asset_category === 'OPT' ? 'contracts' : 'units'}
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className={`font-semibold ${pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}><PrivacyValue value={fmtPnl(pnl)} /></p>
-                          <p className="text-xs text-gray-400 mt-0.5">avg <PrivacyValue value={fmtPrice(pos.avg_cost)} /></p>
+                          <p className={`font-semibold ${pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                            <PrivacyValue value={fmtPnl(pnl, pos.currency)} />
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            avg <PrivacyValue value={fmtPrice(pos.avg_cost, pos.currency)} /> &middot; <span className="text-gray-300">at last sync</span>
+                          </p>
                         </div>
                       </div>
                     );
