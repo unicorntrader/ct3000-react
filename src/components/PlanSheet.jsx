@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 const strategies = [
@@ -44,7 +44,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
     setError(null);
     setSaved(false);
     setConfirmDelete(false);
-  }, [isOpen, plan?.id]);
+  }, [isOpen, plan, resetForm]);
 
   const e = parseFloat(entry) || 0;
   const t = parseFloat(target) || 0;
@@ -66,15 +66,15 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
     const handleKeyDown = (ev) => { if (ev.key === 'Escape') handleClose(); };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, handleClose]);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setSymbol(''); setStrategy(''); setDirection('long'); setAssetCategory('STK');
     setEntry(''); setTarget(''); setStop(''); setQty(''); setThesis('');
     setError(null); setSaved(false); setConfirmDelete(false);
-  };
+  }, []);
 
-  const handleClose = () => { resetForm(); onClose(); };
+  const handleClose = useCallback(() => { resetForm(); onClose(); }, [resetForm, onClose]);
 
   const handleSave = async () => {
     if (!session?.user?.id) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtPrice, fmtDate } from '../lib/formatters';
 
@@ -55,9 +55,9 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
     if (isOpen && session?.user?.id) {
       loadReviewTrades();
     }
-  }, [isOpen, session]);
+  }, [isOpen, loadReviewTrades]);
 
-  const loadReviewTrades = async () => {
+  const loadReviewTrades = useCallback(async () => {
     setLoading(true);
     setStep(0);
     setSelected(null);
@@ -91,7 +91,7 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
     }
 
     setLoading(false);
-  };
+  }, [session]);
 
   const current = trades[step] || null;
   const total = trades.length;
