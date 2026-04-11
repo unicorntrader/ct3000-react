@@ -19,9 +19,9 @@ const currencySymbol = (c) => {
   }
 };
 
-const fmtPrice = (n) => {
+const fmtPrice = (n, currency = 'USD') => {
   if (n == null) return '—';
-  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return currencySymbol(currency) + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
 const fmtPnl = (n, currency = 'USD') => {
@@ -126,7 +126,7 @@ function AssetBadge({ category }) {
 
 const COL_SPAN = 11; // TYPE TIME SYMBOL DIR ENTRY EXIT QTY DURATION P&L STATUS chevron
 
-function ExecSubTable({ execs }) {
+function ExecSubTable({ execs, baseCurrency = 'USD' }) {
   if (!execs || execs.length === 0) {
     return (
       <tr>
@@ -158,7 +158,7 @@ function ExecSubTable({ execs }) {
                 return (
                   <tr key={i} className="border-t border-gray-100 first:border-0">
                     <td className="py-1.5 pr-4 text-xs text-gray-600">{time}</td>
-                    <td className="py-1.5 pr-4 text-xs text-gray-800 font-medium">{fmtPrice(parseFloat(ex.trade_price))}</td>
+                    <td className="py-1.5 pr-4 text-xs text-gray-800 font-medium">{fmtPrice(parseFloat(ex.trade_price), baseCurrency)}</td>
                     <td className="py-1.5 pr-4 text-xs text-gray-600">{Math.abs(parseFloat(ex.quantity) || 0)}</td>
                     <td className="py-1.5 pr-4">
                       <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${ex.buy_sell === 'BUY' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
@@ -167,7 +167,7 @@ function ExecSubTable({ execs }) {
                     </td>
                     <td className="py-1.5 pr-4 text-xs text-gray-500">{ex.open_close_indicator || '—'}</td>
                     <td className="py-1.5 pr-4 text-xs text-gray-500">
-                      {!isNaN(commission) ? fmtPnl(commission) : '—'}
+                      {!isNaN(commission) ? fmtPnl(commission, baseCurrency) : '—'}
                     </td>
                     <td className="py-1.5 text-xs text-gray-400 font-mono">{execIdShort}</td>
                   </tr>
@@ -181,7 +181,7 @@ function ExecSubTable({ execs }) {
   );
 }
 
-function DayBlock({ day, rawTradesWithIso, onResolve }) {
+function DayBlock({ day, rawTradesWithIso, onResolve, baseCurrency = 'USD' }) {
   const [note, setNote] = useState(day.note);
   const [editingNote, setEditingNote] = useState(false);
   const [noteInput, setNoteInput] = useState(day.note || '');
@@ -232,7 +232,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve }) {
         </div>
         <div className="text-right">
           <p className={`text-2xl font-bold ${day.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-            {fmtPnl(day.pnl)}
+            {fmtPnl(day.pnl, baseCurrency)}
           </p>
           <p className="text-sm text-gray-400">Daily P&L</p>
         </div>
@@ -299,15 +299,15 @@ function DayBlock({ day, rawTradesWithIso, onResolve }) {
                     <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{row.symbol}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-900">
-                      {row.isOrphan ? <span className="text-gray-400">N/A</span> : fmtPrice(row.entry)}
+                      {row.isOrphan ? <span className="text-gray-400">N/A</span> : fmtPrice(row.entry, baseCurrency)}
                     </td>
                     <td className="px-4 py-3.5 text-sm text-gray-900">
-                      {row.tradeStatus === 'open' ? '—' : fmtPrice(row.exit)}
+                      {row.tradeStatus === 'open' ? '—' : fmtPrice(row.exit, baseCurrency)}
                     </td>
                     <td className="px-4 py-3.5 text-sm text-gray-900">{row.qty}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-500">{row.duration}</td>
                     <td className={`px-4 py-3.5 text-sm font-medium ${(row.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {row.tradeStatus === 'open' ? '—' : fmtPnl(row.pnl, row.currency)}
+                      {row.tradeStatus === 'open' ? '—' : fmtPnl(row.pnl, baseCurrency)}
                     </td>
                     <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center space-x-2">
@@ -334,14 +334,14 @@ function DayBlock({ day, rawTradesWithIso, onResolve }) {
                     </td>
                   </tr>
 
-                  {isExpanded && <ExecSubTable execs={execs} />}
+                  {isExpanded && <ExecSubTable execs={execs} baseCurrency={baseCurrency} />}
 
                   {needsAction && openResolve === row.id && (
                     <tr className="bg-amber-50">
                       <td colSpan={COL_SPAN} className="px-6 py-3">
                         <div className={`bg-white rounded-xl p-4 border ${row.status === 'ambiguous' ? 'border-purple-200' : 'border-amber-200'}`}>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                            Resolve {row.symbol} &middot; {fmtPnl(row.pnl, row.currency)}
+                            Resolve {row.symbol} &middot; {fmtPnl(row.pnl, baseCurrency)}
                           </p>
                           <p className="text-sm text-gray-500 mb-3">
                             {row.status === 'unmatched'
@@ -398,6 +398,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve }) {
 export default function DailyViewScreen({ session }) {
   const [trades, setTrades] = useState([]);
   const [rawTrades, setRawTrades] = useState([]);
+  const [baseCurrency, setBaseCurrency] = useState('USD');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
@@ -410,7 +411,7 @@ export default function DailyViewScreen({ session }) {
 
   const fetchTrades = async () => {
     const userId = session.user.id;
-    const [logicalRes, rawRes] = await Promise.all([
+    const [logicalRes, rawRes, credRes] = await Promise.all([
       supabase
         .from('logical_trades')
         .select('*')
@@ -420,9 +421,15 @@ export default function DailyViewScreen({ session }) {
         .from('trades')
         .select('ib_exec_id, ib_order_id, conid, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, currency')
         .eq('user_id', userId),
+      supabase
+        .from('user_ibkr_credentials')
+        .select('base_currency')
+        .eq('user_id', userId)
+        .single(),
     ]);
     setTrades(logicalRes.data || []);
     setRawTrades(rawRes.data || []);
+    if (credRes.data?.base_currency) setBaseCurrency(credRes.data.base_currency);
     setLoading(false);
   };
 
@@ -483,7 +490,6 @@ export default function DailyViewScreen({ session }) {
           qty: t.total_opening_quantity,
           duration: calcDuration(t.opened_at, t.closed_at),
           pnl: pnlBase(t),
-          currency: t.currency || 'USD',
           status: t.matching_status || 'auto',
           tradeStatus: t.status,
         };
@@ -563,7 +569,7 @@ export default function DailyViewScreen({ session }) {
         </div>
       ) : (
         days.map(day => (
-          <DayBlock key={day.dateKey} day={day} rawTradesWithIso={rawTradesWithIso} onResolve={handleResolve} />
+          <DayBlock key={day.dateKey} day={day} rawTradesWithIso={rawTradesWithIso} onResolve={handleResolve} baseCurrency={baseCurrency} />
         ))
       )}
     </div>

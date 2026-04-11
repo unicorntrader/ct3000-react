@@ -18,18 +18,30 @@ const presetStartDate = (p) => {
   return null;
 };
 
-const fmt$ = (n) => {
-  if (n == null || isNaN(n)) return '—';
-  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return (n >= 0 ? '+$' : '-$') + abs;
+const currencySymbol = (c) => {
+  switch (c) {
+    case 'USD': return '$';
+    case 'JPY': return '¥';
+    case 'EUR': return '€';
+    case 'GBP': return '£';
+    default: return c ? c + ' ' : '$';
+  }
 };
 
-const fmtShort = (n) => {
+const fmt$ = (n, currency = 'USD') => {
   if (n == null || isNaN(n)) return '—';
+  const sym = currencySymbol(currency);
+  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (n >= 0 ? '+' : '-') + sym + abs;
+};
+
+const fmtShort = (n, currency = 'USD') => {
+  if (n == null || isNaN(n)) return '—';
+  const sym = currencySymbol(currency);
   const abs = Math.abs(n);
   const sign = n >= 0 ? '+' : '-';
-  if (abs >= 1000) return sign + '$' + (abs / 1000).toFixed(1) + 'k';
-  return sign + '$' + abs.toFixed(0);
+  if (abs >= 1000) return sign + sym + (abs / 1000).toFixed(1) + 'k';
+  return sign + sym + abs.toFixed(0);
 };
 
 const fmtDay = (iso) => {
@@ -45,17 +57,17 @@ const sortIcon = (active, dir) => (
 
 // ─── custom tooltip ────────────────────────────────────────────────────────────
 
-function CurveTip({ active, payload }) {
+function CurveTip({ active, payload, baseCurrency = 'USD' }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3 text-xs pointer-events-none">
       <p className="font-semibold text-gray-700 mb-1.5">{fmtDay(d.date)}</p>
       <p className={`mb-0.5 ${(d.dayPnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-        Day P&L: {fmt$(d.dayPnl)}
+        Day P&L: {fmt$(d.dayPnl, baseCurrency)}
       </p>
       <p className={`font-semibold ${(d.cumPnl || 0) >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
-        Cumulative: {fmt$(d.cumPnl)}
+        Cumulative: {fmt$(d.cumPnl, baseCurrency)}
       </p>
     </div>
   );
@@ -63,7 +75,7 @@ function CurveTip({ active, payload }) {
 
 // ─── bar row (direction / asset class) ────────────────────────────────────────
 
-function BarRow({ label, pnl, trades, wins, maxAbsPnl }) {
+function BarRow({ label, pnl, trades, wins, maxAbsPnl, baseCurrency = 'USD' }) {
   const pct = maxAbsPnl > 0 ? (Math.abs(pnl) / maxAbsPnl) * 100 : 0;
   const isPos = pnl >= 0;
   const wr = trades > 0 ? Math.round((wins / trades) * 100) : 0;
@@ -77,7 +89,7 @@ function BarRow({ label, pnl, trades, wins, maxAbsPnl }) {
         />
       </div>
       <span className={`text-xs font-semibold w-20 text-right shrink-0 ${isPos ? 'text-green-600' : 'text-red-500'}`}>
-        {fmt$(pnl)}
+        {fmt$(pnl, baseCurrency)}
       </span>
       <span className="text-xs text-gray-400 w-24 text-right shrink-0">
         {trades}tr · {wr}% WR
@@ -90,6 +102,7 @@ function BarRow({ label, pnl, trades, wins, maxAbsPnl }) {
 
 export default function PerformanceScreen({ session }) {
   const [allTrades, setAllTrades] = useState([]);
+  const [baseCurrency, setBaseCurrency] = useState('USD');
   const [loading, setLoading] = useState(true);
 
   // period control
@@ -103,15 +116,23 @@ export default function PerformanceScreen({ session }) {
 
   useEffect(() => {
     if (!session?.user?.id) return;
-    supabase
-      .from('logical_trades')
-      .select('id, symbol, direction, asset_category, fx_rate_to_base, status, closed_at, opened_at, total_realized_pnl, matching_status')
-      .eq('user_id', session.user.id)
-      .eq('status', 'closed')
-      .then(({ data }) => {
-        setAllTrades(data || []);
-        setLoading(false);
-      });
+    const userId = session.user.id;
+    Promise.all([
+      supabase
+        .from('logical_trades')
+        .select('id, symbol, direction, asset_category, fx_rate_to_base, status, closed_at, opened_at, total_realized_pnl, matching_status')
+        .eq('user_id', userId)
+        .eq('status', 'closed'),
+      supabase
+        .from('user_ibkr_credentials')
+        .select('base_currency')
+        .eq('user_id', userId)
+        .single(),
+    ]).then(([tradesRes, credRes]) => {
+      setAllTrades(tradesRes.data || []);
+      if (credRes.data?.base_currency) setBaseCurrency(credRes.data.base_currency);
+      setLoading(false);
+    });
   }, [session]);
 
   const handlePreset = (p) => {
@@ -255,7 +276,7 @@ export default function PerformanceScreen({ session }) {
   const kpis = [
     {
       label: 'Net P&L',
-      value: stats ? fmt$(stats.netPnl) : '—',
+      value: stats ? fmt$(stats.netPnl, baseCurrency) : '—',
       sub: stats ? `${stats.n} closed trades` : 'No data',
       color: stats ? (stats.netPnl >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400',
     },
@@ -268,12 +289,12 @@ export default function PerformanceScreen({ session }) {
     {
       label: 'Avg W / L',
       value: stats ? `${stats.wlRatio}` : '—',
-      sub: stats ? `${fmt$(stats.avgWin)} / ${fmt$(-stats.avgLoss)}` : 'No data',
+      sub: stats ? `${fmt$(stats.avgWin, baseCurrency)} / ${fmt$(-stats.avgLoss, baseCurrency)}` : 'No data',
       color: stats ? 'text-gray-900' : 'text-gray-400',
     },
     {
       label: 'Expectancy',
-      value: stats ? fmt$(stats.expectancy) : '—',
+      value: stats ? fmt$(stats.expectancy, baseCurrency) : '—',
       sub: 'per trade',
       color: stats ? (stats.expectancy >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400',
     },
@@ -358,14 +379,14 @@ export default function PerformanceScreen({ session }) {
                 minTickGap={40}
               />
               <YAxis
-                tickFormatter={fmtShort}
+                tickFormatter={(n) => fmtShort(n, baseCurrency)}
                 tick={{ fontSize: 11, fill: '#9ca3af' }}
                 axisLine={false}
                 tickLine={false}
                 domain={[yMin - yPad, yMax + yPad]}
                 width={52}
               />
-              <Tooltip content={<CurveTip />} cursor={{ stroke: '#e5e7eb', strokeWidth: 1 }} />
+              <Tooltip content={<CurveTip baseCurrency={baseCurrency} />} cursor={{ stroke: '#e5e7eb', strokeWidth: 1 }} />
               <Line
                 type="monotone"
                 dataKey="cumPnl"
@@ -409,7 +430,7 @@ export default function PerformanceScreen({ session }) {
                   <td className="px-5 py-3.5 text-sm text-gray-600">{row.trades}</td>
                   <td className="px-5 py-3.5 text-sm text-gray-700">{row.winRate}%</td>
                   <td className={`px-5 py-3.5 text-sm font-semibold ${row.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                    {fmt$(row.pnl)}
+                    {fmt$(row.pnl, baseCurrency)}
                   </td>
                 </tr>
               ))}
@@ -426,7 +447,7 @@ export default function PerformanceScreen({ session }) {
             <p className="text-sm text-gray-400 py-4 text-center">No data</p>
           ) : (
             dirRows.map(r => (
-              <BarRow key={r.label} {...r} maxAbsPnl={maxDirAbs} />
+              <BarRow key={r.label} {...r} maxAbsPnl={maxDirAbs} baseCurrency={baseCurrency} />
             ))
           )}
         </div>
@@ -436,7 +457,7 @@ export default function PerformanceScreen({ session }) {
             <p className="text-sm text-gray-400 py-4 text-center">No data</p>
           ) : (
             assetRows.map(r => (
-              <BarRow key={r.label} {...r} maxAbsPnl={maxAssetAbs} />
+              <BarRow key={r.label} {...r} maxAbsPnl={maxAssetAbs} baseCurrency={baseCurrency} />
             ))
           )}
         </div>
