@@ -108,7 +108,7 @@ function AssetBadge({ category }) {
 
 const COL_SPAN = 12; // TYPE TIME SYMBOL DIR ENTRY EXIT QTY DURATION P&L STATUS share chevron
 
-function ExecSubTable({ execs, baseCurrency = 'USD' }) {
+function ExecSubTable({ execs }) {
   if (!execs || execs.length === 0) {
     return (
       <tr>
@@ -140,7 +140,7 @@ function ExecSubTable({ execs, baseCurrency = 'USD' }) {
                 return (
                   <tr key={i} className="border-t border-gray-100 first:border-0">
                     <td className="py-1.5 pr-4 text-xs text-gray-600">{time}</td>
-                    <td className="py-1.5 pr-4 text-xs text-gray-800 font-medium"><PrivacyValue value={fmtPrice(parseFloat(ex.trade_price), baseCurrency)} /></td>
+                    <td className="py-1.5 pr-4 text-xs text-gray-800 font-medium"><PrivacyValue value={fmtPrice(parseFloat(ex.trade_price), ex.currency)} /></td>
                     <td className="py-1.5 pr-4 text-xs text-gray-600"><PrivacyValue value={Math.abs(parseFloat(ex.quantity) || 0)} /></td>
                     <td className="py-1.5 pr-4">
                       <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${ex.buy_sell === 'BUY' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
@@ -149,7 +149,7 @@ function ExecSubTable({ execs, baseCurrency = 'USD' }) {
                     </td>
                     <td className="py-1.5 pr-4 text-xs text-gray-500">{ex.open_close_indicator || '—'}</td>
                     <td className="py-1.5 pr-4 text-xs text-gray-500">
-                      <PrivacyValue value={!isNaN(commission) ? fmtPnl(commission, baseCurrency) : '—'} />
+                      <PrivacyValue value={!isNaN(commission) ? fmtPnl(commission, ex.currency) : '—'} />
                     </td>
                     <td className="py-1.5 text-xs text-gray-400 font-mono">{execIdShort}</td>
                   </tr>
@@ -283,15 +283,15 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{row.symbol}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-900">
-                      {row.isOrphan ? <span className="text-gray-400">N/A</span> : <PrivacyValue value={fmtPrice(row.entry, baseCurrency)} />}
+                      {row.isOrphan ? <span className="text-gray-400">N/A</span> : <PrivacyValue value={fmtPrice(row.entry, row.currency)} />}
                     </td>
                     <td className="px-4 py-3.5 text-sm text-gray-900">
-                      {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPrice(row.exit, baseCurrency)} />}
+                      {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPrice(row.exit, row.currency)} />}
                     </td>
                     <td className="px-4 py-3.5 text-sm text-gray-900"><PrivacyValue value={row.qty} /></td>
                     <td className="px-4 py-3.5 text-sm text-gray-500">{row.duration}</td>
-                    <td className={`px-4 py-3.5 text-sm font-medium ${(row.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPnl(row.pnl, baseCurrency)} />}
+                    <td className={`px-4 py-3.5 text-sm font-medium ${(row.nativePnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                      {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPnl(row.nativePnl, row.currency)} />}
                     </td>
                     <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center space-x-2">
@@ -331,14 +331,14 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     </td>
                   </tr>
 
-                  {isExpanded && <ExecSubTable execs={execs} baseCurrency={baseCurrency} />}
+                  {isExpanded && <ExecSubTable execs={execs} />}
 
                   {needsAction && openResolve === row.id && (
                     <tr className="bg-amber-50">
                       <td colSpan={COL_SPAN} className="px-6 py-3">
                         <div className={`bg-white rounded-xl p-4 border ${row.status === 'ambiguous' ? 'border-purple-200' : 'border-amber-200'}`}>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                            Resolve {row.symbol} &middot; <PrivacyValue value={fmtPnl(row.pnl, baseCurrency)} />
+                            Resolve {row.symbol} &middot; <PrivacyValue value={fmtPnl(row.nativePnl, row.currency)} />
                           </p>
                           <p className="text-sm text-gray-500 mb-3">
                             {row.status === 'unmatched'
