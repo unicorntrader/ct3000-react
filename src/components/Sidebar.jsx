@@ -15,7 +15,11 @@ export default function Sidebar({ isOpen, onClose, onTabChange, onSignOut, sessi
       .select('account_id, ibkr_token')
       .eq('user_id', session.user.id)
       .single()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error && error.code !== 'PGRST116') {
+          console.error('Sidebar: failed to load IBKR credentials:', error.message);
+          return;
+        }
         if (data?.ibkr_token) setIbkrConnected(true);
         if (data?.account_id) setAccountId(data.account_id);
       });
