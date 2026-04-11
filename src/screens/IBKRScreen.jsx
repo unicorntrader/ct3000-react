@@ -114,8 +114,19 @@ export default function IBKRScreen({ session }) {
       );
     }
 
+    const missingCurrency = allTrades.filter(t => !t.currency).length;
+    if (missingCurrency > 0) {
+      console.warn(
+        `[rebuild] ${missingCurrency} raw trade(s) have no currency. ` +
+        `Run a full Sync to populate currency for trades.`
+      );
+    }
+
     const logical = buildLogicalTrades(allTrades, userId);
     if (!logical.length) return null;
+
+    // Strip internal FIFO tracking field before sending to Supabase
+    const logicalForInsert = logical.map(({ _tempId, ...trade }) => trade);
 
     // Delete only after the build succeeds in memory
     const { error: deleteError } = await supabase
@@ -127,12 +138,15 @@ export default function IBKRScreen({ session }) {
 
     const { error: insertError } = await supabase
       .from('logical_trades')
-      .insert(logical);
+      .insert(logicalForInsert);
 
     if (insertError) return insertError.message;
 
-    if (missingFxRate > 0) {
-      return `__warn__${missingFxRate} trade(s) have no FX rate — run Sync Now to fix non-USD P&L`;
+    if (missingFxRate > 0 || missingCurrency > 0) {
+      const parts = [];
+      if (missingFxRate > 0) parts.push(`${missingFxRate} trade(s) have no FX rate`);
+      if (missingCurrency > 0) parts.push(`${missingCurrency} trade(s) have no currency`);
+      return `__warn__${parts.join('; ')} — run Sync Now to fix`;
     }
 
     // Run plan matcher
