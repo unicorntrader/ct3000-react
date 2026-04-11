@@ -90,6 +90,7 @@ export function buildLogicalTrades(rawTrades, userId) {
     const firstTrade = group[0];
     const symbol = firstTrade.symbol;
     const assetCategory = firstTrade.asset_category;
+    const currency = firstTrade.currency || null;
     const accountId = firstTrade.account_id;
     const conid = firstTrade.conid;
 
@@ -141,6 +142,7 @@ export function buildLogicalTrades(rawTrades, userId) {
         symbol,
         conid,
         asset_category: assetCategory,
+        currency,
         opening_ib_order_id: firstTrade.ib_order_id,
         direction,
         opened_at: parseDateTime(firstTrade.date_time),
@@ -172,6 +174,7 @@ export function buildLogicalTrades(rawTrades, userId) {
         symbol,
         conid,
         asset_category: assetCategory,
+        currency,
         opening_ib_order_id: firstTrade.ib_order_id,
         direction,
         opened_at: parseDateTime(firstTrade.date_time),
@@ -209,6 +212,7 @@ export function buildLogicalTrades(rawTrades, userId) {
           symbol,
           conid,
           asset_category: assetCategory,
+          currency,
           opening_ib_order_id: firstTrade.ib_order_id,
           direction,
           opened_at: parseDateTime(firstTrade.date_time),

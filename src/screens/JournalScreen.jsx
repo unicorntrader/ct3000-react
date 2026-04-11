@@ -206,10 +206,11 @@ export default function JournalScreen({ session }) {
             row={{
               symbol: shareRow.symbol,
               direction: shareRow.direction,
-              pnl: pnlBase(shareRow),
+              nativePnl: shareRow.total_realized_pnl,
+              currency: shareRow.currency,
               entry: shareRow.avg_entry_price,
-              exit: null,
               qty: shareRow.total_opening_quantity,
+              closingQty: shareRow.total_closing_quantity,
               assetCategory: shareRow.asset_category,
               plannedTradeId: shareRow.planned_trade_id,
             }}

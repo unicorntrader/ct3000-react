@@ -2,21 +2,28 @@ import React from 'react';
 import { fmtPrice, fmtPnl } from '../lib/formatters';
 import { usePrivacy } from '../lib/PrivacyContext';
 
-// row: { symbol, direction, pnl, entry, exit, qty, assetCategory, plannedTradeId }
+// row: { symbol, direction, nativePnl, currency, entry, qty, closingQty, assetCategory, plannedTradeId }
 // plannedStop: plan.planned_stop_loss or null
-export default function ShareModal({ row, plannedStop, baseCurrency = 'USD', onClose }) {
+export default function ShareModal({ row, plannedStop, onClose }) {
   const { isPrivate } = usePrivacy();
   const MASK = '••••';
 
-  const pnl = row.pnl;
+  const pnl = row.nativePnl;
+  const currency = row.currency || 'USD';
   const isWin = (pnl || 0) >= 0;
   const outcomeEmoji = isWin ? '✅' : '❌';
   const dirLabel = (row.direction || '').toUpperCase();
   const displaySymbol = (row.symbol || '').split(' ')[0];
 
   const multiplier = row.assetCategory === 'OPT' ? 100 : 1;
-  const pctReturn = (row.entry != null && row.qty != null && row.entry !== 0 && row.qty !== 0)
-    ? ((pnl / (row.entry * row.qty * multiplier)) * 100).toFixed(2)
+
+  // Weighted average exit: derived from realized P&L, entry, and closing quantity
+  const avgExit = (row.entry != null && row.closingQty != null && row.closingQty !== 0)
+    ? (pnl / (row.closingQty * multiplier)) + row.entry
+    : null;
+
+  const pctReturn = avgExit != null && row.entry !== 0
+    ? (((avgExit - row.entry) / row.entry) * 100).toFixed(2)
     : null;
 
   const rMultiple = (plannedStop != null && row.entry != null && row.qty != null && row.qty !== 0)
@@ -27,17 +34,17 @@ export default function ShareModal({ row, plannedStop, baseCurrency = 'USD', onC
       })()
     : null;
 
-  const entryDisplay = row.entry != null ? (isPrivate ? MASK : fmtPrice(row.entry, baseCurrency)) : '—';
-  const exitDisplay = row.exit != null ? (isPrivate ? MASK : fmtPrice(row.exit, baseCurrency)) : '—';
-  const pnlDisplay = isPrivate ? MASK : fmtPnl(pnl, baseCurrency);
+  const entryDisplay = row.entry != null ? (isPrivate ? MASK : fmtPrice(row.entry, currency)) : '—';
+  const exitDisplay = avgExit != null ? (isPrivate ? MASK : fmtPrice(avgExit, currency)) : '—';
+  const pnlDisplay = isPrivate ? MASK : fmtPnl(pnl, currency);
   const pctDisplay = pctReturn != null ? `${pctReturn}%` : '—';
   const rDisplay = rMultiple != null ? `${rMultiple}R` : null;
 
   const handleShareOnX = () => {
-    const p = isPrivate ? MASK : fmtPnl(pnl, baseCurrency);
+    const p = isPrivate ? MASK : fmtPnl(pnl, currency);
     const pct = pctReturn != null ? `${pctReturn}%` : '—';
-    const en = row.entry != null ? (isPrivate ? MASK : fmtPrice(row.entry, baseCurrency)) : '—';
-    const ex = row.exit != null ? (isPrivate ? MASK : fmtPrice(row.exit, baseCurrency)) : '—';
+    const en = row.entry != null ? (isPrivate ? MASK : fmtPrice(row.entry, currency)) : '—';
+    const ex = avgExit != null ? (isPrivate ? MASK : fmtPrice(avgExit, currency)) : '—';
     let text = `${displaySymbol} ${dirLabel} ${outcomeEmoji}\nEntry: ${en} → Exit: ${ex}\nP&L: ${p} (${pct})`;
     if (rMultiple != null) text += `\nR: ${rMultiple}R`;
     text += '\n#CT3000';
