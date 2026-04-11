@@ -210,6 +210,7 @@ export default function JournalScreen({ session }) {
               entry: shareRow.avg_entry_price,
               exit: null,
               qty: shareRow.total_opening_quantity,
+              assetCategory: shareRow.asset_category,
               plannedTradeId: shareRow.planned_trade_id,
             }}
             plannedStop={plan?.planned_stop_loss ?? null}

@@ -2,7 +2,7 @@ import React from 'react';
 import { fmtPrice, fmtPnl } from '../lib/formatters';
 import { usePrivacy } from '../lib/PrivacyContext';
 
-// row: { symbol, direction, pnl, entry, exit, qty, plannedTradeId }
+// row: { symbol, direction, pnl, entry, exit, qty, assetCategory, plannedTradeId }
 // plannedStop: plan.planned_stop_loss or null
 export default function ShareModal({ row, plannedStop, baseCurrency = 'USD', onClose }) {
   const { isPrivate } = usePrivacy();
@@ -12,9 +12,11 @@ export default function ShareModal({ row, plannedStop, baseCurrency = 'USD', onC
   const isWin = (pnl || 0) >= 0;
   const outcomeEmoji = isWin ? '✅' : '❌';
   const dirLabel = (row.direction || '').toUpperCase();
+  const displaySymbol = (row.symbol || '').split(' ')[0];
 
+  const multiplier = row.assetCategory === 'OPT' ? 100 : 1;
   const pctReturn = (row.entry != null && row.qty != null && row.entry !== 0 && row.qty !== 0)
-    ? ((pnl / (row.entry * row.qty)) * 100).toFixed(2)
+    ? ((pnl / (row.entry * row.qty * multiplier)) * 100).toFixed(2)
     : null;
 
   const rMultiple = (plannedStop != null && row.entry != null && row.qty != null && row.qty !== 0)
@@ -37,7 +39,7 @@ export default function ShareModal({ row, plannedStop, baseCurrency = 'USD', onC
     const pct = pctReturn != null ? (isPrivate ? MASK : `${pctReturn}%`) : '—';
     const en = row.entry != null ? (isPrivate ? MASK : fmtPrice(row.entry, baseCurrency)) : '—';
     const ex = row.exit != null ? (isPrivate ? MASK : fmtPrice(row.exit, baseCurrency)) : '—';
-    let text = `${row.symbol} ${dirLabel} ${outcomeEmoji}\nEntry: ${en} → Exit: ${ex}\nP&L: ${p} (${pct})`;
+    let text = `${displaySymbol} ${dirLabel} ${outcomeEmoji}\nEntry: ${en} → Exit: ${ex}\nP&L: ${p} (${pct})`;
     if (rMultiple != null) text += `\nR: ${isPrivate ? MASK : rMultiple}R`;
     text += '\n#CT3000';
     window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
@@ -66,7 +68,7 @@ export default function ShareModal({ row, plannedStop, baseCurrency = 'USD', onC
 
         <div className="bg-gray-50 rounded-xl p-4 mb-5 border border-gray-100">
           <div className="flex items-center space-x-2 mb-3">
-            <span className="text-xl font-bold text-gray-900">{row.symbol}</span>
+            <span className="text-xl font-bold text-gray-900">{displaySymbol}</span>
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
               dirLabel === 'LONG' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
             }`}>
