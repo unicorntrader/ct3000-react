@@ -149,7 +149,7 @@ function ExecSubTable({ execs }) {
                     </td>
                     <td className="py-1.5 pr-4 text-xs text-gray-500">{ex.open_close_indicator || '—'}</td>
                     <td className="py-1.5 pr-4 text-xs text-gray-500">
-                      <PrivacyValue value={!isNaN(commission) ? fmtPnl(commission, ex.currency) : '—'} />
+                      <PrivacyValue value={!isNaN(commission) ? fmtPnl(commission, ex.currency, 0) : '—'} />
                     </td>
                     <td className="py-1.5 text-xs text-gray-400 font-mono">{execIdShort}</td>
                   </tr>
@@ -216,7 +216,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
         </div>
         <div className="text-right">
           <p className={`text-2xl font-bold ${day.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-            <PrivacyValue value={fmtPnl(day.pnl, baseCurrency)} />
+            <PrivacyValue value={fmtPnl(day.pnl, baseCurrency, 0)} />
           </p>
           <p className="text-sm text-gray-400">Daily P&L</p>
         </div>
@@ -294,7 +294,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     <td className="px-4 py-3.5 text-sm text-gray-900"><PrivacyValue value={row.qty} /></td>
                     <td className="px-4 py-3.5 text-sm text-gray-500">{row.duration}</td>
                     <td className={`px-4 py-3.5 text-sm font-medium ${(rowPnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency)} />}
+                      {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency, 0)} />}
                     </td>
                     <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center space-x-2">
@@ -341,7 +341,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                       <td colSpan={COL_SPAN} className="px-6 py-3">
                         <div className={`bg-white rounded-xl p-4 border ${row.status === 'ambiguous' ? 'border-purple-200' : 'border-amber-200'}`}>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                            Resolve {row.symbol} &middot; <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency)} />
+                            Resolve {row.symbol} &middot; <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency, 0)} />
                           </p>
                           <p className="text-sm text-gray-500 mb-3">
                             {row.status === 'unmatched'

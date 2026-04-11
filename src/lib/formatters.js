@@ -20,11 +20,12 @@ export const fmtPrice = (n, currency = 'USD') => {
   return currencySymbol(currency) + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
-/** Signed P&L with currency symbol, e.g. "+$1,234.56" or "-¥500.00" */
-export const fmtPnl = (n, currency = 'USD') => {
+/** Signed P&L with currency symbol, e.g. "+$1,234.56" or "-¥500.00"
+ *  Pass decimals=0 for whole-number display: "+$1,234" */
+export const fmtPnl = (n, currency = 'USD', decimals = 2) => {
   if (n == null) return '—';
   const sym = currencySymbol(currency);
-  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   return (n >= 0 ? '+' : '-') + sym + abs;
 };
 
