@@ -269,6 +269,9 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
               const needsAction = row.status === 'unmatched' || row.status === 'ambiguous';
               const isExpanded = expandedRows.has(row.id);
               const execs = getExecs(row);
+              const isFX = row.assetCategory === 'FXCFD' || row.assetCategory === 'CASH';
+              const rowPnl = isFX ? row.pnl : row.nativePnl;
+              const rowPnlCurrency = isFX ? baseCurrency : row.currency;
 
               return (
                 <React.Fragment key={row.id}>
@@ -290,8 +293,8 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     </td>
                     <td className="px-4 py-3.5 text-sm text-gray-900"><PrivacyValue value={row.qty} /></td>
                     <td className="px-4 py-3.5 text-sm text-gray-500">{row.duration}</td>
-                    <td className={`px-4 py-3.5 text-sm font-medium ${(row.nativePnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPnl(row.nativePnl, row.currency)} />}
+                    <td className={`px-4 py-3.5 text-sm font-medium ${(rowPnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                      {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency)} />}
                     </td>
                     <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center space-x-2">
@@ -338,7 +341,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                       <td colSpan={COL_SPAN} className="px-6 py-3">
                         <div className={`bg-white rounded-xl p-4 border ${row.status === 'ambiguous' ? 'border-purple-200' : 'border-amber-200'}`}>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                            Resolve {row.symbol} &middot; <PrivacyValue value={fmtPnl(row.nativePnl, row.currency)} />
+                            Resolve {row.symbol} &middot; <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency)} />
                           </p>
                           <p className="text-sm text-gray-500 mb-3">
                             {row.status === 'unmatched'
