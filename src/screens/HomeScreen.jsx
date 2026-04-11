@@ -32,7 +32,7 @@ export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewD
       supabase.from('planned_trades').select('*').eq('user_id', userId),
       supabase
         .from('logical_trades')
-        .select('status, total_realized_pnl, closed_at, matching_status, direction')
+        .select('status, total_realized_pnl, closed_at, matching_status, direction, currency')
         .eq('user_id', userId)
         .gte('closed_at', thirtyDaysAgo()),
     ]);
