@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { currencySymbol } from '../lib/formatters';
 
 const strategies = [
   { group: 'Timeframe', options: ['Day Trade', 'Swing', 'Position'] },
@@ -24,6 +25,18 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   const [saved, setSaved] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [baseCurrency, setBaseCurrency] = useState('USD');
+
+  // Fetch base currency when sheet opens
+  useEffect(() => {
+    if (!isOpen || !session?.user?.id) return;
+    supabase
+      .from('user_ibkr_credentials')
+      .select('base_currency')
+      .eq('user_id', session.user.id)
+      .single()
+      .then(({ data }) => { if (data?.base_currency) setBaseCurrency(data.base_currency); });
+  }, [isOpen, session?.user?.id]);
 
   // Populate form when sheet opens
   useEffect(() => {
@@ -51,9 +64,10 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   const s = parseFloat(stop) || 0;
   const q = parseFloat(qty) || 0;
 
-  const posSize = e && q ? `$${(e * q).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '--';
-  const risk = e && s && q ? `$${(Math.abs(e - s) * q).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '--';
-  const reward = e && t && q ? `$${(Math.abs(t - e) * q).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '--';
+  const cs = currencySymbol(baseCurrency);
+  const posSize = e && q ? `${cs}${(e * q).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '--';
+  const risk = e && s && q ? `${cs}${(Math.abs(e - s) * q).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '--';
+  const reward = e && t && q ? `${cs}${(Math.abs(t - e) * q).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '--';
   const rr = e && s && t ? (Math.abs(t - e) / Math.abs(e - s)).toFixed(2) + 'R' : '--';
   const rrColor = e && s && t
     ? parseFloat(rr) >= 2 ? 'text-green-600' : parseFloat(rr) >= 1 ? 'text-amber-500' : 'text-red-500'

@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { buildLogicalTrades } from '../lib/logicalTradeBuilder';
-import { matchPlansToTrades } from '../lib/planMatcher';
 
 export default function IBKRScreen({ session }) {
   const [connected, setConnected] = useState(false);
@@ -91,88 +89,17 @@ export default function IBKRScreen({ session }) {
     }
   };
 
-  // Returns an error string on failure, null on success.
-  // Fetches all raw trades, rebuilds logical_trades, runs plan matcher.
-  // Does NOT delete the existing logical_trades until the new build is ready.
-  const rebuildLogicalTrades = async (userId) => {
-    const { data: allTrades, error: fetchError } = await supabase
-      .from('trades')
-      .select('*')
-      .eq('user_id', userId)
-      .order('date_time', { ascending: true });
-
-    if (fetchError) return `Could not fetch trades: ${fetchError.message}`;
-    if (!allTrades?.length) return null; // nothing to build
-
-    // Warn if raw trades are missing fx_rate_to_base — happens when the column was added
-    // after the last sync. A full Sync Now is required to repopulate the rates.
-    const missingFxRate = allTrades.filter(t => t.fx_rate_to_base == null).length;
-    if (missingFxRate > 0) {
-      console.warn(
-        `[rebuild] ${missingFxRate} raw trade(s) have no fx_rate_to_base. ` +
-        `Run a full Sync to populate rates for non-USD trades.`
-      );
-    }
-
-    const missingCurrency = allTrades.filter(t => !t.currency).length;
-    if (missingCurrency > 0) {
-      console.warn(
-        `[rebuild] ${missingCurrency} raw trade(s) have no currency. ` +
-        `Run a full Sync to populate currency for trades.`
-      );
-    }
-
-    const logical = buildLogicalTrades(allTrades, userId);
-    if (!logical.length) return null;
-
-    // Strip internal FIFO tracking field before sending to Supabase
-    const logicalForInsert = logical.map(({ _tempId, ...trade }) => trade);
-
-    // Delete only after the build succeeds in memory
-    const { error: deleteError } = await supabase
-      .from('logical_trades')
-      .delete()
-      .eq('user_id', userId);
-
-    if (deleteError) return `Could not clear old logical trades: ${deleteError.message}`;
-
-    const { error: insertError } = await supabase
-      .from('logical_trades')
-      .insert(logicalForInsert);
-
-    if (insertError) return insertError.message;
-
-    if (missingFxRate > 0 || missingCurrency > 0) {
-      const parts = [];
-      if (missingFxRate > 0) parts.push(`${missingFxRate} trade(s) have no FX rate`);
-      if (missingCurrency > 0) parts.push(`${missingCurrency} trade(s) have no currency`);
-      return `__warn__${parts.join('; ')} — run Sync Now to fix`;
-    }
-
-    // Run plan matcher
-    const { data: savedLogical } = await supabase
-      .from('logical_trades')
-      .select('*')
-      .eq('user_id', userId);
-
-    const { data: plannedTrades } = await supabase
-      .from('planned_trades')
-      .select('*')
-      .eq('user_id', userId);
-
-    if (savedLogical && plannedTrades) {
-      const matchUpdates = matchPlansToTrades(savedLogical, plannedTrades);
-      for (const update of matchUpdates) {
-        await supabase
-          .from('logical_trades')
-          .update({
-            matching_status: update.matching_status,
-            planned_trade_id: update.planned_trade_id,
-          })
-          .eq('id', update.id);
-      }
-    }
-
+  // Calls the server-side rebuild endpoint.
+  // Returns null on success, an error string on failure, or '__warn__...' for warnings.
+  const rebuildLogicalTrades = async () => {
+    const { data: { session: currentSession } } = await supabase.auth.getSession();
+    const res = await fetch('/api/rebuild', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${currentSession.access_token}` },
+    });
+    const data = await res.json();
+    if (!data.success) return data.error || 'Rebuild failed';
+    if (data.warnings?.length) return `__warn__${data.warnings.join('; ')}`;
     return null;
   };
 
@@ -180,7 +107,7 @@ export default function IBKRScreen({ session }) {
     setRebuilding(true);
     setSyncResult(null);
     setSyncError(null);
-    const result = await rebuildLogicalTrades(session.user.id);
+    const result = await rebuildLogicalTrades();
     if (result?.startsWith('__warn__')) {
       setSyncResult({ rebuilt: true, warning: result.slice(8) });
     } else if (result) {
@@ -196,20 +123,15 @@ export default function IBKRScreen({ session }) {
     setSyncResult(null);
     setSyncError(null);
     try {
-      // Step 1: Get credentials
-      const { data: creds, error: credsError } = await supabase
-        .from('user_ibkr_credentials')
-        .select('ibkr_token, query_id_30d')
-        .eq('user_id', session.user.id)
-        .single();
-
-      if (credsError || !creds) {
-        setSyncError('Could not load IBKR credentials. Please reconnect.');
-        return;
-      }
-
-      // Step 2: Fetch from IBKR
-      const res = await fetch(`/api/sync?token=${creds.ibkr_token}&queryId=${creds.query_id_30d}`);
+      // Credentials are fetched server-side — just send the session JWT
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentSession.access_token}`,
+        },
+      });
       const result = await res.json();
 
       if (!result.success) {
@@ -310,7 +232,7 @@ export default function IBKRScreen({ session }) {
       setLastSyncAt(now);
 
       // Step 6 & 7: Build logical trades + run plan matcher
-      const rebuildError = await rebuildLogicalTrades(userId);
+      const rebuildError = await rebuildLogicalTrades();
       if (rebuildError) {
         setSyncError(`Trades synced but logical trade build failed: ${rebuildError}`);
         return;
@@ -334,7 +256,15 @@ export default function IBKRScreen({ session }) {
     setSyncResult(null);
     setSyncError(null);
     try {
-      const res = await fetch(`/api/sync?token=${token}&queryId=${queryId}`);
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentSession.access_token}`,
+        },
+        body: JSON.stringify({ token, queryId }),
+      });
       const data = await res.json();
       if (data.success) {
         setSyncResult({ tradeCount: data.tradeCount, openPositionCount: data.openPositionCount });
@@ -403,12 +333,8 @@ export default function IBKRScreen({ session }) {
             <div className="px-5 py-4 flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-900">Auto-sync</p>
-                <p className="text-xs text-gray-400 mt-0.5">Daily after US market close</p>
+                <p className="text-xs text-gray-400 mt-0.5">Use "Sync now" to pull the latest trades</p>
               </div>
-              <label className="toggle">
-                <input type="checkbox" defaultChecked />
-                <span className="toggle-slider" />
-              </label>
             </div>
           </div>
 
