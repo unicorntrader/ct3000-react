@@ -132,10 +132,17 @@ export default function IBKRScreen({ session }) {
           'Authorization': `Bearer ${currentSession.access_token}`,
         },
       });
-      const result = await res.json();
+
+      const rawText = await res.text();
+      console.log('[sync] HTTP status:', res.status);
+      console.log('[sync] Response body:', rawText);
+
+      let result;
+      try { result = JSON.parse(rawText); }
+      catch { setSyncError(`HTTP ${res.status} — non-JSON response: ${rawText.slice(0, 200)}`); return; }
 
       if (!result.success) {
-        setSyncError(result.error);
+        setSyncError(`HTTP ${res.status} — ${result.error}`);
         return;
       }
 
