@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { supabase } from './lib/supabaseClient'
 import { PrivacyProvider } from './lib/PrivacyContext'
 import AuthScreen from './components/AuthScreen'
@@ -26,7 +27,8 @@ function isActive(sub) {
   if (subscription_status === 'active') return true
   if (subscription_status === 'trialing') {
     const endsAt = trial_ends_at || current_period_ends_at
-    return endsAt ? new Date(endsAt) > new Date() : false
+    // If Stripe says trialing but dates aren't populated yet, trust the status
+    return !endsAt || new Date(endsAt) > new Date()
   }
   return false
 }
@@ -48,7 +50,6 @@ function LoadingScreen({ message }) {
 }
 
 function AppShell({ session }) {
-  const [activeTab, setActiveTab] = useState('home')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [planSheetOpen, setPlanSheetOpen] = useState(false)
   const [reviewSheetOpen, setReviewSheetOpen] = useState(false)
@@ -58,29 +59,25 @@ function AppShell({ session }) {
 
   const handleSignOut = async () => { await supabase.auth.signOut() }
 
-  const renderScreen = () => {
-    switch (activeTab) {
-      case 'home':     return <HomeScreen session={session} onTabChange={setActiveTab} onReviewOpen={() => setReviewSheetOpen(true)} reviewDismissed={reviewDismissed} />
-      case 'plans':    return <PlansScreen session={session} onNewPlan={() => setPlanSheetOpen(true)} onEditPlan={(plan) => { setEditingPlan(plan); setPlanSheetOpen(true) }} refreshKey={planRefreshKey} />
-      case 'daily':    return <DailyViewScreen session={session} />
-      case 'sj':       return <JournalScreen session={session} />
-      case 'perf':     return <PerformanceScreen session={session} />
-      case 'ibkr':     return <IBKRScreen session={session} />
-      case 'settings': return <SettingsScreen session={session} />
-      default:         return <HomeScreen session={session} onTabChange={setActiveTab} onReviewOpen={() => setReviewSheetOpen(true)} reviewDismissed={reviewDismissed} />
-    }
-  }
-
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header activeTab={activeTab} onTabChange={setActiveTab} onMenuOpen={() => setSidebarOpen(true)} />
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onTabChange={setActiveTab} onSignOut={handleSignOut} session={session} />
+      <Header onMenuOpen={() => setSidebarOpen(true)} />
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onSignOut={handleSignOut} session={session} />
       <PlanSheet session={session} isOpen={planSheetOpen} plan={editingPlan} onClose={() => { setPlanSheetOpen(false); setEditingPlan(null) }} onSaved={() => setPlanRefreshKey(k => k + 1)} />
       <ReviewSheet session={session} isOpen={reviewSheetOpen} onClose={() => setReviewSheetOpen(false)} onComplete={() => setReviewDismissed(true)} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6">
-        {renderScreen()}
+        <Routes>
+          <Route path="/"            element={<HomeScreen session={session} onReviewOpen={() => setReviewSheetOpen(true)} reviewDismissed={reviewDismissed} />} />
+          <Route path="/plans"       element={<PlansScreen session={session} onNewPlan={() => setPlanSheetOpen(true)} onEditPlan={(plan) => { setEditingPlan(plan); setPlanSheetOpen(true) }} refreshKey={planRefreshKey} />} />
+          <Route path="/daily"       element={<DailyViewScreen session={session} />} />
+          <Route path="/journal"     element={<JournalScreen session={session} />} />
+          <Route path="/performance" element={<PerformanceScreen session={session} />} />
+          <Route path="/ibkr"        element={<IBKRScreen session={session} />} />
+          <Route path="/settings"    element={<SettingsScreen session={session} />} />
+          <Route path="*"            element={<Navigate to="/" replace />} />
+        </Routes>
       </main>
-      <MobileNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <MobileNav />
     </div>
   )
 }

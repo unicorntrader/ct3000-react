@@ -1,15 +1,16 @@
 import React from 'react';
+import { NavLink } from 'react-router-dom';
 import { usePrivacy } from '../lib/PrivacyContext';
 
 const NAV_ITEMS = [
-  { id: 'home', label: 'Home' },
-  { id: 'plans', label: 'Plans' },
-  { id: 'daily', label: 'Daily View' },
-  { id: 'sj', label: 'Journal' },
-  { id: 'perf', label: 'Performance' },
+  { path: '/',            label: 'Home',        end: true },
+  { path: '/plans',       label: 'Plans' },
+  { path: '/daily',       label: 'Daily View' },
+  { path: '/journal',     label: 'Journal' },
+  { path: '/performance', label: 'Performance' },
 ];
 
-export default function Header({ activeTab, onTabChange, onMenuOpen }) {
+export default function Header({ onMenuOpen }) {
   const { isPrivate, togglePrivacy } = usePrivacy();
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
@@ -27,17 +28,20 @@ export default function Header({ activeTab, onTabChange, onMenuOpen }) {
 
           <nav className="hidden md:flex items-center space-x-1 h-full">
             {NAV_ITEMS.map(item => (
-              <button
-                key={item.id}
-                onClick={() => onTabChange(item.id)}
-                className={`px-4 h-full text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === item.id
-                    ? 'text-blue-600 border-blue-600'
-                    : 'text-gray-500 border-transparent hover:text-gray-900'
-                }`}
+              <NavLink
+                key={item.path}
+                to={item.path}
+                end={item.end}
+                className={({ isActive }) =>
+                  `px-4 h-full flex items-center text-sm font-medium border-b-2 transition-colors ${
+                    isActive
+                      ? 'text-blue-600 border-blue-600'
+                      : 'text-gray-500 border-transparent hover:text-gray-900'
+                  }`
+                }
               >
                 {item.label}
-              </button>
+              </NavLink>
             ))}
           </nav>
 

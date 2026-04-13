@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtPrice, currencySymbol } from '../lib/formatters';
 import PrivacyValue from '../components/PrivacyValue';
@@ -13,7 +14,8 @@ const thirtyDaysAgo = () => {
 
 const PAGE_SIZE = 10;
 
-export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewDismissed }) {
+export default function HomeScreen({ session, onReviewOpen, reviewDismissed }) {
+  const navigate = useNavigate();
   const [positions, setPositions] = useState([]);
   const [plans, setPlans] = useState([]);
   const [logicalTrades, setLogicalTrades] = useState([]);
@@ -206,7 +208,7 @@ export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewD
                 </div>
                 {overflow && (
                   <button
-                    onClick={() => onTabChange('daily')}
+                    onClick={() => navigate('/daily')}
                     className="mt-2 text-xs text-blue-600 font-medium hover:underline w-full text-center py-1"
                   >
                     View all {positions.length} positions &rarr;
@@ -220,7 +222,7 @@ export default function HomeScreen({ session, onTabChange, onReviewOpen, reviewD
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-700">Active plans</h3>
-            <button onClick={() => onTabChange('plans')} className="text-xs text-blue-600 font-medium hover:underline">View all &rarr;</button>
+            <button onClick={() => navigate('/plans')} className="text-xs text-blue-600 font-medium hover:underline">View all &rarr;</button>
           </div>
           {plans.length === 0 ? (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-8 text-center">

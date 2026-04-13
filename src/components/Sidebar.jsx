@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
-export default function Sidebar({ isOpen, onClose, onTabChange, onSignOut, session }) {
+export default function Sidebar({ isOpen, onClose, onSignOut, session }) {
+  const navigate = useNavigate();
   const [accountId, setAccountId] = useState(null);
   const [ibkrConnected, setIbkrConnected] = useState(false);
 
@@ -75,7 +77,7 @@ export default function Sidebar({ isOpen, onClose, onTabChange, onSignOut, sessi
             <div className="bg-white rounded-xl border border-gray-100">
               <div
                 className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 rounded-xl"
-                onClick={() => { onClose(); onTabChange('ibkr'); }}
+                onClick={() => { onClose(); navigate('/ibkr'); }}
               >
                 <p className="text-sm font-medium text-gray-900">Manage IBKR connection</p>
                 <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -98,7 +100,7 @@ export default function Sidebar({ isOpen, onClose, onTabChange, onSignOut, sessi
               </div>
               <div
                 className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 rounded-b-xl"
-                onClick={() => { onClose(); onTabChange('settings'); }}
+                onClick={() => { onClose(); navigate('/settings'); }}
               >
                 <p className="text-sm font-medium text-gray-900">Settings</p>
                 <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
