@@ -4,7 +4,7 @@ const { createClient } = require('@supabase/supabase-js');
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const supabaseAdmin = createClient(
-  process.env.REACT_APP_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
@@ -18,6 +18,8 @@ function getRawBody(req) {
 }
 
 async function handler(req, res) {
+  console.log('[webhook] invoked — method:', req.method);
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const sig = req.headers['stripe-signature'];
@@ -79,6 +81,17 @@ async function handler(req, res) {
           ? new Date(subscription.trial_end * 1000).toISOString() : null;
         console.log('[webhook] subscription status:', status, '| trialEnd:', trialEnd, '| periodEnd:', periodEnd);
 
+        // Skip update if user has a forever comp
+        const { data: existingRow } = await supabaseAdmin
+          .from('user_subscriptions')
+          .select('is_comped')
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (existingRow?.is_comped) {
+          console.log('[webhook] user is comped — skipping upsert for userId:', userId);
+          break;
+        }
+
         const { error: upsertErr } = await supabaseAdmin
           .from('user_subscriptions')
           .upsert(
@@ -93,10 +106,10 @@ async function handler(req, res) {
             { onConflict: 'user_id' }
           );
         if (upsertErr) {
-          console.error('[webhook] upsert error:', upsertErr.message);
+          console.error('[webhook] upsert FAILED — userId:', userId, '| error:', upsertErr.message);
           return res.status(500).json({ error: upsertErr.message });
         }
-        console.log('[webhook] upserted user_subscriptions — userId:', userId, '| status:', status);
+        console.log('[webhook] upsert SUCCESS — userId:', userId, '| status:', status, '| trialEnd:', trialEnd, '| periodEnd:', periodEnd);
         break;
       }
 
@@ -107,6 +120,16 @@ async function handler(req, res) {
         const trialEnd = subscription.trial_end
           ? new Date(subscription.trial_end * 1000).toISOString() : null;
         console.log('[webhook] subscription.updated — id:', subscription.id, '| status:', subscription.status);
+
+        const { data: subRow } = await supabaseAdmin
+          .from('user_subscriptions')
+          .select('is_comped')
+          .eq('stripe_subscription_id', subscription.id)
+          .maybeSingle();
+        if (subRow?.is_comped) {
+          console.log('[webhook] user is comped — skipping update for subscription:', subscription.id);
+          break;
+        }
 
         const { error: updateErr } = await supabaseAdmin
           .from('user_subscriptions')
@@ -124,6 +147,16 @@ async function handler(req, res) {
       case 'customer.subscription.deleted': {
         const subscription = event.data.object;
         console.log('[webhook] subscription.deleted — id:', subscription.id);
+
+        const { data: delRow } = await supabaseAdmin
+          .from('user_subscriptions')
+          .select('is_comped')
+          .eq('stripe_subscription_id', subscription.id)
+          .maybeSingle();
+        if (delRow?.is_comped) {
+          console.log('[webhook] user is comped — skipping cancel for subscription:', subscription.id);
+          break;
+        }
 
         const { error: deleteErr } = await supabaseAdmin
           .from('user_subscriptions')
