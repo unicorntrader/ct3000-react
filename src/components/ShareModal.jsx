@@ -18,11 +18,13 @@ export default function ShareModal({ row, plannedStop, onClose }) {
   const multiplier = row.assetCategory === 'OPT' ? 100 : 1;
 
   // Weighted average exit: derived from realized P&L, entry, and closing quantity
-  const avgExit = (row.entry != null && row.closingQty != null && row.closingQty !== 0)
-    ? (pnl / (row.closingQty * multiplier)) + row.entry
+  // Fall back to opening qty if closing qty is missing (fully closed trades)
+  const qtyForCalc = row.closingQty || row.qty;
+  const avgExit = (row.entry != null && qtyForCalc != null && qtyForCalc !== 0)
+    ? (pnl / (qtyForCalc * multiplier)) + row.entry
     : null;
 
-  const pctReturn = avgExit != null && row.entry !== 0
+  const pctReturn = (avgExit != null && row.entry != null && row.entry !== 0)
     ? (((avgExit - row.entry) / row.entry) * 100).toFixed(2)
     : null;
 
@@ -34,11 +36,13 @@ export default function ShareModal({ row, plannedStop, onClose }) {
       })()
     : null;
 
+  // Privacy-masked fields
   const entryDisplay = row.entry != null ? (isPrivate ? MASK : fmtPrice(row.entry, currency)) : '—';
-  const exitDisplay = avgExit != null ? (isPrivate ? MASK : fmtPrice(avgExit, currency)) : '—';
-  const pnlDisplay = isPrivate ? MASK : fmtPnl(pnl, currency);
-  const pctDisplay = pctReturn != null ? `${pctReturn}%` : '—';
-  const rDisplay = rMultiple != null ? `${rMultiple}R` : null;
+  const exitDisplay  = avgExit != null   ? (isPrivate ? MASK : fmtPrice(avgExit, currency))   : '—';
+  const pnlDisplay   = isPrivate ? MASK : fmtPnl(pnl, currency);
+  // Always visible — the whole point of sharing a masked trade
+  const pctDisplay   = pctReturn != null ? `${pctReturn}%` : '—';
+  const rDisplay     = rMultiple != null ? `${rMultiple}R` : null;
 
   const handleShareOnX = () => {
     const p = isPrivate ? MASK : fmtPnl(pnl, currency);
