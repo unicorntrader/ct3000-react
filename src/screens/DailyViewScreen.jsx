@@ -139,7 +139,7 @@ function ExecSubTable({ execs }) {
                 return (
                   <tr key={i} className="border-t border-gray-100 first:border-0">
                     <td className="py-1.5 pr-4 text-xs text-gray-600">{time}</td>
-                    <td className="py-1.5 pr-4 text-xs text-gray-800 font-medium"><PrivacyValue value={fmtPrice(parseFloat(ex.trade_price), ex.currency)} /></td>
+                    <td className="py-1.5 pr-4 text-xs text-gray-800 font-medium">{fmtPrice(parseFloat(ex.trade_price), ex.currency)}</td>
                     <td className="py-1.5 pr-4 text-xs text-gray-600"><PrivacyValue value={Math.abs(parseFloat(ex.quantity) || 0)} /></td>
                     <td className="py-1.5 pr-4">
                       <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${ex.buy_sell === 'BUY' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
@@ -313,10 +313,10 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{row.symbol}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
-                      {row.isOrphan ? <span className="text-gray-400">N/A</span> : <PrivacyValue value={fmtPrice(row.entry, row.currency)} />}
+                      {row.isOrphan ? <span className="text-gray-400">N/A</span> : fmtPrice(row.entry, row.currency)}
                     </td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
-                      {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPrice(row.exit, row.currency)} />}
+                      {row.tradeStatus === 'open' ? '—' : fmtPrice(row.exit, row.currency)}
                     </td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900"><PrivacyValue value={row.qty} /></td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-500">{row.duration}</td>

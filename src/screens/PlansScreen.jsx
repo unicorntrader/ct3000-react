@@ -127,9 +127,9 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
                   {[
-                    { label: 'Entry', value: fmtPrice(plan.planned_entry_price), mask: true },
-                    { label: 'Target', value: fmtPrice(plan.planned_target_price), color: 'text-green-600', mask: true },
-                    { label: 'Stop', value: fmtPrice(plan.planned_stop_loss), color: 'text-red-500', mask: true },
+                    { label: 'Entry', value: fmtPrice(plan.planned_entry_price), mask: false },
+                    { label: 'Target', value: fmtPrice(plan.planned_target_price), color: 'text-green-600', mask: false },
+                    { label: 'Stop', value: fmtPrice(plan.planned_stop_loss), color: 'text-red-500', mask: false },
                     { label: 'Risk', value: fmtPnl(risk), color: 'text-red-500', mask: true },
                     { label: 'Reward', value: fmtPnl(reward), color: 'text-green-600', mask: true },
                     { label: 'R:R', value: rr ?? 'N/A', color: 'text-blue-600', mask: false },

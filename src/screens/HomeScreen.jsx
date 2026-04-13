@@ -221,7 +221,7 @@ export default function HomeScreen({ session, onReviewOpen, reviewDismissed }) {
                             <PrivacyValue value={fmtPnl(pnl, pos.currency)} />
                           </p>
                           <p className="text-xs text-gray-400 mt-0.5">
-                            avg <PrivacyValue value={fmtPrice(pos.avg_cost, pos.currency)} /> &middot; <span className="text-gray-300">at last sync</span>
+                            avg {fmtPrice(pos.avg_cost, pos.currency)} &middot; <span className="text-gray-300">at last sync</span>
                           </p>
                         </div>
                       </div>
@@ -267,15 +267,15 @@ export default function HomeScreen({ session, onReviewOpen, reviewDismissed }) {
                     <div className="grid grid-cols-3 gap-2 mb-2">
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
                         <p className="text-xs text-gray-400 mb-0.5">Entry</p>
-                        <p className="text-sm font-medium"><PrivacyValue value={fmtPrice(plan.planned_entry_price)} /></p>
+                        <p className="text-sm font-medium">{fmtPrice(plan.planned_entry_price)}</p>
                       </div>
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
                         <p className="text-xs text-gray-400 mb-0.5">Target</p>
-                        <p className="text-sm font-medium text-green-600"><PrivacyValue value={fmtPrice(plan.planned_target_price)} /></p>
+                        <p className="text-sm font-medium text-green-600">{fmtPrice(plan.planned_target_price)}</p>
                       </div>
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
                         <p className="text-xs text-gray-400 mb-0.5">Stop</p>
-                        <p className="text-sm font-medium text-red-500"><PrivacyValue value={fmtPrice(plan.planned_stop_loss)} /></p>
+                        <p className="text-sm font-medium text-red-500">{fmtPrice(plan.planned_stop_loss)}</p>
                       </div>
                     </div>
                     {(plan.notes || plan.thesis) && (
