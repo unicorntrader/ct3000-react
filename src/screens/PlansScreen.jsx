@@ -51,8 +51,25 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-5 h-5 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
+      <div className="animate-pulse">
+        <div className="flex items-center justify-between mb-6">
+          <div className="h-7 bg-gray-200 rounded w-16" />
+          <div className="h-9 bg-gray-200 rounded-lg w-24" />
+        </div>
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-4">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="h-6 bg-gray-200 rounded w-16" />
+              <div className="h-5 bg-gray-200 rounded-full w-12" />
+              <div className="h-5 bg-gray-200 rounded-full w-16" />
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+              {[...Array(6)].map((_, j) => (
+                <div key={j} className="h-12 bg-gray-100 rounded-lg" />
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     );
   }

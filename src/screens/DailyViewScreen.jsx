@@ -274,8 +274,21 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              {['Type', 'Time', 'Symbol', 'Dir', 'Entry', 'Exit', 'Qty', 'Duration', 'P&L', 'Status', '', ''].map((h, i) => (
-                <th key={i} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
+              {[
+                { label: 'Type',     hide: true },
+                { label: 'Time',     hide: true },
+                { label: 'Symbol',   hide: false },
+                { label: 'Dir',      hide: false },
+                { label: 'Entry',    hide: true },
+                { label: 'Exit',     hide: true },
+                { label: 'Qty',      hide: true },
+                { label: 'Duration', hide: true },
+                { label: 'P&L',      hide: false },
+                { label: 'Status',   hide: false },
+                { label: '',         hide: true },
+                { label: '',         hide: false },
+              ].map((col, i) => (
+                <th key={i} className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${col.hide ? 'hidden sm:table-cell' : ''}`}>{col.label}</th>
               ))}
             </tr>
           </thead>
@@ -294,20 +307,20 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     className={`cursor-pointer select-none ${needsAction ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-gray-50'}`}
                     onClick={() => toggleExpand(row.id)}
                   >
-                    <td className="px-4 py-3.5">
+                    <td className="hidden sm:table-cell px-4 py-3.5">
                       <AssetBadge category={row.assetCategory} />
                     </td>
-                    <td className="px-4 py-3.5 text-sm text-gray-600">{row.time}</td>
+                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-600">{row.time}</td>
                     <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{row.symbol}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
-                    <td className="px-4 py-3.5 text-sm text-gray-900">
+                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
                       {row.isOrphan ? <span className="text-gray-400">N/A</span> : <PrivacyValue value={fmtPrice(row.entry, row.currency)} />}
                     </td>
-                    <td className="px-4 py-3.5 text-sm text-gray-900">
+                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
                       {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPrice(row.exit, row.currency)} />}
                     </td>
-                    <td className="px-4 py-3.5 text-sm text-gray-900"><PrivacyValue value={row.qty} /></td>
-                    <td className="px-4 py-3.5 text-sm text-gray-500">{row.duration}</td>
+                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900"><PrivacyValue value={row.qty} /></td>
+                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-500">{row.duration}</td>
                     <td className={`px-4 py-3.5 text-sm font-medium ${(rowPnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                       {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency, 0)} />}
                     </td>
@@ -326,7 +339,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                         )}
                       </div>
                     </td>
-                    <td className="px-2 py-3.5" onClick={e => e.stopPropagation()}>
+                    <td className="hidden sm:table-cell px-2 py-3.5" onClick={e => e.stopPropagation()}>
                       {row.tradeStatus === 'closed' && (
                         <button
                           onClick={(e) => { e.stopPropagation(); setShareRow(row); }}
@@ -561,8 +574,26 @@ export default function DailyViewScreen({ session }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-5 h-5 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
+      <div className="animate-pulse">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            {[...Array(4)].map((_, i) => <div key={i} className="h-9 bg-gray-200 rounded-lg" />)}
+          </div>
+        </div>
+        {[...Array(2)].map((_, i) => (
+          <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+            <div className="flex items-start justify-between px-6 py-4 border-b border-gray-100">
+              <div>
+                <div className="h-5 bg-gray-200 rounded w-48 mb-2" />
+                <div className="h-3 bg-gray-200 rounded w-32" />
+              </div>
+              <div className="h-8 bg-gray-200 rounded w-20" />
+            </div>
+            <div className="p-4 space-y-3">
+              {[...Array(3)].map((_, j) => <div key={j} className="h-12 bg-gray-100 rounded" />)}
+            </div>
+          </div>
+        ))}
       </div>
     );
   }

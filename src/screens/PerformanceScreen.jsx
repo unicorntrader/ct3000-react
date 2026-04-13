@@ -240,8 +240,30 @@ export default function PerformanceScreen({ session }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-5 h-5 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
+      <div className="animate-pulse">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+              <div className="h-3 bg-gray-200 rounded w-20 mb-3" />
+              <div className="h-7 bg-gray-200 rounded w-24 mb-1" />
+              <div className="h-3 bg-gray-200 rounded w-16" />
+            </div>
+          ))}
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+          <div className="h-4 bg-gray-200 rounded w-32 mb-4" />
+          <div className="h-48 bg-gray-100 rounded-lg" />
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="flex items-center space-x-4 px-5 py-4 border-b border-gray-50 last:border-0">
+              <div className="h-4 bg-gray-200 rounded w-16" />
+              <div className="h-4 bg-gray-200 rounded w-12" />
+              <div className="h-4 bg-gray-200 rounded w-12" />
+              <div className="h-4 bg-gray-200 rounded w-20 ml-auto" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -286,7 +308,7 @@ export default function PerformanceScreen({ session }) {
   ];
 
   return (
-    <div className="space-y-6" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+    <div className="space-y-6" style={{}}>
 
       {/* ── header + period controls ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

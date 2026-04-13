@@ -83,8 +83,28 @@ export default function JournalScreen({ session }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-5 h-5 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
+      <div className="animate-pulse">
+        <div className="flex items-center justify-between mb-6">
+          <div className="h-7 bg-gray-200 rounded w-32" />
+        </div>
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100">
+              <div className="h-3 bg-gray-200 rounded w-20 mx-auto mb-3" />
+              <div className="h-7 bg-gray-200 rounded w-12 mx-auto" />
+            </div>
+          ))}
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="flex items-center space-x-4 px-5 py-4 border-b border-gray-50 last:border-0">
+              <div className="h-4 bg-gray-200 rounded w-20" />
+              <div className="h-4 bg-gray-200 rounded w-16" />
+              <div className="h-4 bg-gray-200 rounded w-12" />
+              <div className="h-4 bg-gray-200 rounded w-16 ml-auto" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
