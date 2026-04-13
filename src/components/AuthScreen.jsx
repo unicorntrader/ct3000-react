@@ -47,6 +47,8 @@ export default function AuthScreen() {
   const handleSignup = async (e) => {
     e.preventDefault()
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
+    if (!/[0-9]/.test(password)) { setError('Password must contain at least one number.'); return }
+    if (!/[A-Z]/.test(password) && !/[!@#$%^&*]/.test(password)) { setError('Password must contain at least one uppercase letter or special character (!@#$%^&*).'); return }
     setError(null)
     setLoading(true)
     try {
@@ -162,7 +164,7 @@ export default function AuthScreen() {
             </div>
             <div>
               <label className={labelClass}>Password</label>
-              <input type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="Min 8 characters" className={inputClass} />
+              <input type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="Min 8 chars, 1 number, 1 uppercase or symbol" className={inputClass} />
             </div>
             {error && <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-600">{error}</div>}
             <button type="submit" disabled={loading} className={btnPrimary}>

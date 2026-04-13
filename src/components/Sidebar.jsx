@@ -14,7 +14,7 @@ export default function Sidebar({ isOpen, onClose, onSignOut, session }) {
     if (!session?.user?.id) return;
     supabase
       .from('user_ibkr_credentials')
-      .select('account_id, ibkr_token')
+      .select('account_id, token_masked')
       .eq('user_id', session.user.id)
       .single()
       .then(({ data, error }) => {
@@ -22,7 +22,7 @@ export default function Sidebar({ isOpen, onClose, onSignOut, session }) {
           console.error('Sidebar: failed to load IBKR credentials:', error.message);
           return;
         }
-        if (data?.ibkr_token) setIbkrConnected(true);
+        if (data?.token_masked) setIbkrConnected(true);
         if (data?.account_id) setAccountId(data.account_id);
       });
   }, [session]);

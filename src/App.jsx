@@ -131,12 +131,12 @@ export default function App() {
   }, [fetchSubscription])
 
   // Poll after Stripe redirect (?checkout=success)
+  const pollingUserId = session?.user?.id
   useEffect(() => {
-    if (!CHECKOUT_SUCCESS || !session?.user?.id) return
+    if (!CHECKOUT_SUCCESS || !pollingUserId) return
 
     console.log('[app] ?checkout=success detected — starting subscription poll')
     setPolling(true)
-    // Clean up URL immediately
     window.history.replaceState({}, '', window.location.pathname)
 
     let attempts = 0
@@ -148,7 +148,7 @@ export default function App() {
       const { data, error } = await supabase
         .from('user_subscriptions')
         .select('*')
-        .eq('user_id', session.user.id)
+        .eq('user_id', pollingUserId)
         .maybeSingle()
 
       if (error) {
@@ -171,7 +171,7 @@ export default function App() {
     }, 2000)
 
     return () => clearInterval(interval)
-  }, [CHECKOUT_SUCCESS, session?.user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pollingUserId])
 
   // ── Render ────────────────────────────────────────────────────────────────────
 

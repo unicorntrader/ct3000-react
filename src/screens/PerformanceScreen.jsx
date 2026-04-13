@@ -77,6 +77,7 @@ function BarRow({ label, pnl, trades, wins, maxAbsPnl, baseCurrency = 'USD' }) {
 // ─── main component ────────────────────────────────────────────────────────────
 
 export default function PerformanceScreen({ session }) {
+  const userId = session?.user?.id;
   const [allTrades, setAllTrades] = useState([]);
   const [baseCurrency, setBaseCurrency] = useState('USD');
   const [loading, setLoading] = useState(true);
@@ -91,8 +92,7 @@ export default function PerformanceScreen({ session }) {
   const [sortDir, setSortDir] = useState('desc');
 
   useEffect(() => {
-    if (!session?.user?.id) return;
-    const userId = session.user.id;
+    if (!userId) return;
     Promise.all([
       supabase
         .from('logical_trades')
@@ -109,7 +109,7 @@ export default function PerformanceScreen({ session }) {
       if (credRes.data?.base_currency) setBaseCurrency(credRes.data.base_currency);
       setLoading(false);
     });
-  }, [session]);
+  }, [userId]);
 
   const handlePreset = (p) => {
     setPreset(p);

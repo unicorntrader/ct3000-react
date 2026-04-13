@@ -26,6 +26,7 @@ const calcR = (trade, plan) => {
 };
 
 export default function JournalScreen({ session }) {
+  const userId = session?.user?.id;
   const [trades, setTrades] = useState([]);
   const [plansMap, setPlansMap] = useState({});
   const [baseCurrency, setBaseCurrency] = useState('USD');
@@ -34,36 +35,33 @@ export default function JournalScreen({ session }) {
   const [shareRow, setShareRow] = useState(null);
 
   useEffect(() => {
-    if (!session?.user?.id) return;
-    fetchData();
-  }, [session]);
-
-  const fetchData = async () => {
-    const userId = session.user.id;
-    const [tradesRes, plansRes, credsRes] = await Promise.all([
-      supabase
-        .from('logical_trades')
-        .select('*')
-        .eq('user_id', userId)
-        .order('opened_at', { ascending: false }),
-      supabase
-        .from('planned_trades')
-        .select('id, planned_entry_price, planned_stop_loss, symbol, direction')
-        .eq('user_id', userId),
-      supabase
-        .from('user_ibkr_credentials')
-        .select('base_currency')
-        .eq('user_id', userId)
-        .maybeSingle(),
-    ]);
-
-    const map = {};
-    for (const p of (plansRes.data || [])) map[p.id] = p;
-    setPlansMap(map);
-    setTrades(tradesRes.data || []);
-    if (credsRes.data?.base_currency) setBaseCurrency(credsRes.data.base_currency);
-    setLoading(false);
-  };
+    if (!userId) return;
+    const load = async () => {
+      const [tradesRes, plansRes, credsRes] = await Promise.all([
+        supabase
+          .from('logical_trades')
+          .select('*')
+          .eq('user_id', userId)
+          .order('opened_at', { ascending: false }),
+        supabase
+          .from('planned_trades')
+          .select('id, planned_entry_price, planned_stop_loss, symbol, direction')
+          .eq('user_id', userId),
+        supabase
+          .from('user_ibkr_credentials')
+          .select('base_currency')
+          .eq('user_id', userId)
+          .maybeSingle(),
+      ]);
+      const map = {};
+      for (const p of (plansRes.data || [])) map[p.id] = p;
+      setPlansMap(map);
+      setTrades(tradesRes.data || []);
+      if (credsRes.data?.base_currency) setBaseCurrency(credsRes.data.base_currency);
+      setLoading(false);
+    };
+    load();
+  }, [userId]);
 
   const filtered = useMemo(() => {
     switch (activeFilter) {

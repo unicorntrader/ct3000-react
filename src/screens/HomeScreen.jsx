@@ -16,6 +16,7 @@ const PAGE_SIZE = 10;
 
 export default function HomeScreen({ session, onReviewOpen, reviewDismissed }) {
   const navigate = useNavigate();
+  const userId = session?.user?.id;
   const [positions, setPositions] = useState([]);
   const [plans, setPlans] = useState([]);
   const [logicalTrades, setLogicalTrades] = useState([]);
@@ -23,27 +24,24 @@ export default function HomeScreen({ session, onReviewOpen, reviewDismissed }) {
   const [posSort, setPosSort] = useState('size'); // 'size' | 'date'
 
   useEffect(() => {
-    if (!session?.user?.id) return;
-    fetchData();
-  }, [session]);
-
-  const fetchData = async () => {
-    const userId = session.user.id;
-    const [posRes, plansRes, tradesRes] = await Promise.all([
-      supabase.from('open_positions').select('*').eq('user_id', userId),
-      supabase.from('planned_trades').select('*').eq('user_id', userId),
-      supabase
-        .from('logical_trades')
-        .select('status, total_realized_pnl, closed_at, matching_status, direction, currency')
-        .eq('user_id', userId)
-        .gte('closed_at', thirtyDaysAgo()),
-    ]);
-
-    setPositions(posRes.data || []);
-    setPlans(plansRes.data || []);
-    setLogicalTrades(tradesRes.data || []);
-    setLoading(false);
-  };
+    if (!userId) return;
+    const load = async () => {
+      const [posRes, plansRes, tradesRes] = await Promise.all([
+        supabase.from('open_positions').select('*').eq('user_id', userId),
+        supabase.from('planned_trades').select('*').eq('user_id', userId),
+        supabase
+          .from('logical_trades')
+          .select('status, total_realized_pnl, closed_at, matching_status, direction, currency')
+          .eq('user_id', userId)
+          .gte('closed_at', thirtyDaysAgo()),
+      ]);
+      setPositions(posRes.data || []);
+      setPlans(plansRes.data || []);
+      setLogicalTrades(tradesRes.data || []);
+      setLoading(false);
+    };
+    load();
+  }, [userId]);
 
   // Derived stats
   const today = todayStr();

@@ -433,6 +433,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
 }
 
 export default function DailyViewScreen({ session }) {
+  const userId = session?.user?.id;
   const [trades, setTrades] = useState([]);
   const [rawTrades, setRawTrades] = useState([]);
   const [plannedTradesMap, setPlannedTradesMap] = useState({});
@@ -444,47 +445,45 @@ export default function DailyViewScreen({ session }) {
   const [sortAsc, setSortAsc] = useState(false);
 
   useEffect(() => {
-    if (!session?.user?.id) return;
-    fetchTrades();
-  }, [session]);
-
-  const fetchTrades = async () => {
-    const userId = session.user.id;
-    const [logicalRes, rawRes, credRes, plansRes, notesRes] = await Promise.all([
-      supabase
-        .from('logical_trades')
-        .select('*')
-        .eq('user_id', userId)
-        .order('opened_at', { ascending: false }),
-      supabase
-        .from('trades')
-        .select('ib_exec_id, ib_order_id, conid, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, currency')
-        .eq('user_id', userId),
-      supabase
-        .from('user_ibkr_credentials')
-        .select('base_currency')
-        .eq('user_id', userId)
-        .single(),
-      supabase
-        .from('planned_trades')
-        .select('id, planned_stop_loss')
-        .eq('user_id', userId),
-      supabase
-        .from('daily_notes')
-        .select('date_key, note')
-        .eq('user_id', userId),
-    ]);
-    setTrades(logicalRes.data || []);
-    setRawTrades(rawRes.data || []);
-    if (credRes.data?.base_currency) setBaseCurrency(credRes.data.base_currency);
-    const map = {};
-    for (const p of (plansRes.data || [])) map[p.id] = p;
-    setPlannedTradesMap(map);
-    const notesMap = {};
-    for (const n of (notesRes.data || [])) notesMap[n.date_key] = n.note;
-    setDailyNotes(notesMap);
-    setLoading(false);
-  };
+    if (!userId) return;
+    const load = async () => {
+      const [logicalRes, rawRes, credRes, plansRes, notesRes] = await Promise.all([
+        supabase
+          .from('logical_trades')
+          .select('*')
+          .eq('user_id', userId)
+          .order('opened_at', { ascending: false }),
+        supabase
+          .from('trades')
+          .select('ib_exec_id, ib_order_id, conid, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, currency')
+          .eq('user_id', userId),
+        supabase
+          .from('user_ibkr_credentials')
+          .select('base_currency')
+          .eq('user_id', userId)
+          .single(),
+        supabase
+          .from('planned_trades')
+          .select('id, planned_stop_loss')
+          .eq('user_id', userId),
+        supabase
+          .from('daily_notes')
+          .select('date_key, note')
+          .eq('user_id', userId),
+      ]);
+      setTrades(logicalRes.data || []);
+      setRawTrades(rawRes.data || []);
+      if (credRes.data?.base_currency) setBaseCurrency(credRes.data.base_currency);
+      const map = {};
+      for (const p of (plansRes.data || [])) map[p.id] = p;
+      setPlannedTradesMap(map);
+      const notesMap = {};
+      for (const n of (notesRes.data || [])) notesMap[n.date_key] = n.note;
+      setDailyNotes(notesMap);
+      setLoading(false);
+    };
+    load();
+  }, [userId]);
 
   const handleResolve = async (tradeId, newStatus) => {
     await supabase
