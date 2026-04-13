@@ -158,6 +158,10 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 
+  if (user.is_anonymous) {
+    return res.status(400).json({ error: 'Please sign up to connect your IBKR account.' });
+  }
+
   // Resolve IBKR credentials:
   // - Test mode: token + queryId supplied in request body (before they are saved)
   // - Normal sync: look up from DB server-side (token never sent to client)

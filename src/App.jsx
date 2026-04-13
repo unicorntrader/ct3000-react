@@ -11,6 +11,7 @@ import PlanSheet from './components/PlanSheet'
 import ReviewSheet from './components/ReviewSheet'
 import WelcomeModal from './components/WelcomeModal'
 import DemoBanner from './components/DemoBanner'
+import AnonymousBanner from './components/AnonymousBanner'
 
 import HomeScreen from './screens/HomeScreen'
 import PlansScreen from './screens/PlansScreen'
@@ -51,7 +52,7 @@ function LoadingScreen({ message }) {
   )
 }
 
-function AppShell({ session, subscription, onSubscriptionRefresh }) {
+function AppShell({ session, subscription, onSubscriptionRefresh, isAnonymous }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [planSheetOpen, setPlanSheetOpen] = useState(false)
   const [reviewSheetOpen, setReviewSheetOpen] = useState(false)
@@ -61,8 +62,8 @@ function AppShell({ session, subscription, onSubscriptionRefresh }) {
 
   const handleSignOut = async () => { await supabase.auth.signOut() }
 
-  const showWelcome = subscription !== null && subscription !== undefined && !subscription.has_seen_welcome
-  const showDemoBanner = subscription?.demo_seeded && !subscription?.ibkr_connected
+  const showWelcome = !isAnonymous && subscription !== null && subscription !== undefined && !subscription.has_seen_welcome
+  const showDemoBanner = !isAnonymous && subscription?.demo_seeded && !subscription?.ibkr_connected
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -70,7 +71,7 @@ function AppShell({ session, subscription, onSubscriptionRefresh }) {
         <WelcomeModal userId={session.user.id} onDone={onSubscriptionRefresh} />
       )}
       <Header onMenuOpen={() => setSidebarOpen(true)} />
-      {showDemoBanner && <DemoBanner />}
+      {isAnonymous ? <AnonymousBanner /> : (showDemoBanner && <DemoBanner />)}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onSignOut={handleSignOut} session={session} />
       <PlanSheet session={session} isOpen={planSheetOpen} plan={editingPlan} onClose={() => { setPlanSheetOpen(false); setEditingPlan(null) }} onSaved={() => setPlanRefreshKey(k => k + 1)} />
       <ReviewSheet session={session} isOpen={reviewSheetOpen} onClose={() => setReviewSheetOpen(false)} onComplete={() => setReviewDismissed(true)} />
@@ -117,10 +118,14 @@ export default function App() {
   // Auth state
   useEffect(() => {
     const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_event, session) => {
-      console.log('[app] auth event:', _event, '| userId:', session?.user?.id ?? 'none')
+      console.log('[app] auth event:', _event, '| userId:', session?.user?.id ?? 'none', '| anon:', session?.user?.is_anonymous ?? false)
       setSession(session)
       if (session?.user?.id) {
-        fetchSubscription(session.user.id)
+        if (session.user.is_anonymous) {
+          setSubscription(null) // anonymous users have no subscription
+        } else {
+          fetchSubscription(session.user.id)
+        }
       } else {
         setSubscription(null)
       }
@@ -132,7 +137,7 @@ export default function App() {
   useEffect(() => {
     const onFocus = () => {
       supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session?.user?.id) fetchSubscription(session.user.id)
+        if (session?.user?.id && !session.user.is_anonymous) fetchSubscription(session.user.id)
       })
     }
     window.addEventListener('focus', onFocus)
@@ -202,6 +207,15 @@ export default function App() {
   // Webhook timed out — show paywall with a note
   if (pollTimedOut && !isActive(subscription)) {
     return <PaywallScreen timedOut />
+  }
+
+  // Anonymous demo user — bypass Stripe entirely
+  if (session.user.is_anonymous) {
+    return (
+      <PrivacyProvider>
+        <AppShell session={session} subscription={null} onSubscriptionRefresh={() => {}} isAnonymous />
+      </PrivacyProvider>
+    )
   }
 
   // Active or trialing subscription

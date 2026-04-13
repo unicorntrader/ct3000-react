@@ -106,6 +106,14 @@ module.exports = async function handler(req, res) {
     .update({ has_seen_welcome: true, demo_seeded: true })
     .eq('user_id', userId)
 
-  console.log('[seed-demo] seeded demo data for userId:', userId)
+  // Track anonymous sessions for admin visibility
+  if (user.is_anonymous) {
+    await supabaseAdmin.from('anonymous_sessions').upsert(
+      { user_id: userId, created_at: new Date().toISOString(), is_anonymous: true },
+      { onConflict: 'user_id' }
+    )
+  }
+
+  console.log('[seed-demo] seeded demo data for userId:', userId, '| anon:', !!user.is_anonymous)
   return res.status(200).json({ success: true })
 }
