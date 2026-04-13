@@ -203,6 +203,21 @@ module.exports = async function handler(req, res) {
     console.log('[sync] AccountInformation snippet:', acctInfoSnippet);
     console.log(`[sync] Parsed ${trades.length} trades, ${openPositions.length} open positions, baseCurrency=${baseCurrency}`);
 
+    // Clear demo data and mark ibkr_connected before returning
+    const [ltDel, posDel, planDel, pbDel] = await Promise.all([
+      supabaseAdmin.from('logical_trades').delete().eq('user_id', user.id).eq('is_demo', true),
+      supabaseAdmin.from('open_positions').delete().eq('user_id', user.id).eq('is_demo', true),
+      supabaseAdmin.from('planned_trades').delete().eq('user_id', user.id).eq('is_demo', true),
+      supabaseAdmin.from('playbooks').delete().eq('user_id', user.id).eq('is_demo', true),
+    ]);
+    await supabaseAdmin
+      .from('user_subscriptions')
+      .update({ ibkr_connected: true })
+      .eq('user_id', user.id);
+
+    const demoCleared = ![ltDel, posDel, planDel, pbDel].some(r => r.error);
+    console.log('[sync] demo rows cleared, ibkr_connected set');
+
     return res.status(200).json({
       success: true,
       tradeCount: trades.length,
@@ -210,6 +225,7 @@ module.exports = async function handler(req, res) {
       trades,
       openPositions,
       baseCurrency,
+      demoCleared,
     });
 
   } catch (err) {

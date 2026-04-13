@@ -9,6 +9,8 @@ import MobileNav from './components/MobileNav'
 import Sidebar from './components/Sidebar'
 import PlanSheet from './components/PlanSheet'
 import ReviewSheet from './components/ReviewSheet'
+import WelcomeModal from './components/WelcomeModal'
+import DemoBanner from './components/DemoBanner'
 
 import HomeScreen from './screens/HomeScreen'
 import PlansScreen from './screens/PlansScreen'
@@ -49,7 +51,7 @@ function LoadingScreen({ message }) {
   )
 }
 
-function AppShell({ session }) {
+function AppShell({ session, subscription, onSubscriptionRefresh }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [planSheetOpen, setPlanSheetOpen] = useState(false)
   const [reviewSheetOpen, setReviewSheetOpen] = useState(false)
@@ -59,9 +61,16 @@ function AppShell({ session }) {
 
   const handleSignOut = async () => { await supabase.auth.signOut() }
 
+  const showWelcome = subscription !== null && subscription !== undefined && !subscription.has_seen_welcome
+  const showDemoBanner = subscription?.demo_seeded && !subscription?.ibkr_connected
+
   return (
     <div className="min-h-screen bg-gray-50">
+      {showWelcome && (
+        <WelcomeModal userId={session.user.id} onDone={onSubscriptionRefresh} />
+      )}
       <Header onMenuOpen={() => setSidebarOpen(true)} />
+      {showDemoBanner && <DemoBanner />}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onSignOut={handleSignOut} session={session} />
       <PlanSheet session={session} isOpen={planSheetOpen} plan={editingPlan} onClose={() => { setPlanSheetOpen(false); setEditingPlan(null) }} onSaved={() => setPlanRefreshKey(k => k + 1)} />
       <ReviewSheet session={session} isOpen={reviewSheetOpen} onClose={() => setReviewSheetOpen(false)} onComplete={() => setReviewDismissed(true)} />
@@ -199,7 +208,11 @@ export default function App() {
   if (isActive(subscription)) {
     return (
       <PrivacyProvider>
-        <AppShell session={session} />
+        <AppShell
+          session={session}
+          subscription={subscription}
+          onSubscriptionRefresh={() => fetchSubscription(session.user.id)}
+        />
       </PrivacyProvider>
     )
   }

@@ -248,6 +248,7 @@ export default function IBKRScreen({ session }) {
       setSyncResult({
         tradeCount: result.trades.length,
         openPositionCount: result.openPositions.length,
+        demoCleared: result.demoCleared,
       });
 
     } catch (err) {
@@ -385,6 +386,11 @@ export default function IBKRScreen({ session }) {
                   <p className="text-sm font-semibold text-green-800 mb-2">Sync successful</p>
                   <p className="text-sm text-green-700">{syncResult.tradeCount} trades saved to database</p>
                   <p className="text-sm text-green-700">{syncResult.openPositionCount} open positions updated</p>
+                  {syncResult.demoCleared && (
+                    <p className="text-xs text-amber-700 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      Demo data cleared — your real IBKR trades are now loaded.
+                    </p>
+                  )}
                 </>
               )}
             </div>
