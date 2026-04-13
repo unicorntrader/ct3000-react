@@ -164,7 +164,7 @@ function ExecSubTable({ execs }) {
 }
 
 
-function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, baseCurrency = 'USD' }) {
+function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, baseCurrency = 'USD', userId }) {
   const [note, setNote] = useState(day.note);
   const [editingNote, setEditingNote] = useState(false);
   const [noteInput, setNoteInput] = useState(day.note || '');
@@ -181,11 +181,26 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
     });
   };
 
-  const handleSaveNote = () => { setNote(noteInput); setEditingNote(false); };
-  const handleSaveJournal = () => {
+  const persistNote = async (text) => {
+    await supabase.from('daily_notes').upsert(
+      { user_id: userId, date_key: day.dateKey, note: text, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,date_key' }
+    );
+  };
+
+  const handleSaveNote = async () => {
+    const trimmed = noteInput.trim();
+    setNote(trimmed);
+    setEditingNote(false);
+    await persistNote(trimmed);
+  };
+
+  const handleSaveJournal = async () => {
     if (!journalInput.trim()) return;
-    setNote(journalInput);
+    const trimmed = journalInput.trim();
+    setNote(trimmed);
     setJournalInput('');
+    await persistNote(trimmed);
   };
 
   // Get all executions for a logical trade by conid + date window
@@ -409,6 +424,7 @@ export default function DailyViewScreen({ session }) {
   const [rawTrades, setRawTrades] = useState([]);
   const [plannedTradesMap, setPlannedTradesMap] = useState({});
   const [baseCurrency, setBaseCurrency] = useState('USD');
+  const [dailyNotes, setDailyNotes] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
@@ -421,7 +437,7 @@ export default function DailyViewScreen({ session }) {
 
   const fetchTrades = async () => {
     const userId = session.user.id;
-    const [logicalRes, rawRes, credRes, plansRes] = await Promise.all([
+    const [logicalRes, rawRes, credRes, plansRes, notesRes] = await Promise.all([
       supabase
         .from('logical_trades')
         .select('*')
@@ -440,6 +456,10 @@ export default function DailyViewScreen({ session }) {
         .from('planned_trades')
         .select('id, planned_stop_loss')
         .eq('user_id', userId),
+      supabase
+        .from('daily_notes')
+        .select('date_key, note')
+        .eq('user_id', userId),
     ]);
     setTrades(logicalRes.data || []);
     setRawTrades(rawRes.data || []);
@@ -447,6 +467,9 @@ export default function DailyViewScreen({ session }) {
     const map = {};
     for (const p of (plansRes.data || [])) map[p.id] = p;
     setPlannedTradesMap(map);
+    const notesMap = {};
+    for (const n of (notesRes.data || [])) notesMap[n.date_key] = n.note;
+    setDailyNotes(notesMap);
     setLoading(false);
   };
 
@@ -470,6 +493,7 @@ export default function DailyViewScreen({ session }) {
     const filtered = trades.filter(t =>
       !search || t.symbol?.toLowerCase().includes(search.toLowerCase())
     );
+
 
     const grouped = new Map();
     for (const t of filtered) {
@@ -515,7 +539,7 @@ export default function DailyViewScreen({ session }) {
         };
       });
 
-      return { dateKey, dateLabel: fmtDateLabel(dateKey), rows, trades: dayTrades.length, wins, losses, pnl: totalPnl, needsReview, note: null };
+      return { dateKey, dateLabel: fmtDateLabel(dateKey), rows, trades: dayTrades.length, wins, losses, pnl: totalPnl, needsReview, note: dailyNotes[dateKey] || null };
     });
 
     result = result.filter(d => dateFilter === 'all' || d.dateKey === dateFilter);
@@ -525,7 +549,7 @@ export default function DailyViewScreen({ session }) {
     );
 
     return result;
-  }, [trades, search, dateFilter, sortAsc, exitMap, openOrderIds]);
+  }, [trades, search, dateFilter, sortAsc, exitMap, openOrderIds, dailyNotes]);
 
   const uniqueDates = useMemo(() =>
     [...new Set(trades.map(t => {
@@ -589,7 +613,7 @@ export default function DailyViewScreen({ session }) {
         </div>
       ) : (
         days.map(day => (
-          <DayBlock key={day.dateKey} day={day} rawTradesWithIso={rawTradesWithIso} onResolve={handleResolve} plannedTradesMap={plannedTradesMap} baseCurrency={baseCurrency} />
+          <DayBlock key={day.dateKey} day={day} rawTradesWithIso={rawTradesWithIso} onResolve={handleResolve} plannedTradesMap={plannedTradesMap} baseCurrency={baseCurrency} userId={session.user.id} />
         ))
       )}
     </div>
