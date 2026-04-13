@@ -13,21 +13,20 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const userId = session?.user?.id;
   useEffect(() => {
-    if (!session?.user?.id) return;
-    fetchPlans();
-  }, [session, refreshKey]);
-
-  const fetchPlans = async () => {
-    const { data } = await supabase
-      .from('planned_trades')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false });
-
-    setPlans(data || []);
-    setLoading(false);
-  };
+    if (!userId) return;
+    const load = async () => {
+      const { data } = await supabase
+        .from('planned_trades')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      setPlans(data || []);
+      setLoading(false);
+    };
+    load();
+  }, [userId, refreshKey]);
 
   const computeRR = (plan) => {
     const { planned_entry_price: entry, planned_target_price: target, planned_stop_loss: stop } = plan;

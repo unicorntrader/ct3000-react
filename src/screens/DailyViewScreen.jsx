@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { pnlBase, currencySymbol, fmtPrice, fmtPnl } from '../lib/formatters';
+import { pnlBase, fmtPrice, fmtPnl } from '../lib/formatters';
 import PrivacyValue from '../components/PrivacyValue';
-import { usePrivacy } from '../lib/PrivacyContext';
 import ShareModal from '../components/ShareModal';
 
 const statusStyles = {

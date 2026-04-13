@@ -51,13 +51,8 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (isOpen && session?.user?.id) {
-      loadReviewTrades();
-    }
-  }, [isOpen, loadReviewTrades]);
-
   const loadReviewTrades = useCallback(async () => {
+    if (!session?.user?.id) return;
     setLoading(true);
     setStep(0);
     setSelected(null);
@@ -92,6 +87,12 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
 
     setLoading(false);
   }, [session]);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadReviewTrades();
+    }
+  }, [isOpen, loadReviewTrades]);
 
   const current = trades[step] || null;
   const total = trades.length;

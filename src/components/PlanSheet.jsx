@@ -27,6 +27,14 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   const [deleting, setDeleting] = useState(false);
   const [baseCurrency, setBaseCurrency] = useState('USD');
 
+  const resetForm = useCallback(() => {
+    setSymbol(''); setStrategy(''); setDirection('long'); setAssetCategory('STK');
+    setEntry(''); setTarget(''); setStop(''); setQty(''); setThesis('');
+    setError(null); setSaved(false); setConfirmDelete(false);
+  }, []);
+
+  const handleClose = useCallback(() => { resetForm(); onClose(); }, [resetForm, onClose]);
+
   // Fetch base currency when sheet opens
   useEffect(() => {
     if (!isOpen || !session?.user?.id) return;
@@ -81,14 +89,6 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, handleClose]);
-
-  const resetForm = useCallback(() => {
-    setSymbol(''); setStrategy(''); setDirection('long'); setAssetCategory('STK');
-    setEntry(''); setTarget(''); setStop(''); setQty(''); setThesis('');
-    setError(null); setSaved(false); setConfirmDelete(false);
-  }, []);
-
-  const handleClose = useCallback(() => { resetForm(); onClose(); }, [resetForm, onClose]);
 
   const handleSave = async () => {
     if (!session?.user?.id) {

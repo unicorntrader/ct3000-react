@@ -16,29 +16,29 @@ export default function IBKRScreen({ session }) {
   const [syncError, setSyncError] = useState(null);
   const [saveError, setSaveError] = useState(null);
 
+  const userId = session?.user?.id;
   useEffect(() => {
-    if (!session?.user?.id) return;
-    loadCredentials();
-  }, [session]);
+    if (!userId) return;
+    const load = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('user_ibkr_credentials')
+        .select('token_masked, query_id_masked, last_sync_at')
+        .eq('user_id', userId)
+        .single();
 
-  const loadCredentials = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('user_ibkr_credentials')
-      .select('token_masked, query_id_masked, last_sync_at')
-      .eq('user_id', session.user.id)
-      .single();
-
-    if (data && !error) {
-      setConnected(true);
-      setMaskedToken(data.token_masked || '');
-      setMaskedQueryId(data.query_id_masked || '');
-      setLastSyncAt(data.last_sync_at);
-    } else {
-      setConnected(false);
-    }
-    setLoading(false);
-  };
+      if (data && !error) {
+        setConnected(true);
+        setMaskedToken(data.token_masked || '');
+        setMaskedQueryId(data.query_id_masked || '');
+        setLastSyncAt(data.last_sync_at);
+      } else {
+        setConnected(false);
+      }
+      setLoading(false);
+    };
+    load();
+  }, [userId]);
 
   const handleSaveCredentials = async () => {
     if (!token || !queryId) {

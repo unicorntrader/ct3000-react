@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPnl, fmtPrice, currencySymbol } from '../lib/formatters';
+import { fmtPnl, fmtPrice } from '../lib/formatters';
 import PrivacyValue from '../components/PrivacyValue';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
