@@ -34,8 +34,10 @@ async function createCheckoutSession(accessToken) {
 }
 
 export default function AuthScreen() {
-  // 'landing' | 'signup' | 'login' | 'reset'
-  const [mode, setMode] = useState('landing')
+  const inviteToken = new URLSearchParams(window.location.search).get('invite')
+
+  // 'landing' | 'signup' | 'login' | 'reset' | 'invite'
+  const [mode, setMode] = useState(inviteToken ? 'invite' : 'landing')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -92,9 +94,69 @@ export default function AuthScreen() {
     setLoading(false)
   }
 
+  const handleInviteSignup = async (e) => {
+    e.preventDefault()
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
+    if (!/[0-9]/.test(password)) { setError('Password must contain at least one number.'); return }
+    if (!/[A-Z]/.test(password) && !/[!@#$%^&*]/.test(password)) { setError('Password must contain at least one uppercase letter or special character (!@#$%^&*).'); return }
+    setError(null)
+    setLoading(true)
+    try {
+      const res = await fetch('/api/redeem-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: inviteToken, email, password }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to redeem invite')
+
+      // Sign in — App.jsx's onAuthStateChange handles the rest
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+      if (signInError) throw signInError
+    } catch (err) {
+      setError(err.message)
+      setLoading(false)
+    }
+  }
+
   const inputClass = "w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 text-gray-900 placeholder-gray-300"
   const labelClass = "block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
   const btnPrimary = "w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3.5 rounded-xl text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+
+  // ── Invite ────────────────────────────────────────────────────────────────────
+  if (mode === 'invite') {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6 py-16">
+        <div className="w-full max-w-md">
+          <div className="mb-8"><Logo /></div>
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3.5 mb-7">
+            <p className="text-sm font-semibold text-blue-800">You've been invited to CT3000</p>
+            <p className="text-xs text-blue-500 mt-0.5">Create your account below — no payment needed, access is already included.</p>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-1">Create your account</h2>
+          <p className="text-sm text-gray-400 mb-8">Use the email address this invite was sent to.</p>
+          <form onSubmit={handleInviteSignup} className="space-y-4">
+            <div>
+              <label className={labelClass}>Email</label>
+              <input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>Password</label>
+              <input type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="Min 8 chars, 1 number, 1 uppercase or symbol" className={inputClass} />
+            </div>
+            {error && <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-600">{error}</div>}
+            <button type="submit" disabled={loading} className={btnPrimary}>
+              {loading ? 'Please wait…' : 'Create account'}
+            </button>
+          </form>
+          <p className="text-center text-sm text-gray-400 mt-6">
+            Already have an account?{' '}
+            <button onClick={() => reset('login')} className="text-blue-600 font-medium hover:underline">Log in</button>
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   // ── Landing ───────────────────────────────────────────────────────────────────
   if (mode === 'landing') {
