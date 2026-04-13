@@ -1,8 +1,15 @@
 const https = require('https');
+const { createClient } = require('@supabase/supabase-js');
 
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://ct3000-react.vercel.app';
 const BASE_URL = 'https://gdcdyn.interactivebrokers.com/Universal/servlet';
 const SEND_URL = `${BASE_URL}/FlexStatementService.SendRequest`;
 const GET_URL  = `${BASE_URL}/FlexStatementService.GetStatement`;
+
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 function httpsGet(url) {
   return new Promise((resolve, reject) => {
@@ -36,23 +43,19 @@ async function getStatement(refCode, token, maxRetries = 10, waitMs = 3000) {
   for (let i = 0; i < maxRetries; i++) {
     const xml = await httpsGet(url);
 
-    // IBKR returns FlexStatementResponse while processing OR when done
     if (xml.includes('<FlexStatementResponse')) {
       const statusMatch = xml.match(/<Status>([^<]+)<\/Status>/);
       const status = statusMatch?.[1];
 
       if (status === 'Success' || status === 'Complete') {
-        // Data is embedded inside this response — return it
         return xml;
       }
 
-      // Still processing — wait and retry
       console.log(`Attempt ${i + 1}: Status=${status}, waiting...`);
       await sleep(waitMs);
       continue;
     }
 
-    // Direct FlexQueryResponse — also valid
     if (xml.includes('<FlexQueryResponse') || xml.includes('<FlexStatement ')) {
       return xml;
     }
@@ -64,7 +67,6 @@ async function getStatement(refCode, token, maxRetries = 10, waitMs = 3000) {
 }
 
 function parseBaseCurrency(xml) {
-  // currency is an attribute on <AccountInformation ...> e.g. currency="USD"
   const m = xml.match(/<AccountInformation[^>]+currency="([^"]+)"/);
   return m ? m[1] : null;
 }
@@ -134,35 +136,69 @@ function parseOpenPositions(xml) {
 }
 
 module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  console.log('[sync] method:', req.method, '| origin:', req.headers.origin, '| host:', req.headers.host);
 
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'POST') return res.status(405).json({ error: `Method not allowed: ${req.method}` });
 
-  const token   = req.query.token;
-  const queryId = req.query.queryId;
+  // Authenticate the request
+  const authHeader = req.headers.authorization || '';
+  if (!authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing Authorization header' });
+  }
+  const jwt = authHeader.slice(7);
+
+  const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(jwt);
+  if (authError || !user) {
+    console.log('[sync] auth failed:', authError?.message);
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  // Resolve IBKR credentials:
+  // - Test mode: token + queryId supplied in request body (before they are saved)
+  // - Normal sync: look up from DB server-side (token never sent to client)
+  let token, queryId;
+  const body = req.body || {};
+
+  if (body.token && body.queryId) {
+    token = body.token;
+    queryId = body.queryId;
+  } else {
+    const { data: creds, error: credsError } = await supabaseAdmin
+      .from('user_ibkr_credentials')
+      .select('ibkr_token, query_id_30d')
+      .eq('user_id', user.id)
+      .single();
+
+    if (credsError || !creds) {
+      return res.status(400).json({ error: 'No IBKR credentials found. Please connect your account first.' });
+    }
+    token = creds.ibkr_token;
+    queryId = creds.query_id_30d;
+  }
 
   if (!token || !queryId) {
-    return res.status(400).json({ error: 'Missing token or queryId params.' });
+    return res.status(400).json({ error: 'Missing token or queryId.' });
   }
 
   try {
-    console.log('Step 1: Sending request to IBKR...');
+    console.log('[sync] Step 1: Sending request to IBKR for user:', user.id);
     const refCode = await sendRequest(token, queryId);
-    console.log('Reference code:', refCode);
+    console.log('[sync] Reference code:', refCode);
 
-    console.log('Step 2: Fetching statement...');
+    console.log('[sync] Step 2: Fetching statement...');
     const xml = await getStatement(refCode, token);
-    console.log('XML length:', xml.length);
+    console.log('[sync] XML length:', xml.length);
 
-    console.log('Step 3: Parsing...');
+    console.log('[sync] Step 3: Parsing...');
     const trades = parseTrades(xml);
     const openPositions = parseOpenPositions(xml);
     const baseCurrency = parseBaseCurrency(xml);
 
-    // Debug: show the AccountInformation opening tag so we can verify regex match
     const acctInfoSnippet = xml.match(/<AccountInformation[^>]{0,200}/)?.[0] || 'NO <AccountInformation> TAG FOUND';
     console.log('[sync] AccountInformation snippet:', acctInfoSnippet);
     console.log(`[sync] Parsed ${trades.length} trades, ${openPositions.length} open positions, baseCurrency=${baseCurrency}`);
@@ -177,7 +213,7 @@ module.exports = async function handler(req, res) {
     });
 
   } catch (err) {
-    console.error('Sync error:', err.message);
+    console.error('[sync] error:', err.message);
     return res.status(500).json({ success: false, error: err.message });
   }
 };
