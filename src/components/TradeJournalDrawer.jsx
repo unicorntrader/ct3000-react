@@ -36,6 +36,14 @@ export default function TradeJournalDrawer({ trade, plan, baseCurrency, isOpen, 
     setSaved(false)
   }, [trade])
 
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isOpen, onClose])
+
   if (!trade) return (
     <>
       <div className={`overlay-bg ${isOpen ? 'open' : ''}`} onClick={onClose} />

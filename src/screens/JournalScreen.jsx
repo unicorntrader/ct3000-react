@@ -276,8 +276,8 @@ export default function JournalScreen({ session }) {
               className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
             >
               <option value="All">All</option>
-              <option value="Long">Long</option>
-              <option value="Short">Short</option>
+              <option value="LONG">Long</option>
+              <option value="SHORT">Short</option>
             </select>
           </div>
 
