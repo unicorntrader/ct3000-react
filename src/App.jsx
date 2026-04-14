@@ -62,7 +62,11 @@ function AppShell({ session, subscription, onSubscriptionRefresh, isAnonymous })
 
   const handleSignOut = async () => { await supabase.auth.signOut() }
 
-  const showWelcome = !isAnonymous && subscription !== null && subscription !== undefined && !subscription.has_seen_welcome
+  const showWelcome = !isAnonymous &&
+    subscription !== null &&
+    subscription !== undefined &&
+    !subscription.has_seen_welcome &&
+    (subscription.subscription_status === 'active' || subscription.subscription_status === 'trialing')
   const showDemoBanner = !isAnonymous && subscription?.demo_seeded && !subscription?.ibkr_connected
 
   return (

@@ -94,8 +94,8 @@ module.exports = async function handler(req, res) {
   ]
 
   const playbooks = [
-    { user_id: userId, name: 'Momentum Breakout', notes: 'Enter on volume confirmation, stop below breakout candle, target 2R', is_demo: true },
-    { user_id: userId, name: 'Earnings Fade',     notes: 'Sell the gap up on earnings, tight stop above high, quick 1R target',  is_demo: true },
+    { user_id: userId, name: 'Momentum Breakout', notes: 'Breakout, 2R target', is_demo: true },
+    { user_id: userId, name: 'Earnings Fade',     notes: 'Fade gap up, 1R',    is_demo: true },
   ]
 
   const [ltRes, posRes, planRes, pbRes] = await Promise.all([
