@@ -44,13 +44,20 @@ module.exports = async function handler(req, res) {
     subscription_status: 'active',
     is_comped: true,
   })
-  if (subErr) console.error('[redeem-invite] subscription insert error:', subErr.message)
+  if (subErr) {
+    console.error('[redeem-invite] subscription insert error:', subErr.message)
+    return res.status(500).json({ error: 'Account created but subscription setup failed. Please contact support.' })
+  }
 
   // Mark invite as redeemed
-  await supabaseAdmin.from('invited_users').update({
+  const { error: redeemErr } = await supabaseAdmin.from('invited_users').update({
     redeemed_at: new Date().toISOString(),
     redeemed_by_user_id: user.id,
   }).eq('token', token)
+  if (redeemErr) {
+    console.error('[redeem-invite] failed to mark invite redeemed:', redeemErr.message)
+    // Don't fail the user — account + subscription are created. Log and continue.
+  }
 
   console.log('[redeem-invite] success — email:', email, '| userId:', user.id)
   return res.status(200).json({ success: true })

@@ -100,11 +100,15 @@ export default function AuthScreen() {
     try {
       const { data, error: anonError } = await supabase.auth.signInAnonymously()
       if (anonError) throw anonError
-      // Seed demo data in the background — App.jsx will route to app once session fires
-      await fetch('/api/seed-demo', {
+      // Seed demo data — App.jsx will route to app once session fires
+      const seedRes = await fetch('/api/seed-demo', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${data.session.access_token}` },
       })
+      if (!seedRes.ok) {
+        const seedData = await seedRes.json().catch(() => ({}))
+        throw new Error(seedData.error || 'Failed to load demo data')
+      }
       // onAuthStateChange in App.jsx picks up the session and renders the app
     } catch (err) {
       setError(err.message)

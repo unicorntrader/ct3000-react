@@ -23,10 +23,16 @@ export default function WelcomeModal({ userId, onDone }) {
 
   const handleConnectIBKR = async () => {
     setSkipping(true)
-    await supabase
+    setError(null)
+    const { error: updateErr } = await supabase
       .from('user_subscriptions')
       .update({ has_seen_welcome: true })
       .eq('user_id', userId)
+    if (updateErr) {
+      setError('Something went wrong. Please try again.')
+      setSkipping(false)
+      return
+    }
     onDone()
     navigate('/ibkr')
   }
