@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtDate, pnlBase } from '../lib/formatters';
 import PrivacyValue from '../components/PrivacyValue';
@@ -6,6 +7,27 @@ import ShareModal from '../components/ShareModal';
 import TradeJournalDrawer from '../components/TradeJournalDrawer';
 
 const FILTERS = ['All', 'Open', 'Wins', 'Losses', 'Matched', 'Unmatched', 'Ambiguous', 'Journalled', 'Not journalled'];
+
+const DATE_RANGES = [
+  { key: 'all', label: 'All time' },
+  { key: '1w', label: 'Last week' },
+  { key: '1m', label: 'Last month' },
+  { key: '3m', label: 'Last 3M' },
+  { key: 'custom', label: 'Custom' },
+];
+
+const rangeStartDate = (key) => {
+  if (key === 'all' || key === 'custom') return null;
+  const d = new Date();
+  if (key === '1w') d.setDate(d.getDate() - 7);
+  else if (key === '1m') d.setMonth(d.getMonth() - 1);
+  else if (key === '3m') d.setMonth(d.getMonth() - 3);
+  return d.toISOString().slice(0, 10);
+};
+
+// OPT symbols from IBKR look like "NVDA 260330P00170000" — display only the underlying
+const displaySymbol = (t) =>
+  t.asset_category === 'OPT' ? (t.symbol || '').split(' ')[0] : (t.symbol || '');
 
 const planStyles = {
   matched: 'bg-blue-50 text-blue-600',
@@ -28,6 +50,9 @@ const calcR = (trade, plan) => {
 
 export default function JournalScreen({ session }) {
   const userId = session?.user?.id;
+  const location = useLocation();
+  const navigate = useNavigate();
+  const initialSymbol = location.state?.symbolFilter || '';
   const [trades, setTrades] = useState([]);
   const [plansMap, setPlansMap] = useState({});
   const [baseCurrency, setBaseCurrency] = useState('USD');
@@ -36,6 +61,23 @@ export default function JournalScreen({ session }) {
   const [shareRow, setShareRow] = useState(null);
   const [drawerTrade, setDrawerTrade] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Smart filters
+  const [symbolQuery, setSymbolQuery] = useState(initialSymbol);
+  const [symbolSuggestOpen, setSymbolSuggestOpen] = useState(false);
+  const [directionFilter, setDirectionFilter] = useState('All');
+  const [assetFilter, setAssetFilter] = useState('All');
+  const [dateRange, setDateRange] = useState('all');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
+  // Clear navigation state after consuming so reloads don't re-apply
+  useEffect(() => {
+    if (location.state?.symbolFilter) {
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!userId) return;
@@ -70,19 +112,75 @@ export default function JournalScreen({ session }) {
     setTrades(prev => prev.map(t => t.id === updatedTrade.id ? updatedTrade : t));
   };
 
-  const filtered = useMemo(() => {
-    switch (activeFilter) {
-      case 'Open':      return trades.filter(t => t.status === 'open');
-      case 'Wins':      return trades.filter(t => t.status === 'closed' && (t.total_realized_pnl || 0) > 0);
-      case 'Losses':    return trades.filter(t => t.status === 'closed' && (t.total_realized_pnl || 0) <= 0);
-      case 'Matched':   return trades.filter(t => t.matching_status === 'matched');
-      case 'Unmatched': return trades.filter(t => t.matching_status === 'unmatched');
-      case 'Ambiguous':       return trades.filter(t => t.matching_status === 'ambiguous');
-      case 'Journalled':      return trades.filter(t => t.review_notes);
-      case 'Not journalled':  return trades.filter(t => t.status === 'closed' && !t.review_notes);
-      default:                return trades;
+  // Derived lists for filter UI
+  const allSymbols = useMemo(() => {
+    const set = new Set();
+    for (const t of trades) {
+      const s = displaySymbol(t);
+      if (s) set.add(s);
     }
-  }, [trades, activeFilter]);
+    return [...set].sort();
+  }, [trades]);
+
+  const allAssetCategories = useMemo(() => {
+    const set = new Set();
+    for (const t of trades) if (t.asset_category) set.add(t.asset_category);
+    return [...set].sort();
+  }, [trades]);
+
+  const symbolSuggestions = useMemo(() => {
+    const q = symbolQuery.trim().toUpperCase();
+    if (!q) return [];
+    return allSymbols.filter(s => s.toUpperCase().includes(q)).slice(0, 8);
+  }, [symbolQuery, allSymbols]);
+
+  const filtered = useMemo(() => {
+    // Stage 1: tab filter (status/outcome/matching/journal)
+    let list;
+    switch (activeFilter) {
+      case 'Open':      list = trades.filter(t => t.status === 'open'); break;
+      case 'Wins':      list = trades.filter(t => t.status === 'closed' && (t.total_realized_pnl || 0) > 0); break;
+      case 'Losses':    list = trades.filter(t => t.status === 'closed' && (t.total_realized_pnl || 0) <= 0); break;
+      case 'Matched':   list = trades.filter(t => t.matching_status === 'matched'); break;
+      case 'Unmatched': list = trades.filter(t => t.matching_status === 'unmatched'); break;
+      case 'Ambiguous':      list = trades.filter(t => t.matching_status === 'ambiguous'); break;
+      case 'Journalled':     list = trades.filter(t => t.review_notes); break;
+      case 'Not journalled': list = trades.filter(t => t.status === 'closed' && !t.review_notes); break;
+      default:               list = trades;
+    }
+
+    // Stage 2: smart filters (AND logic)
+    const symQ = symbolQuery.trim().toUpperCase();
+    const startDate = dateRange === 'custom' ? (customFrom || null) : rangeStartDate(dateRange);
+    const endDate = dateRange === 'custom' ? (customTo || null) : null;
+
+    return list.filter(t => {
+      if (symQ) {
+        const s = displaySymbol(t).toUpperCase();
+        if (!s.includes(symQ)) return false;
+      }
+      if (directionFilter !== 'All' && t.direction !== directionFilter) return false;
+      if (assetFilter !== 'All' && t.asset_category !== assetFilter) return false;
+      if (startDate || endDate) {
+        const iso = t.status === 'open' ? t.opened_at : (t.closed_at || t.opened_at);
+        if (!iso) return false;
+        const day = iso.slice(0, 10);
+        if (startDate && day < startDate) return false;
+        if (endDate && day > endDate) return false;
+      }
+      return true;
+    });
+  }, [trades, activeFilter, symbolQuery, directionFilter, assetFilter, dateRange, customFrom, customTo]);
+
+  const hasSmartFilters = symbolQuery || directionFilter !== 'All' || assetFilter !== 'All' || dateRange !== 'all';
+  const clearSmartFilters = () => {
+    setSymbolQuery('');
+    setDirectionFilter('All');
+    setAssetFilter('All');
+    setDateRange('all');
+    setCustomFrom('');
+    setCustomTo('');
+  };
 
   const closedTrades = trades.filter(t => t.status === 'closed');
   const wins = closedTrades.filter(t => (t.total_realized_pnl || 0) > 0).length;
@@ -133,6 +231,115 @@ export default function JournalScreen({ session }) {
             <p className={`text-2xl font-semibold ${c.color}`}>{c.value}</p>
           </div>
         ))}
+      </div>
+
+      {/* Smart filter bar */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
+        <div className="flex flex-wrap items-end gap-3">
+          {/* Symbol autocomplete */}
+          <div className="relative">
+            <label className="block text-xs font-medium text-gray-400 mb-1">Symbol</label>
+            <input
+              type="text"
+              value={symbolQuery}
+              onChange={e => { setSymbolQuery(e.target.value); setSymbolSuggestOpen(true); }}
+              onFocus={() => setSymbolSuggestOpen(true)}
+              onBlur={() => setTimeout(() => setSymbolSuggestOpen(false), 150)}
+              placeholder="Any"
+              className="w-36 text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+            {symbolSuggestOpen && symbolSuggestions.length > 0 && (
+              <div className="absolute z-20 mt-1 w-36 bg-white rounded-lg shadow-lg border border-gray-100 max-h-48 overflow-y-auto">
+                {symbolSuggestions.map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); setSymbolQuery(s); setSymbolSuggestOpen(false); }}
+                    className="block w-full text-left text-sm px-3 py-1.5 hover:bg-gray-50"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Direction */}
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1">Direction</label>
+            <select
+              value={directionFilter}
+              onChange={e => setDirectionFilter(e.target.value)}
+              className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+            >
+              <option value="All">All</option>
+              <option value="Long">Long</option>
+              <option value="Short">Short</option>
+            </select>
+          </div>
+
+          {/* Asset class */}
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1">Asset class</label>
+            <select
+              value={assetFilter}
+              onChange={e => setAssetFilter(e.target.value)}
+              className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+            >
+              <option value="All">All</option>
+              {allAssetCategories.map(a => (
+                <option key={a} value={a}>{a}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Date range */}
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1">Date range</label>
+            <select
+              value={dateRange}
+              onChange={e => setDateRange(e.target.value)}
+              className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+            >
+              {DATE_RANGES.map(r => (
+                <option key={r.key} value={r.key}>{r.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {dateRange === 'custom' && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">From</label>
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={e => setCustomFrom(e.target.value)}
+                  className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">To</label>
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={e => setCustomTo(e.target.value)}
+                  className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+            </>
+          )}
+
+          {hasSmartFilters && (
+            <button
+              type="button"
+              onClick={clearSmartFilters}
+              className="text-xs font-medium text-gray-500 hover:text-gray-800 px-3 py-1.5 rounded-lg hover:bg-gray-50"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex space-x-2 mb-5 overflow-x-auto pb-1">

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { pnlBase, fmtPnl, fmtShort } from '../lib/formatters';
 import PrivacyValue from '../components/PrivacyValue';
@@ -78,6 +79,7 @@ function BarRow({ label, pnl, trades, wins, maxAbsPnl, baseCurrency = 'USD' }) {
 
 export default function PerformanceScreen({ session }) {
   const userId = session?.user?.id;
+  const navigate = useNavigate();
   const [allTrades, setAllTrades] = useState([]);
   const [baseCurrency, setBaseCurrency] = useState('USD');
   const [loading, setLoading] = useState(true);
@@ -412,34 +414,46 @@ export default function PerformanceScreen({ session }) {
         {symbolRows.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-12">No closed trades in this period</p>
         ) : (
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                {SYM_COLS.map(col => (
-                  <th
-                    key={col.key}
-                    onClick={() => handleSort(col.key)}
-                    className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700"
-                  >
-                    {col.label}
-                    {sortIcon(sortCol === col.key, sortDir)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {symbolRows.map(row => (
-                <tr key={row.symbol} className="hover:bg-gray-50">
-                  <td className="px-5 py-3.5 text-sm font-semibold text-gray-900">{row.symbol}</td>
-                  <td className="px-5 py-3.5 text-sm text-gray-600">{row.trades}</td>
-                  <td className="px-5 py-3.5 text-sm text-gray-700">{row.winRate}%</td>
-                  <td className={`px-5 py-3.5 text-sm font-semibold ${row.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                    <PrivacyValue value={fmtPnl(row.pnl, baseCurrency)} />
-                  </td>
+          <>
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  {SYM_COLS.map(col => (
+                    <th
+                      key={col.key}
+                      onClick={() => handleSort(col.key)}
+                      className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700"
+                    >
+                      {col.label}
+                      {sortIcon(sortCol === col.key, sortDir)}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {symbolRows.slice(0, 20).map(row => (
+                  <tr
+                    key={row.symbol}
+                    onClick={() => navigate('/journal', { state: { symbolFilter: row.symbol } })}
+                    className="hover:bg-blue-50 cursor-pointer transition-colors"
+                    title={`View ${row.symbol} trades in Smart Journal`}
+                  >
+                    <td className="px-5 py-3.5 text-sm font-semibold text-blue-600">{row.symbol}</td>
+                    <td className="px-5 py-3.5 text-sm text-gray-600">{row.trades}</td>
+                    <td className="px-5 py-3.5 text-sm text-gray-700">{row.winRate}%</td>
+                    <td className={`px-5 py-3.5 text-sm font-semibold ${row.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                      <PrivacyValue value={fmtPnl(row.pnl, baseCurrency)} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {symbolRows.length > 20 && (
+              <p className="text-center text-xs text-gray-400 py-3 border-t border-gray-100">
+                Showing top 20 of {symbolRows.length} · sort columns to re-rank
+              </p>
+            )}
+          </>
         )}
       </div>
 
