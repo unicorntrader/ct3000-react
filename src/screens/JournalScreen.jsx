@@ -93,7 +93,7 @@ export default function JournalScreen({ session }) {
           .order('opened_at', { ascending: false }),
         supabase
           .from('planned_trades')
-          .select('id, symbol, direction, planned_entry_price, planned_stop_loss, planned_target_price, planned_quantity, notes, thesis')
+          .select('id, symbol, direction, planned_entry_price, planned_stop_loss, planned_target_price, planned_quantity, thesis')
           .eq('user_id', userId),
         supabase
           .from('user_ibkr_credentials')
