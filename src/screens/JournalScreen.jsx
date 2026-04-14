@@ -3,8 +3,9 @@ import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtDate, pnlBase } from '../lib/formatters';
 import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
+import TradeJournalDrawer from '../components/TradeJournalDrawer';
 
-const FILTERS = ['All', 'Open', 'Wins', 'Losses', 'Matched', 'Unmatched', 'Ambiguous'];
+const FILTERS = ['All', 'Open', 'Wins', 'Losses', 'Matched', 'Unmatched', 'Ambiguous', 'Journalled', 'Not journalled'];
 
 const planStyles = {
   matched: 'bg-blue-50 text-blue-600',
@@ -33,6 +34,8 @@ export default function JournalScreen({ session }) {
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [shareRow, setShareRow] = useState(null);
+  const [drawerTrade, setDrawerTrade] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
@@ -45,7 +48,7 @@ export default function JournalScreen({ session }) {
           .order('opened_at', { ascending: false }),
         supabase
           .from('planned_trades')
-          .select('id, planned_entry_price, planned_stop_loss, symbol, direction')
+          .select('id, symbol, direction, planned_entry_price, planned_stop_loss, planned_target_price, planned_quantity, notes, thesis')
           .eq('user_id', userId),
         supabase
           .from('user_ibkr_credentials')
@@ -63,6 +66,10 @@ export default function JournalScreen({ session }) {
     load();
   }, [userId]);
 
+  const handleTradeUpdated = (updatedTrade) => {
+    setTrades(prev => prev.map(t => t.id === updatedTrade.id ? updatedTrade : t));
+  };
+
   const filtered = useMemo(() => {
     switch (activeFilter) {
       case 'Open':      return trades.filter(t => t.status === 'open');
@@ -70,8 +77,10 @@ export default function JournalScreen({ session }) {
       case 'Losses':    return trades.filter(t => t.status === 'closed' && (t.total_realized_pnl || 0) <= 0);
       case 'Matched':   return trades.filter(t => t.matching_status === 'matched');
       case 'Unmatched': return trades.filter(t => t.matching_status === 'unmatched');
-      case 'Ambiguous': return trades.filter(t => t.matching_status === 'ambiguous');
-      default:          return trades;
+      case 'Ambiguous':       return trades.filter(t => t.matching_status === 'ambiguous');
+      case 'Journalled':      return trades.filter(t => t.review_notes);
+      case 'Not journalled':  return trades.filter(t => t.status === 'closed' && !t.review_notes);
+      default:                return trades;
     }
   }, [trades, activeFilter]);
 
@@ -117,7 +126,7 @@ export default function JournalScreen({ session }) {
         {[
           { label: 'Closed trades', value: closedTrades.length > 0 ? String(closedTrades.length) : '—', color: 'text-gray-900' },
           { label: 'Win rate', value: winRate != null ? `${winRate}%` : '—', color: 'text-green-600' },
-          { label: 'Matched', value: closedTrades.length > 0 ? `${Math.round((closedTrades.filter(t => t.matching_status === 'matched').length / closedTrades.length) * 100)}%` : '—', color: 'text-blue-600' },
+          { label: 'Journalled', value: closedTrades.length > 0 ? `${closedTrades.filter(t => t.review_notes).length} / ${closedTrades.length}` : '—', color: 'text-blue-600' },
         ].map(c => (
           <div key={c.label} className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100">
             <p className="text-xs text-gray-400 mb-1">{c.label}</p>
@@ -156,7 +165,7 @@ export default function JournalScreen({ session }) {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                {['Date', 'Symbol', 'Direction', 'P&L', 'R', 'Outcome', 'Plan', ''].map(h => (
+                {['Date', 'Symbol', 'Direction', 'P&L', 'R', 'Outcome', 'Plan', 'Journal', ''].map(h => (
                   <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
@@ -172,7 +181,7 @@ export default function JournalScreen({ session }) {
                 const dateDisplay = fmtDate(isOpen ? trade.opened_at : trade.closed_at);
 
                 return (
-                  <tr key={trade.id} className="hover:bg-gray-50 cursor-pointer">
+                  <tr key={trade.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => { setDrawerTrade(trade); setDrawerOpen(true) }}>
                     <td className="px-6 py-4 text-sm text-gray-600">{dateDisplay}</td>
                     <td className="px-6 py-4 text-sm font-semibold text-gray-900">{trade.symbol}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
@@ -196,6 +205,19 @@ export default function JournalScreen({ session }) {
                         {matchStatus.charAt(0).toUpperCase() + matchStatus.slice(1)}
                       </span>
                     </td>
+                    <td className="px-6 py-4">
+                      {isOpen ? null : trade.review_notes ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-green-600 font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                          Journalled
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block" />
+                          Add notes
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-4">
                       {!isOpen && (
                         <button
@@ -216,6 +238,15 @@ export default function JournalScreen({ session }) {
           </table>
         </div>
       )}
+
+      <TradeJournalDrawer
+        trade={drawerTrade}
+        plan={plansMap[drawerTrade?.planned_trade_id]}
+        baseCurrency={baseCurrency}
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onSaved={handleTradeUpdated}
+      />
 
       {shareRow && (() => {
         const plan = plansMap[shareRow.planned_trade_id];
