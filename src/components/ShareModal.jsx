@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { fmtPrice, fmtPnl } from '../lib/formatters';
 import { usePrivacy } from '../lib/PrivacyContext';
 
@@ -57,6 +57,17 @@ export default function ShareModal({ row, plannedStop, onClose }) {
     text += '\n#CT3000';
     window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
   };
+
+  // Esc closes, Enter fires Share on X
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'Enter') { e.preventDefault(); handleShareOnX(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onClose]);
 
   return (
     <div
