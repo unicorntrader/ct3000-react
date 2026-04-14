@@ -2,7 +2,7 @@ import React from 'react';
 import { fmtPrice, fmtPnl } from '../lib/formatters';
 import { usePrivacy } from '../lib/PrivacyContext';
 
-// row: { symbol, direction, nativePnl, currency, entry, qty, closingQty, assetCategory, plannedTradeId }
+// row: { symbol, direction, nativePnl, currency, entry, exit?, qty, closingQty, assetCategory, plannedTradeId }
 // plannedStop: plan.planned_stop_loss or null
 export default function ShareModal({ row, plannedStop, onClose }) {
   const { isPrivate } = usePrivacy();
@@ -13,42 +13,46 @@ export default function ShareModal({ row, plannedStop, onClose }) {
   const isWin = (pnl || 0) >= 0;
   const outcomeEmoji = isWin ? '✅' : '❌';
   const dirLabel = (row.direction || '').toUpperCase();
+  const isLong = dirLabel === 'LONG';
   const displaySymbol = (row.symbol || '').split(' ')[0];
 
   const multiplier = row.assetCategory === 'OPT' ? 100 : 1;
-
-  // Weighted average exit: derived from realized P&L, entry, and closing quantity
-  // Fall back to opening qty if closing qty is missing (fully closed trades)
   const qtyForCalc = row.closingQty || row.qty;
-  const avgExit = (row.entry != null && qtyForCalc != null && qtyForCalc !== 0)
-    ? (pnl / (qtyForCalc * multiplier)) + row.entry
-    : null;
 
+  // Use pre-computed exit if available (DailyViewScreen supplies it directly).
+  // Otherwise derive from P&L — direction-aware:
+  //   LONG:  exit = entry + pnl / (qty * multiplier)
+  //   SHORT: exit = entry - pnl / (qty * multiplier)
+  let avgExit = row.exit ?? null;
+  if (avgExit == null && row.entry != null && qtyForCalc != null && qtyForCalc !== 0 && pnl != null) {
+    avgExit = isLong
+      ? row.entry + pnl / (qtyForCalc * multiplier)
+      : row.entry - pnl / (qtyForCalc * multiplier);
+  }
+
+  // Direction-aware return %: positive = won, negative = lost (regardless of direction)
   const pctReturn = (avgExit != null && row.entry != null && row.entry !== 0)
-    ? (((avgExit - row.entry) / row.entry) * 100).toFixed(2)
+    ? ((isLong ? (avgExit - row.entry) : (row.entry - avgExit)) / row.entry * 100).toFixed(2)
     : null;
 
-  const rMultiple = (plannedStop != null && row.entry != null && row.qty != null && row.qty !== 0)
+  const rMultiple = (plannedStop != null && row.entry != null && qtyForCalc != null && qtyForCalc !== 0)
     ? (() => {
-        const risk = Math.abs(row.entry - plannedStop) * row.qty;
+        const risk = Math.abs(row.entry - plannedStop) * qtyForCalc * multiplier;
         if (risk === 0) return null;
         return (pnl / risk).toFixed(2);
       })()
     : null;
 
-  // Prices always visible — only dollar amounts masked
-  const entryDisplay = row.entry != null ? fmtPrice(row.entry, currency) : '—';
-  const exitDisplay  = avgExit != null   ? fmtPrice(avgExit, currency)   : '—';
-  const pnlDisplay   = isPrivate ? MASK : fmtPnl(pnl, currency);
-  const pctDisplay   = pctReturn != null ? `${pctReturn}%` : '—';
+  // Prices and percentages are never masked — only dollar P&L is sensitive
+  const entryDisplay = row.entry != null ? fmtPrice(row.entry, currency) : 'N/A';
+  const exitDisplay  = avgExit != null   ? fmtPrice(avgExit, currency)   : 'N/A';
+  const pnlDisplay   = isPrivate ? MASK : (pnl != null ? fmtPnl(pnl, currency) : 'N/A');
+  const pctDisplay   = pctReturn != null ? `${Number(pctReturn) > 0 ? '+' : ''}${pctReturn}%` : 'N/A';
   const rDisplay     = rMultiple != null ? `${rMultiple}R` : null;
 
   const handleShareOnX = () => {
-    const p = isPrivate ? MASK : fmtPnl(pnl, currency);
-    const pct = pctReturn != null ? `${pctReturn}%` : '—';
-    const en = row.entry != null ? fmtPrice(row.entry, currency) : '—';
-    const ex = avgExit != null ? fmtPrice(avgExit, currency) : '—';
-    let text = `${displaySymbol} ${dirLabel} ${outcomeEmoji}\nEntry: ${en} → Exit: ${ex}\nP&L: ${p} (${pct})`;
+    const p = isPrivate ? MASK : (pnl != null ? fmtPnl(pnl, currency) : 'N/A');
+    let text = `${displaySymbol} ${dirLabel} ${outcomeEmoji}\nEntry: ${entryDisplay} → Exit: ${exitDisplay}\nP&L: ${p} (${pctDisplay})`;
     if (rMultiple != null) text += `\nR: ${rMultiple}R`;
     text += '\n#CT3000';
     window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
