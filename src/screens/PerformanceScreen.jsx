@@ -431,10 +431,24 @@ export default function PerformanceScreen({ session }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {symbolRows.slice(0, 20).map(row => (
+                {symbolRows.slice(0, 20).map(row => {
+                  // Map Performance period → Journal date-range filter
+                  const periodMap = { '1W': '1w', '1M': '1m', '3M': '3m', 'All': 'all' };
+                  let dateFilter;
+                  if (preset === '1D') {
+                    const today = new Date().toISOString().slice(0, 10);
+                    dateFilter = { dateRange: 'custom', customFrom: today, customTo: today };
+                  } else if (preset && periodMap[preset]) {
+                    dateFilter = { dateRange: periodMap[preset] };
+                  } else if (!preset && (customFrom || customTo)) {
+                    dateFilter = { dateRange: 'custom', customFrom, customTo };
+                  } else {
+                    dateFilter = { dateRange: 'all' };
+                  }
+                  return (
                   <tr
                     key={row.symbol}
-                    onClick={() => navigate('/journal', { state: { symbolFilter: row.symbol } })}
+                    onClick={() => navigate('/journal', { state: { symbolFilter: row.symbol, ...dateFilter } })}
                     className="hover:bg-blue-50 cursor-pointer transition-colors"
                     title={`View ${row.symbol} trades in Smart Journal`}
                   >
@@ -445,7 +459,8 @@ export default function PerformanceScreen({ session }) {
                       <PrivacyValue value={fmtPnl(row.pnl, baseCurrency)} />
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
             {symbolRows.length > 20 && (

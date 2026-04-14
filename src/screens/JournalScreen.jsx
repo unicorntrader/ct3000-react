@@ -53,6 +53,9 @@ export default function JournalScreen({ session }) {
   const location = useLocation();
   const navigate = useNavigate();
   const initialSymbol = location.state?.symbolFilter || '';
+  const initialDateRange = location.state?.dateRange || 'all';
+  const initialCustomFrom = location.state?.customFrom || '';
+  const initialCustomTo = location.state?.customTo || '';
   const [trades, setTrades] = useState([]);
   const [plansMap, setPlansMap] = useState({});
   const [baseCurrency, setBaseCurrency] = useState('USD');
@@ -67,13 +70,13 @@ export default function JournalScreen({ session }) {
   const [symbolSuggestOpen, setSymbolSuggestOpen] = useState(false);
   const [directionFilter, setDirectionFilter] = useState('All');
   const [assetFilter, setAssetFilter] = useState('All');
-  const [dateRange, setDateRange] = useState('all');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
+  const [dateRange, setDateRange] = useState(initialDateRange);
+  const [customFrom, setCustomFrom] = useState(initialCustomFrom);
+  const [customTo, setCustomTo] = useState(initialCustomTo);
 
   // Clear navigation state after consuming so reloads don't re-apply
   useEffect(() => {
-    if (location.state?.symbolFilter) {
+    if (location.state?.symbolFilter || location.state?.dateRange) {
       navigate(location.pathname, { replace: true, state: {} });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

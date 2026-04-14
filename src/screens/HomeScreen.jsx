@@ -221,7 +221,7 @@ export default function HomeScreen({ session, onReviewOpen, reviewDismissed }) {
                             <PrivacyValue value={fmtPnl(pnl, pos.currency)} />
                           </p>
                           <p className="text-xs text-gray-400 mt-0.5">
-                            avg {fmtPrice(pos.avg_cost, pos.currency)} &middot; <span className="text-gray-300">at last sync</span>
+                            avg {fmtPrice(pos.avg_cost, pos.currency)}
                           </p>
                         </div>
                       </div>
