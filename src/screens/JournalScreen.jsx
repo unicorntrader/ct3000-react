@@ -2,9 +2,26 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtDate, pnlBase } from '../lib/formatters';
+import { computeAdherenceScore } from '../lib/adherenceScore';
 import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
 import TradeJournalDrawer from '../components/TradeJournalDrawer';
+
+// Adherence pill — same color thresholds as the drawer
+function AdherencePill({ score }) {
+  if (score == null) return <span className="text-gray-300">—</span>;
+  const rounded = Math.round(score);
+  const { bg, text } = rounded >= 75
+    ? { bg: 'bg-green-100', text: 'text-green-700' }
+    : rounded >= 50
+    ? { bg: 'bg-amber-100', text: 'text-amber-700' }
+    : { bg: 'bg-red-100', text: 'text-red-700' };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${bg} ${text}`}>
+      {rounded}
+    </span>
+  );
+}
 
 const FILTERS = ['All', 'Open', 'Wins', 'Losses', 'Matched', 'Unmatched', 'Ambiguous', 'Journalled', 'Not journalled'];
 
@@ -375,7 +392,7 @@ export default function JournalScreen({ session }) {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                {['Date', 'Symbol', 'Direction', 'P&L', 'R', 'Outcome', 'Plan', 'Journal', ''].map(h => (
+                {['Date', 'Symbol', 'Direction', 'P&L', 'R', 'Adh', 'Outcome', 'Plan', 'Journal', ''].map(h => (
                   <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
@@ -389,6 +406,12 @@ export default function JournalScreen({ session }) {
                 const rMultiple = isOpen ? null : calcR(trade, plan);
                 const matchStatus = trade.matching_status || 'auto';
                 const dateDisplay = fmtDate(isOpen ? trade.opened_at : trade.closed_at);
+                // Prefer the stored score; fall back to live compute if plan is loaded
+                const adherence = isOpen
+                  ? null
+                  : (trade.adherence_score != null
+                      ? trade.adherence_score
+                      : (matchStatus === 'matched' && plan ? computeAdherenceScore(plan, trade) : null));
 
                 return (
                   <tr key={trade.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => { setDrawerTrade(trade); setDrawerOpen(true) }}>
@@ -399,6 +422,9 @@ export default function JournalScreen({ session }) {
                       {isOpen ? '—' : <PrivacyValue value={fmtPnl(pnl, baseCurrency)} />}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{rMultiple ?? '—'}</td>
+                    <td className="px-6 py-4">
+                      <AdherencePill score={adherence} />
+                    </td>
                     <td className="px-6 py-4">
                       {isOpen ? (
                         <span className="px-2.5 py-1 text-xs rounded-full font-medium bg-blue-50 text-blue-600">open</span>
