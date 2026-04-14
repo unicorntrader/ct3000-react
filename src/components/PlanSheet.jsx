@@ -1,6 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { currencySymbol } from '../lib/formatters';
+import { currencySymbol, fmtPrice, fmtPnl, fmtDate, pnlBase } from '../lib/formatters';
+import { usePrivacy } from '../lib/PrivacyContext';
+
+function calcDuration(opened, closed) {
+  if (!opened || !closed) return null;
+  const mins = Math.round((new Date(closed) - new Date(opened)) / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  return `${Math.floor(hrs / 24)}d`;
+}
 
 const strategies = [
   { group: 'Timeframe', options: ['Day Trade', 'Swing', 'Position'] },
@@ -10,6 +20,7 @@ const strategies = [
 
 export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   const isEdit = !!plan?.id;
+  const { isPrivate } = usePrivacy();
 
   const [direction, setDirection] = useState('long');
   const [symbol, setSymbol] = useState('');
@@ -27,10 +38,15 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   const [deleting, setDeleting] = useState(false);
   const [baseCurrency, setBaseCurrency] = useState('USD');
 
+  const [debouncedSymbol, setDebouncedSymbol] = useState('');
+  const [histTrades, setHistTrades] = useState([]);
+  const [histExpanded, setHistExpanded] = useState(false);
+
   const resetForm = useCallback(() => {
     setSymbol(''); setStrategy(''); setDirection('long'); setAssetCategory('STK');
     setEntry(''); setTarget(''); setStop(''); setQty(''); setThesis('');
     setError(null); setSaved(false); setConfirmDelete(false);
+    setDebouncedSymbol(''); setHistTrades([]); setHistExpanded(false);
   }, []);
 
   const handleClose = useCallback(() => { resetForm(); onClose(); }, [resetForm, onClose]);
@@ -89,6 +105,26 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, handleClose]);
+
+  // Debounce ticker input for hist trade lookup
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSymbol(symbol.trim().toUpperCase()), 500);
+    return () => clearTimeout(id);
+  }, [symbol]);
+
+  // Fetch historical closed trades for this ticker
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!debouncedSymbol || !uid) { setHistTrades([]); return; }
+    supabase
+      .from('logical_trades')
+      .select('id, direction, opened_at, closed_at, avg_entry_price, total_closing_quantity, total_opening_quantity, total_realized_pnl, fx_rate_to_base, currency')
+      .eq('user_id', uid)
+      .eq('symbol', debouncedSymbol)
+      .eq('status', 'closed')
+      .order('closed_at', { ascending: false })
+      .then(({ data }) => setHistTrades(data || []));
+  }, [debouncedSymbol, session?.user?.id]);
 
   const handleSave = async () => {
     if (!session?.user?.id) {
@@ -200,6 +236,73 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                   onChange={ev => setSymbol(ev.target.value)}
                   className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 uppercase"
                 />
+
+                {histTrades.length > 0 && (() => {
+                  const wins = histTrades.filter(t => pnlBase(t) > 0).length;
+                  const losses = histTrades.length - wins;
+                  const totalPnl = histTrades.reduce((sum, t) => sum + pnlBase(t), 0);
+                  const totalQty = histTrades.reduce((sum, t) => sum + (t.total_closing_quantity || t.total_opening_quantity || 0), 0);
+                  const weightedEntry = histTrades.reduce((sum, t) => {
+                    const q = t.total_closing_quantity || t.total_opening_quantity || 0;
+                    return sum + (t.avg_entry_price || 0) * q;
+                  }, 0);
+                  const avgEntry = totalQty > 0 ? weightedEntry / totalQty : null;
+                  const tradeCurrency = histTrades[0]?.currency || baseCurrency;
+
+                  return (
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setHistExpanded(x => !x)}
+                        className="w-full text-left"
+                      >
+                        <p className="text-xs text-gray-400 leading-relaxed">
+                          <span className="text-gray-500 font-medium">{histTrades.length} trade{histTrades.length !== 1 ? 's' : ''}</span>
+                          {' · '}
+                          <span className="text-green-600">{wins}W</span>
+                          {' / '}
+                          <span className="text-red-500">{losses}L</span>
+                          {avgEntry != null && <> · avg entry {fmtPrice(avgEntry, tradeCurrency)}</>}
+                          {' · '}
+                          {isPrivate
+                            ? <span className="tracking-widest">••••</span>
+                            : <span className={totalPnl >= 0 ? 'text-green-600' : 'text-red-500'}>{fmtPnl(totalPnl, baseCurrency, 0)}</span>
+                          }
+                        </p>
+                      </button>
+
+                      {histExpanded && (
+                        <div className="mt-2 border border-gray-100 rounded-xl overflow-hidden">
+                          {histTrades.map(t => {
+                            const q = t.total_closing_quantity || t.total_opening_quantity || 0;
+                            const isLong = t.direction === 'LONG';
+                            const tPnl = pnlBase(t);
+                            const exit = (t.avg_entry_price != null && q > 0 && t.total_realized_pnl != null)
+                              ? (isLong ? t.avg_entry_price + t.total_realized_pnl / q : t.avg_entry_price - t.total_realized_pnl / q)
+                              : null;
+                            const dur = calcDuration(t.opened_at, t.closed_at);
+                            const tCurrency = t.currency || baseCurrency;
+                            return (
+                              <div key={t.id} className="flex items-center gap-2 px-3 py-2 text-xs border-b border-gray-50 last:border-0 bg-white">
+                                <span className="text-gray-400 w-12 shrink-0">{fmtDate(t.closed_at)}</span>
+                                <span className={`px-1.5 py-0.5 rounded font-medium shrink-0 ${isLong ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-500'}`}>
+                                  {t.direction}
+                                </span>
+                                <span className="text-gray-600">{fmtPrice(t.avg_entry_price, tCurrency)}</span>
+                                <span className="text-gray-300">→</span>
+                                <span className="text-gray-600">{exit != null ? fmtPrice(exit, tCurrency) : 'N/A'}</span>
+                                <span className={`font-medium ml-auto shrink-0 ${tPnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                  {isPrivate ? '••••' : fmtPnl(tPnl, baseCurrency, 0)}
+                                </span>
+                                {dur && <span className="text-gray-400 shrink-0">{dur}</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div>
