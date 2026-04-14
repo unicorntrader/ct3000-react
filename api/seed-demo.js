@@ -17,6 +17,17 @@ module.exports = async function handler(req, res) {
 
   const userId = user.id
 
+  // Skip if already seeded
+  const { data: existing } = await supabaseAdmin
+    .from('logical_trades')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('is_demo', true)
+    .limit(1)
+  if (existing && existing.length > 0) {
+    return res.status(200).json({ already_seeded: true })
+  }
+
   // Clear any stale demo data first
   await Promise.all([
     supabaseAdmin.from('logical_trades').delete().eq('user_id', userId).eq('is_demo', true),
