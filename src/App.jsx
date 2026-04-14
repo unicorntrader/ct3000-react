@@ -156,7 +156,7 @@ export default function App() {
       }
     })
     return () => authSub.unsubscribe()
-  }, [fetchSubscription])
+  }, [fetchSubscription, seedForAnon])
 
   // Re-check subscription on window focus (e.g. user switches tabs back)
   useEffect(() => {
