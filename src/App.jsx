@@ -97,6 +97,29 @@ export default function App() {
   const [subscription, setSubscription] = useState(undefined) // undefined = still loading
   const [polling, setPolling] = useState(false)
   const [pollTimedOut, setPollTimedOut] = useState(false)
+  const [anonReady, setAnonReady] = useState(false)
+
+  const seedForAnon = useCallback(async (session) => {
+    // Check if already seeded (handles returning anonymous users)
+    const { data } = await supabase
+      .from('logical_trades')
+      .select('id')
+      .eq('user_id', session.user.id)
+      .eq('is_demo', true)
+      .limit(1)
+
+    if (data && data.length > 0) {
+      setAnonReady(true)
+      return
+    }
+
+    const res = await fetch('/api/seed-demo', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${session.access_token}` },
+    })
+    if (!res.ok) console.error('[app] anon seed failed')
+    setAnonReady(true)
+  }, [])
 
   const fetchSubscription = useCallback(async (userId) => {
     console.log('[app] fetchSubscription for userId:', userId)
@@ -122,7 +145,9 @@ export default function App() {
       setSession(session)
       if (session?.user?.id) {
         if (session.user.is_anonymous) {
-          setSubscription(null) // anonymous users have no subscription
+          setSubscription(null)
+          setAnonReady(false)
+          seedForAnon(session)
         } else {
           fetchSubscription(session.user.id)
         }
@@ -211,6 +236,7 @@ export default function App() {
 
   // Anonymous demo user — bypass Stripe entirely
   if (session.user.is_anonymous) {
+    if (!anonReady) return <LoadingScreen message="Setting up your demo…" />
     return (
       <PrivacyProvider>
         <AppShell session={session} subscription={null} onSubscriptionRefresh={() => {}} isAnonymous />
