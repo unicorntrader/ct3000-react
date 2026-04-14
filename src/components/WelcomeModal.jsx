@@ -1,27 +1,13 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
-import { seedDemoData } from '../lib/demoData'
 
 export default function WelcomeModal({ userId, onDone }) {
   const navigate = useNavigate()
-  const [seeding, setSeeding] = useState(false)
   const [skipping, setSkipping] = useState(false)
   const [error, setError] = useState(null)
 
-  const handleSeedDemo = async () => {
-    setSeeding(true)
-    setError(null)
-    try {
-      await seedDemoData()
-      onDone()
-    } catch (err) {
-      setError(err.message)
-      setSeeding(false)
-    }
-  }
-
-  const handleConnectIBKR = async () => {
+  const dismiss = async (destination) => {
     setSkipping(true)
     setError(null)
     const { error: updateErr } = await supabase
@@ -34,10 +20,8 @@ export default function WelcomeModal({ userId, onDone }) {
       return
     }
     onDone()
-    navigate('/ibkr')
+    if (destination) navigate(destination)
   }
-
-  const busy = seeding || skipping
 
   return (
     <div className="fixed inset-0 z-50 bg-white flex items-center justify-center px-6">
@@ -54,31 +38,24 @@ export default function WelcomeModal({ userId, onDone }) {
 
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Welcome to CT3000</h1>
         <p className="text-sm text-gray-400 mb-8 leading-relaxed">
-          Start by exploring with demo data, or connect your IBKR account to import your real trades right away.
+          Connect your IBKR account to import your trades and start journalling.
         </p>
 
         <div className="space-y-3">
           <button
-            onClick={handleSeedDemo}
-            disabled={busy}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3.5 rounded-xl text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            onClick={() => dismiss('/ibkr')}
+            disabled={skipping}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3.5 rounded-xl text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {seeding ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Loading demo…
-              </>
-            ) : (
-              'Explore with demo data'
-            )}
+            {skipping ? 'One moment…' : 'Connect IBKR account'}
           </button>
 
           <button
-            onClick={handleConnectIBKR}
-            disabled={busy}
-            className="w-full bg-gray-50 hover:bg-gray-100 text-gray-800 font-semibold py-3.5 rounded-xl text-sm border border-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => dismiss(null)}
+            disabled={skipping}
+            className="w-full bg-gray-50 hover:bg-gray-100 text-gray-500 font-medium py-3.5 rounded-xl text-sm border border-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {skipping ? 'One moment…' : 'Connect IBKR account'}
+            Skip for now
           </button>
         </div>
 
@@ -87,10 +64,6 @@ export default function WelcomeModal({ userId, onDone }) {
             {error}
           </div>
         )}
-
-        <p className="text-xs text-gray-300 text-center mt-8">
-          Demo data is cleared automatically when you connect IBKR.
-        </p>
       </div>
     </div>
   )
