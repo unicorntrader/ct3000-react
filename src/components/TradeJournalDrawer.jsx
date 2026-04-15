@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { fmtPrice, fmtPnl, fmtDateLong, pnlBase } from '../lib/formatters'
+import { fmtPrice, fmtPnl, fmtDateLong } from '../lib/formatters'
 import { computeAdherenceScore } from '../lib/adherenceScore'
 
 function StatCard({ label, value, color }) {
@@ -61,10 +61,12 @@ export default function TradeJournalDrawer({ trade, plan, baseCurrency, isOpen, 
   )
 
   const isOpen_trade  = trade.status === 'open'
-  const pnl           = isOpen_trade ? null : pnlBase(trade)
+  // Single-trade view: show in the trade's native currency, not base.
+  // Prices, P&L, R all live in the same native units for consistency.
+  const pnl           = isOpen_trade ? null : (trade.total_realized_pnl || 0)
   const isWin         = (pnl || 0) > 0
   const isMatchedClosed = trade.status === 'closed' && trade.matching_status === 'matched'
-  const currency      = baseCurrency || 'USD'
+  const currency      = trade.currency || baseCurrency || 'USD'
 
   // Derive actual exit price (approx — does not account for commissions)
   const closingQty = trade.total_closing_quantity || trade.total_opening_quantity || 0
@@ -75,7 +77,7 @@ export default function TradeJournalDrawer({ trade, plan, baseCurrency, isOpen, 
       : trade.avg_entry_price - (trade.total_realized_pnl / closingQty)
   }
 
-  // R-multiple
+  // R-multiple — all native currency: numerator (native P&L) / denominator (native risk)
   let rMultiple = null
   if (plan && plan.planned_entry_price != null && plan.planned_stop_loss != null && closingQty > 0 && pnl != null) {
     const risk = Math.abs(plan.planned_entry_price - plan.planned_stop_loss) * closingQty

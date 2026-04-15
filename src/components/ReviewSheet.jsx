@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPnl, fmtPrice, fmtDate, pnlBase } from '../lib/formatters';
+import { fmtPnl, fmtPrice, fmtDate } from '../lib/formatters';
 
-function TradeCard({ trade, baseCurrency }) {
-  const pnl = pnlBase(trade);
+function TradeCard({ trade }) {
+  // Single-trade view: show in the trade's native currency, not base.
+  const pnl = trade.total_realized_pnl || 0;
+  const currency = trade.currency || 'USD';
   const isPositive = pnl >= 0;
   return (
     <div className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-100">
@@ -19,12 +21,12 @@ function TradeCard({ trade, baseCurrency }) {
           </span>
         </div>
         <span className={`text-base font-semibold ${isPositive ? 'text-green-600' : 'text-red-500'}`}>
-          {fmtPnl(pnl, baseCurrency)}
+          {fmtPnl(pnl, currency)}
         </span>
       </div>
       <div className="grid grid-cols-3 gap-2">
         {trade.avg_entry_price != null && (
-          <div className="text-center"><p className="text-xs text-gray-400">Entry</p><p className="text-sm font-medium mt-0.5">{fmtPrice(trade.avg_entry_price)}</p></div>
+          <div className="text-center"><p className="text-xs text-gray-400">Entry</p><p className="text-sm font-medium mt-0.5">{fmtPrice(trade.avg_entry_price, currency)}</p></div>
         )}
         {trade.total_opening_quantity && (
           <div className="text-center"><p className="text-xs text-gray-400">Qty</p><p className="text-sm font-medium mt-0.5">{trade.total_opening_quantity}</p></div>
@@ -40,7 +42,6 @@ function TradeCard({ trade, baseCurrency }) {
 export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
   const [trades, setTrades] = useState([]);
   const [candidatesMap, setCandidatesMap] = useState({});
-  const [baseCurrency, setBaseCurrency] = useState('USD');
   const [step, setStep] = useState(0);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -63,21 +64,12 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
     setStep(0);
     setSelected(null);
 
-    const [{ data: reviewTrades }, { data: creds }] = await Promise.all([
-      supabase
-        .from('logical_trades')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .in('matching_status', ['unmatched', 'ambiguous'])
-        .order('opened_at', { ascending: false }),
-      supabase
-        .from('user_ibkr_credentials')
-        .select('base_currency')
-        .eq('user_id', session.user.id)
-        .maybeSingle(),
-    ]);
-
-    if (creds?.base_currency) setBaseCurrency(creds.base_currency);
+    const { data: reviewTrades } = await supabase
+      .from('logical_trades')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .in('matching_status', ['unmatched', 'ambiguous'])
+      .order('opened_at', { ascending: false });
 
     const tradeList = reviewTrades || [];
     setTrades(tradeList);
@@ -254,7 +246,7 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
                 </div>
               ) : (
                 <>
-                  <TradeCard trade={current} baseCurrency={baseCurrency} />
+                  <TradeCard trade={current} />
 
                   {candidates.length === 0 ? (
                     <p className="text-sm text-gray-400 mb-4">No matching plan found for this trade.</p>

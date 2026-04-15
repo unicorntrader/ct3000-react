@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPnl, fmtDate, pnlBase } from '../lib/formatters';
+import { fmtPnl, fmtDate } from '../lib/formatters';
 import { computeAdherenceScore } from '../lib/adherenceScore';
 import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
@@ -61,7 +61,9 @@ const calcR = (trade, plan) => {
   if (entry == null || stop == null || !qty) return null;
   const riskPerShare = Math.abs(entry - stop);
   if (riskPerShare === 0) return null;
-  const r = pnlBase(trade) / (riskPerShare * qty);
+  // R-multiple is unitless — use native P&L so numerator and denominator share units.
+  // Using pnlBase() here would silently scale R by fx_rate_to_base for non-base trades.
+  const r = (trade.total_realized_pnl || 0) / (riskPerShare * qty);
   return r.toFixed(1) + 'R';
 };
 
@@ -400,8 +402,10 @@ export default function JournalScreen({ session }) {
             <tbody className="divide-y divide-gray-100">
               {filtered.map((trade) => {
                 const isOpen = trade.status === 'open';
-                const pnl = isOpen ? null : pnlBase(trade);
+                // Each row is a single trade — show native currency, not base.
+                const pnl = isOpen ? null : (trade.total_realized_pnl || 0);
                 const isWin = (pnl || 0) > 0;
+                const rowCurrency = trade.currency || baseCurrency;
                 const plan = plansMap[trade.planned_trade_id];
                 const rMultiple = isOpen ? null : calcR(trade, plan);
                 const matchStatus = trade.matching_status || 'auto';
@@ -419,7 +423,7 @@ export default function JournalScreen({ session }) {
                     <td className="px-6 py-4 text-sm font-semibold text-gray-900">{trade.symbol}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
                     <td className={`px-6 py-4 text-sm font-semibold ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>
-                      {isOpen ? '—' : <PrivacyValue value={fmtPnl(pnl, baseCurrency)} />}
+                      {isOpen ? '—' : <PrivacyValue value={fmtPnl(pnl, rowCurrency)} />}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{rMultiple ?? '—'}</td>
                     <td className="px-6 py-4">
