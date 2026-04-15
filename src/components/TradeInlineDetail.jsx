@@ -201,9 +201,12 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
                 ))}
               </div>
               {plan.thesis && (
-                <p className="mt-2 text-xs text-gray-400 italic border-l-2 border-gray-200 pl-3">
-                  "{plan.thesis}"
-                </p>
+                <div className="mt-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Thesis</p>
+                  <p className="text-xs text-gray-500 italic border-l-2 border-gray-200 pl-3">
+                    "{plan.thesis}"
+                  </p>
+                </div>
               )}
             </div>
           )}
