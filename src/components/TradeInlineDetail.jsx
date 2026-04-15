@@ -79,6 +79,12 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
   const pnl = isOpen_trade ? null : (trade.total_realized_pnl || 0)
   const isWin = (pnl || 0) > 0
   const isMatchedClosed = trade.status === 'closed' && trade.matching_status === 'matched'
+  // A trade is "resolved" once the user or auto-matcher has committed to
+  // either a plan link or an explicit "no plan" decision. Resolved trades
+  // can be reset to unmatched so they re-enter the review queue.
+  const isResolved = trade.status === 'closed' && (
+    trade.matching_status === 'matched' || trade.matching_status === 'manual'
+  )
   const currency = trade.currency || 'USD'
 
   // Derive actual exit price (approx — does not account for commissions)
@@ -136,6 +142,34 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
     setTimeout(() => setSaved(false), 3000)
   }
 
+  // Reset the match so the trade re-enters the /review queue. Used when the
+  // user realises they matched to the wrong plan, or said "No plan" too
+  // quickly and actually had one. Preserves review_notes + adherence_score
+  // (they'll recompute on next re-match if the plan changes).
+  const handleResetMatch = async () => {
+    const ok = window.confirm(
+      'Reset the match for this trade? It will reappear in Needs review so you can re-link it.'
+    )
+    if (!ok) return
+    const { data: updated, error } = await supabase
+      .from('logical_trades')
+      .update({
+        matching_status: 'unmatched',
+        planned_trade_id: null,
+        adherence_score: null,
+      })
+      .eq('id', trade.id)
+      .eq('user_id', trade.user_id)
+      .select()
+      .single()
+    if (error) {
+      console.error('[inline-detail] reset match failed:', error.message)
+      alert(`Could not reset match: ${error.message}`)
+      return
+    }
+    if (updated && onSaved) onSaved(updated)
+  }
+
   // Keep the ref pointed at the latest handleSave so the top-level keyboard
   // effect always calls the up-to-date version without listing it as a dep.
   handleSaveRef.current = handleSave
@@ -168,6 +202,15 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
               </span>
             )}
             <span className="text-xs text-gray-400 ml-1">{dateDisplay}</span>
+            {isResolved && (
+              <button
+                onClick={e => { e.stopPropagation(); handleResetMatch(); }}
+                className="ml-auto text-xs text-gray-400 hover:text-blue-600 underline decoration-dotted underline-offset-2"
+                title="Clear the plan match and send this trade back to Needs review"
+              >
+                Reset match
+              </button>
+            )}
           </div>
 
           {/* Stats row */}

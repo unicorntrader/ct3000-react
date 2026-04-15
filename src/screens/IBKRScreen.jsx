@@ -387,6 +387,9 @@ export default function IBKRScreen({ session }) {
                   <p className="text-sm font-semibold text-green-800 mb-2">Sync successful</p>
                   <p className="text-sm text-green-700">{syncResult.tradeCount} trades saved to database</p>
                   <p className="text-sm text-green-700">{syncResult.openPositionCount} open positions updated</p>
+                  <p className="text-xs text-green-600 mt-2 italic">
+                    Note: IBKR Flex Queries are batch reports — new executions typically appear 10–30 minutes after the fill, and same-day trades may only settle after 4pm ET. If a recent trade is missing, wait a bit and sync again.
+                  </p>
                   {syncResult.demoCleared && (
                     <p className="text-xs text-amber-700 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                       Demo data cleared — your real IBKR trades are now loaded.
