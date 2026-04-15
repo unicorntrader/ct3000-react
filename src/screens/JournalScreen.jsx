@@ -496,6 +496,7 @@ export default function JournalScreen({ session }) {
                             trade={trade}
                             plan={plan}
                             onSaved={handleTradeUpdated}
+                            onCollapse={() => setExpandedTradeId(null)}
                           />
                         </td>
                       </tr>

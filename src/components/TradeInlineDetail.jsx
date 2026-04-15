@@ -34,7 +34,7 @@ function AdherencePill({ score }) {
   )
 }
 
-export default function TradeInlineDetail({ trade, plan, onSaved }) {
+export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) {
   const [notes, setNotes] = useState(trade?.review_notes || '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -44,6 +44,8 @@ export default function TradeInlineDetail({ trade, plan, onSaved }) {
     setNotes(trade?.review_notes || '')
     setSaved(false)
   }, [trade])
+
+  const isDirty = notes.trim() !== (trade?.review_notes || '').trim()
 
   if (!trade) return null
 
@@ -87,6 +89,7 @@ export default function TradeInlineDetail({ trade, plan, onSaved }) {
   }
 
   const handleSave = async () => {
+    if (saving || !isDirty) return
     setSaving(true)
     const score = isMatchedClosed ? computeAdherenceScore(plan, trade) : null
     const { data: updated, error } = await supabase
@@ -104,8 +107,27 @@ export default function TradeInlineDetail({ trade, plan, onSaved }) {
     }
     setSaved(true)
     if (updated && onSaved) onSaved(updated)
-    setTimeout(() => setSaved(false), 1500)
+    // Keep the "Saved" confirmation visible longer so the user actually sees it
+    setTimeout(() => setSaved(false), 3000)
   }
+
+  // Keyboard: Esc collapses the row, Cmd/Ctrl+Enter saves the note
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onCollapse?.()
+        return
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        handleSave()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notes, isDirty])
 
   return (
     <div className="px-6 py-5 bg-gray-50 border-y border-gray-100">
@@ -178,9 +200,14 @@ export default function TradeInlineDetail({ trade, plan, onSaved }) {
 
         {/* Right column: notes */}
         <div>
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-            Notes
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              Notes
+            </label>
+            {isDirty && !saved && (
+              <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
+            )}
+          </div>
           <textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
@@ -189,20 +216,34 @@ export default function TradeInlineDetail({ trade, plan, onSaved }) {
             className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white text-gray-900 placeholder-gray-300 resize-none"
             onClick={e => e.stopPropagation()}
           />
+
+          {/* Save button — bigger state differences so "saved" is obvious */}
           <button
             onClick={e => { e.stopPropagation(); handleSave(); }}
-            disabled={saving || saved}
-            className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+            disabled={saving || !isDirty}
+            className={`mt-3 w-full font-semibold py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 ${
+              saved
+                ? 'bg-green-500 text-white ring-2 ring-green-300 scale-[1.01]'
+                : isDirty
+                ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            }`}
           >
             {saved ? (
               <>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                 </svg>
                 Saved
               </>
-            ) : saving ? 'Saving…' : 'Save notes'}
+            ) : saving ? 'Saving…' : isDirty ? 'Save notes' : 'No changes'}
           </button>
+
+          {/* Keyboard shortcut hints */}
+          <p className="mt-2 text-[11px] text-gray-400 text-center">
+            <kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded text-gray-500">⌘ ↵</kbd> save &middot;
+            <kbd className="ml-2 px-1.5 py-0.5 bg-white border border-gray-200 rounded text-gray-500">Esc</kbd> close
+          </p>
         </div>
       </div>
     </div>
