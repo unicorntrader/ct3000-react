@@ -218,6 +218,54 @@ Safe `.select('*')` queries exist in `App.jsx`, `PlansScreen.jsx`, `HomeScreen.j
 
 ---
 
+### April 15, 2026
+
+**Shipped (merges + fixes):**
+- Merged 11 files of pre-session work from `pre-session-local-changes` backup branch into main (`5c2ddd1e`) — ReviewSheet (+221 lines), create-checkout-session (+70), DailyViewScreen (+44), plus smaller changes to PlanSheet, App, SettingsScreen, index.css, supabaseAdmin
+- `TradeJournalDrawer` replaced with backup version — adds Enter-to-save with smart textarea handling (skips Enter when focus is in INPUT/TEXTAREA/SELECT), uses refs to avoid stale closures
+- `PerformanceScreen` got `.maybeSingle()` fix for users without IBKR credentials (bug from backup branch applied on top of today's symbol-navigation work)
+- `docs/SETUP.md` (234 lines onboarding doc from backup), `docs/architecture.md`, `docs/backend.md`, `.gitignore` all committed (`5c2ddd1e`, `5780d106`)
+- RLS migration applied to live Supabase (`6955b502`)
+- **Critical #1** — `ReviewSheet` plans query dropped non-existent `notes` column (`dc7dbc7d`). Same bug as `JournalScreen` fix yesterday; reimported via the backup merge, caught on audit.
+- **Critical #2** — HomeScreen + ReviewSheet multi-currency P&L fixed. HomeScreen now fetches `fx_rate_to_base` and `base_currency`, uses `pnlBase(t)` for `todayPnl`. ReviewSheet TradeCard takes `baseCurrency` prop and uses `pnlBase(trade)`. (`193dfc27`)
+- **Critical #3** — `api/seed-demo.js` fixed: `notes` → `thesis`, added `strategy: 'Demo'` for NOT NULL constraint. Anonymous demo flow now works end-to-end (`b2395d2d`).
+- **Critical #4** — `ReviewSheet.handleMatch`, `handleNoPlan`, and `TradeJournalDrawer.handleSave` now include `.eq('user_id', ...)` and check the `.update()` error before advancing state. Silent failures eliminated. (`4ada87e9`)
+
+**Bugs found but not yet fixed** (from the April 15 audit):
+- **⚠️ High — JournalScreen `location.state` mount-only consumption** — `JournalScreen.jsx:95–98`. Second navigation from Performance → Journal with different symbol won't update filter because mount effect already cleared state. Needs a `useEffect` watching `location.state` instead of reading it once.
+- **⚠️ High — Adherence score never computed during sync** — `api/rebuild.js` runs `buildLogicalTrades` + plan matching but skips `computeAdherenceScore`. Score only populates when user manually opens drawer and saves. 95% of matched trades have `null` adherence.
+- **⚠️ High — No Esc handler on `Sidebar.jsx` and `WelcomeModal.jsx`**.
+- **⚠️ New — `totalUnrealized` on HomeScreen line 51 has FX bug for open positions.** Found while fixing Critical #2. `open_positions` table has `currency` but NOT `fx_rate_to_base`, so we can't convert without a schema + `api/sync.js` change. Deferred.
+- **🟡 Medium — 3 screens fetch `baseCurrency` independently** — `DailyView`, `Performance`, `Journal`, and now `HomeScreen` + `ReviewSheet`. Candidate for a React context provider.
+- **🟡 Medium — `DailyViewScreen:184–187` `daily_notes` upsert has no error handling.**
+- **🟡 Medium — `PlanSheet:128–136` historical trades query silently swallows errors.**
+- **🟡 Medium — ReviewSheet resets step on close** — user interrupting at step 4 of 6 restarts from 0.
+- **🟡 Medium — `api/seed-demo.js` seeds `playbooks` table that no screen reads.** Dead feature — either wire up or drop.
+- **🟢 Low — `DailyViewScreen.jsx:72` `openOrderIds` computed but never used.** Dead code.
+- **🟢 Low — `TradeJournalDrawer` uses `fmtDateLong` — lossy for same-day trades.**
+- **🟢 Low — `docs/architecture.md` lists ReviewSheet as ❌ Esc — stale.**
+- **🟢 Low — `docs/backend.md` says `sync.js` "never touches the database" — stale (uses supabaseAdmin now).**
+- **🟢 Low — `api/redeem-invite.js` functional but no UI path.** Unclear if planned feature.
+
+**Design / direction decisions:**
+- **`notes` vs `thesis` pattern now confirmed universal:** the canonical column is `thesis`. The codebase had `notes` hallucinated in at least 3 places (JournalScreen, ReviewSheet, seed-demo). Grep is now clean. Future copies of this pattern should fail the audit.
+- **Decision: keep anonymous demo flow.** `seed-demo.js` stays, now working. This is the "try without signing up" landing experience.
+- **Error-check sweep decision:** adopted convention that every client `.update()` / `.insert()` / `.upsert()` call must:
+  1. Include `.eq('user_id', ...)` (CLAUDE.md convention)
+  2. Destructure `error` from the response
+  3. Log + surface error to user (via `alert()` for now) before advancing state
+  The three updates fixed in Critical #4 follow this pattern. Extend to the remaining Medium items.
+
+**Dev notes for future me:**
+- **Git worktree / main folder lesson:** I work in a worktree under `.claude/worktrees/`. Your "main folder" at `/Users/antonisprotopapas/Desktop/ct3000-react/` is a separate working directory. Changes I make don't appear there until you run `git pull origin main` in that folder. Conversely, edits you make there don't appear in the worktree. Today we hit this when merging the backup branch — 12 files of your uncommitted edits lived only in the main folder.
+- **When rescuing uncommitted changes:** create a named branch (`pre-session-local-changes`), push it to origin, then pull main on top. Don't rely on `git stash` for anything you care about.
+- **Schema drift keeps biting:** same `notes` column bug hit twice in 24 hours (JournalScreen yesterday, ReviewSheet today). Root cause: explicit column lists in `.select()`. Mitigation: prefer `select('*')` per CLAUDE.md, grep whole codebase when touching schema-related code.
+- **Supabase database linter exists** — visit the Security page in the dashboard regularly. Today's RLS issues had been there since the tables were created; no one had checked.
+
+**Estimated completion:** still ~75–80%. Progress on quality, not scope.
+
+---
+
 ### Template for future daily entries
 
 Copy this block for each new day:
