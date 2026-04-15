@@ -47,11 +47,11 @@ module.exports = async function handler(req, res) {
   // 3 executed plans (will be matched to logical trades)
   // 2 pending plans (still waiting for entry)
   const plannedTradesData = [
-    { user_id: userId, symbol: 'NVDA', direction: 'LONG',  asset_category: 'STK', planned_entry_price: 138, planned_target_price: 165, planned_stop_loss: 130, planned_quantity: 100, notes: 'Breakout, 2R target', is_demo: true },
-    { user_id: userId, symbol: 'AAPL', direction: 'LONG',  asset_category: 'STK', planned_entry_price: 183, planned_target_price: 205, planned_stop_loss: 176, planned_quantity: 50,  notes: 'Earnings dip buy',   is_demo: true },
-    { user_id: userId, symbol: 'TSLA', direction: 'SHORT', asset_category: 'STK', planned_entry_price: 252, planned_target_price: 225, planned_stop_loss: 262, planned_quantity: 30,  notes: 'Fade gap up, 1R',   is_demo: true },
-    { user_id: userId, symbol: 'SPY',  direction: 'LONG',  asset_category: 'STK', planned_entry_price: 495, planned_target_price: 512, planned_stop_loss: 488, planned_quantity: 20,  notes: 'Trend continuation', is_demo: true },
-    { user_id: userId, symbol: 'MSFT', direction: 'LONG',  asset_category: 'STK', planned_entry_price: 413, planned_target_price: 440, planned_stop_loss: 405, planned_quantity: 40,  notes: 'Support bounce',     is_demo: true },
+    { user_id: userId, symbol: 'NVDA', direction: 'LONG',  asset_category: 'STK', strategy: 'Demo', planned_entry_price: 138, planned_target_price: 165, planned_stop_loss: 130, planned_quantity: 100, thesis: 'Breakout, 2R target',  is_demo: true },
+    { user_id: userId, symbol: 'AAPL', direction: 'LONG',  asset_category: 'STK', strategy: 'Demo', planned_entry_price: 183, planned_target_price: 205, planned_stop_loss: 176, planned_quantity: 50,  thesis: 'Earnings dip buy',    is_demo: true },
+    { user_id: userId, symbol: 'TSLA', direction: 'SHORT', asset_category: 'STK', strategy: 'Demo', planned_entry_price: 252, planned_target_price: 225, planned_stop_loss: 262, planned_quantity: 30,  thesis: 'Fade gap up, 1R',     is_demo: true },
+    { user_id: userId, symbol: 'SPY',  direction: 'LONG',  asset_category: 'STK', strategy: 'Demo', planned_entry_price: 495, planned_target_price: 512, planned_stop_loss: 488, planned_quantity: 20,  thesis: 'Trend continuation', is_demo: true },
+    { user_id: userId, symbol: 'MSFT', direction: 'LONG',  asset_category: 'STK', strategy: 'Demo', planned_entry_price: 413, planned_target_price: 440, planned_stop_loss: 405, planned_quantity: 40,  thesis: 'Support bounce',     is_demo: true },
   ]
 
   const { data: plans, error: plansErr } = await supabaseAdmin
