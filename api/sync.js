@@ -130,6 +130,7 @@ function parseOpenPositions(xml) {
       marketValue:   get('marketValue') || get('positionValue'),
       unrealizedPnl: get('unrealizedPnl') || get('fifoPnlUnrealized'),
       currency:      get('currency'),
+      fxRateToBase:  get('fxRateToBase'),
     });
   }
   return positions;

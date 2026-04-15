@@ -194,17 +194,18 @@ export default function IBKRScreen({ session }) {
 
       if (result.openPositions.length > 0) {
         const positionsToInsert = result.openPositions.map(p => ({
-          user_id:        userId,
-          account_id:     p.accountId,
-          conid:          p.conid,
-          symbol:         p.symbol,
-          asset_category: p.assetCategory,
-          position:       p.position ? parseFloat(p.position) : null,
-          avg_cost:       p.avgCost ? parseFloat(p.avgCost) : null,
-          market_value:   p.marketValue ? parseFloat(p.marketValue) : null,
-          unrealized_pnl: p.unrealizedPnl ? parseFloat(p.unrealizedPnl) : null,
-          currency:       p.currency,
-          updated_at:     new Date().toISOString(),
+          user_id:         userId,
+          account_id:      p.accountId,
+          conid:           p.conid,
+          symbol:          p.symbol,
+          asset_category:  p.assetCategory,
+          position:        p.position ? parseFloat(p.position) : null,
+          avg_cost:        p.avgCost ? parseFloat(p.avgCost) : null,
+          market_value:    p.marketValue ? parseFloat(p.marketValue) : null,
+          unrealized_pnl:  p.unrealizedPnl ? parseFloat(p.unrealizedPnl) : null,
+          currency:        p.currency,
+          fx_rate_to_base: p.fxRateToBase ? parseFloat(p.fxRateToBase) : 1.0,
+          updated_at:      new Date().toISOString(),
         }));
 
         const { error: positionsError } = await supabase

@@ -50,7 +50,14 @@ export default function HomeScreen({ session, onReviewOpen, reviewDismissed }) {
   const todayTrades = logicalTrades.filter(t => t.closed_at?.slice(0, 10) === today);
   const todayPnl = todayTrades.reduce((sum, t) => sum + pnlBase(t), 0);
 
-  const totalUnrealized = positions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
+  // Sum unrealized P&L across currencies by converting each position to base.
+  // `fx_rate_to_base` is captured per position at sync time (see api/sync.js
+  // parseOpenPositions). Null fallback is 1.0 for legacy rows or single-currency
+  // accounts where base = native.
+  const totalUnrealized = positions.reduce(
+    (sum, p) => sum + (p.unrealized_pnl || 0) * (p.fx_rate_to_base || 1),
+    0
+  );
 
   const closedLast30 = logicalTrades.filter(t => t.status === 'closed');
   const wins = closedLast30.filter(t => (t.total_realized_pnl || 0) > 0).length;
