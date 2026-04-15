@@ -87,6 +87,15 @@ function AppShell({ session, subscription, onSubscriptionRefresh, isAnonymous })
           <Route path="/ibkr"        element={<IBKRScreen session={session} />} />
           <Route path="/settings"    element={<SettingsScreen session={session} />} />
           <Route path="/review"      element={<ReviewScreen session={session} />} />
+          {/* /signup is the route ct3000-admin uses for invite links
+              (https://.../signup?invite=TOKEN). Logged-out users never hit this
+              route — App.jsx returns <AuthScreen /> directly when session is null,
+              and AuthScreen reads ?invite= from window.location.search regardless
+              of path. This route only matters when a user is ALREADY logged in and
+              clicks an invite link: they can't redeem it without signing out first,
+              so we just send them home. Explicit route avoids relying on the
+              catch-all wildcard's accidental behavior. */}
+          <Route path="/signup"      element={<Navigate to="/" replace />} />
           <Route path="*"            element={<Navigate to="/" replace />} />
         </Routes>
       </main>

@@ -539,7 +539,7 @@ export default function PerformanceScreen({ session }) {
                     <th
                       key={col.key}
                       onClick={() => handleSort(col.key)}
-                      className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700"
+                      className="px-3 sm:px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 whitespace-nowrap"
                     >
                       {col.label}
                       {sortIcon(sortCol === col.key, sortDir)}
@@ -569,10 +569,10 @@ export default function PerformanceScreen({ session }) {
                     className="hover:bg-blue-50 cursor-pointer transition-colors"
                     title={`View ${row.symbol} trades in Smart Journal`}
                   >
-                    <td className="px-5 py-3.5 text-sm font-semibold text-blue-600">{row.symbol}</td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600">{row.trades}</td>
-                    <td className="px-5 py-3.5 text-sm text-gray-700">{row.winRate}%</td>
-                    <td className={`px-5 py-3.5 text-sm font-semibold ${row.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    <td className="px-3 sm:px-5 py-3.5 text-sm font-semibold text-blue-600 whitespace-nowrap">{row.symbol}</td>
+                    <td className="px-3 sm:px-5 py-3.5 text-sm text-gray-600">{row.trades}</td>
+                    <td className="px-3 sm:px-5 py-3.5 text-sm text-gray-700">{row.winRate}%</td>
+                    <td className={`px-3 sm:px-5 py-3.5 text-sm font-semibold whitespace-nowrap ${row.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                       <PrivacyValue value={fmtPnl(row.pnl, baseCurrency)} />
                     </td>
                   </tr>

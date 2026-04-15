@@ -515,11 +515,23 @@ export default function JournalScreen({ session }) {
           )}
           <table className="w-full">
             <thead className="bg-gray-50">
+              {/* Responsive column visibility:
+                  - Always on:   Date, Symbol, P&L, Outcome
+                  - sm: (≥640)  adds Direction, Plan, share
+                  - md: (≥768)  adds checkbox, R, Adh, Journal
+                  - Phones < sm see just 4 columns — scannable, no squish. */}
               <tr>
-                <th className="w-10 px-4 py-3" />
-                {['Date', 'Symbol', 'Direction', 'P&L', 'R', 'Adh', 'Outcome', 'Plan', 'Journal', ''].map(h => (
-                  <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
-                ))}
+                <th className="hidden md:table-cell w-10 px-4 py-3" />
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
+                <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Direction</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">P&L</th>
+                <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">R</th>
+                <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Adh</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Outcome</th>
+                <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
+                <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Journal</th>
+                <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -551,7 +563,7 @@ export default function JournalScreen({ session }) {
                       }`}
                       onClick={() => setExpandedTradeId(isExpanded ? null : trade.id)}
                     >
-                      <td className="w-10 px-4 py-4" onClick={e => e.stopPropagation()}>
+                      <td className="hidden md:table-cell w-10 px-4 py-4" onClick={e => e.stopPropagation()}>
                         {isBulkEligible ? (
                           <input
                             type="checkbox"
@@ -562,7 +574,7 @@ export default function JournalScreen({ session }) {
                           />
                         ) : null}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
+                      <td className="px-4 sm:px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
                         <span className="inline-flex items-center gap-2">
                           <svg
                             className={`w-3 h-3 text-gray-300 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
@@ -573,19 +585,19 @@ export default function JournalScreen({ session }) {
                           {dateDisplay}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm font-semibold text-gray-900 whitespace-nowrap">
+                      <td className="px-4 sm:px-6 py-4 text-sm font-semibold text-gray-900 whitespace-nowrap">
                         {fmtSymbol(trade)}
                         <AssetBadge category={trade.asset_category} />
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
-                      <td className={`px-6 py-4 text-sm font-semibold ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>
+                      <td className="hidden sm:table-cell px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
+                      <td className={`px-4 sm:px-6 py-4 text-sm font-semibold whitespace-nowrap ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>
                         {isOpen ? '—' : <PrivacyValue value={fmtPnl(pnl, rowCurrency)} />}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{rMultiple ?? '—'}</td>
-                      <td className="px-6 py-4">
+                      <td className="hidden md:table-cell px-6 py-4 text-sm text-gray-600">{rMultiple ?? '—'}</td>
+                      <td className="hidden md:table-cell px-6 py-4">
                         <AdherencePill score={adherence} />
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 sm:px-6 py-4">
                         {isOpen ? (
                           <span className="px-2.5 py-1 text-xs rounded-full font-medium bg-blue-50 text-blue-600">open</span>
                         ) : (
@@ -596,7 +608,7 @@ export default function JournalScreen({ session }) {
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="hidden sm:table-cell px-6 py-4">
                         {(() => {
                           const { label, cls } = planPillFor(trade);
                           return (
@@ -606,7 +618,7 @@ export default function JournalScreen({ session }) {
                           );
                         })()}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="hidden md:table-cell px-6 py-4">
                         {isOpen ? null : trade.review_notes ? (
                           <span
                             className="inline-flex items-center gap-1.5 text-xs text-green-600 font-medium"
@@ -622,7 +634,7 @@ export default function JournalScreen({ session }) {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="hidden sm:table-cell px-4 py-4">
                         {!isOpen && (
                           <button
                             onClick={e => { e.stopPropagation(); setShareRow(trade); }}
