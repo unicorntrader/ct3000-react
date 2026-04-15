@@ -50,17 +50,17 @@ function AdherencePill({ score }) {
   );
 }
 
-// Filter semantics — Smart Journal is for REVIEWING completed trades, so
-// every filter except 'Open' is implicitly scoped to closed trades.
-//   Closed         — default view, all closed trades
-//   Open           — active positions (separate escape hatch)
-//   Wins / Losses  — closed, by P&L sign
-//   Needs review   — closed AND matching_status IN ('unmatched', 'ambiguous')
-//   Matched        — closed AND matching_status = 'matched' (plan linked)
-//   Off-plan       — closed AND matching_status = 'manual' AND no planned_trade_id
+// Filter semantics — Smart Journal is for REVIEWING closed trades. Open
+// positions belong on HomeScreen / DailyView, not here. Every tab in this
+// bar is implicitly scoped to status = 'closed'.
+//   All            — default view, all closed trades
+//   Wins / Losses  — by P&L sign
+//   Needs review   — matching_status IN ('unmatched', 'ambiguous')
+//   Matched        — matching_status = 'matched' (plan linked)
+//   Off-plan       — matching_status = 'manual' AND no planned_trade_id
 //                    (user reviewed and confirmed no plan — discipline signal)
-//   Not journalled — closed AND no review_notes
-const FILTERS = ['Closed', 'Open', 'Wins', 'Losses', 'Needs review', 'Matched', 'Off-plan', 'Not journalled'];
+//   Not journalled — no review_notes
+const FILTERS = ['All', 'Wins', 'Losses', 'Needs review', 'Matched', 'Off-plan', 'Not journalled'];
 
 const DATE_RANGES = [
   { key: 'all', label: 'All time' },
@@ -116,7 +116,7 @@ export default function JournalScreen({ session }) {
   const [trades, setTrades] = useState([]);
   const [plansMap, setPlansMap] = useState({});
   const [loading, setLoading] = useState(true);
-  const [activeFilter, setActiveFilter] = useState('Closed');
+  const [activeFilter, setActiveFilter] = useState('All');
   const [shareRow, setShareRow] = useState(null);
   // Inline-expansion: one row open at a time. Click to toggle.
   const [expandedTradeId, setExpandedTradeId] = useState(null);
@@ -196,15 +196,14 @@ export default function JournalScreen({ session }) {
   }, [symbolQuery, allSymbols]);
 
   const filtered = useMemo(() => {
-    // Stage 1: tab filter. All filters except 'Open' are scoped to closed
-    // trades — Smart Journal is for reviewing what already happened.
+    // Smart Journal only ever shows closed trades. Open positions belong on
+    // HomeScreen / DailyView, not here. Every tab below is a subset of
+    // status = 'closed'.
     const closedOnly = (predicate = () => true) =>
       trades.filter(t => t.status === 'closed' && predicate(t));
 
     let list;
     switch (activeFilter) {
-      case 'Open':
-        list = trades.filter(t => t.status === 'open'); break;
       case 'Wins':
         list = closedOnly(t => (t.total_realized_pnl || 0) > 0); break;
       case 'Losses':
@@ -218,7 +217,7 @@ export default function JournalScreen({ session }) {
         list = closedOnly(t => t.matching_status === 'manual' && !t.planned_trade_id); break;
       case 'Not journalled':
         list = closedOnly(t => !t.review_notes); break;
-      case 'Closed':
+      case 'All':
       default:
         list = closedOnly();
     }
