@@ -8,9 +8,15 @@ import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
 import TradeInlineDetail from '../components/TradeInlineDetail';
 
-// Adherence pill — same color thresholds as the drawer
+// Adherence pill — same color thresholds as the drawer.
+// Both branches use identical padding so the row height doesn't jitter
+// when filters switch the mix of trades with/without a score.
 function AdherencePill({ score }) {
-  if (score == null) return <span className="text-gray-300">—</span>;
+  if (score == null) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 text-xs text-gray-300">—</span>
+    );
+  }
   const rounded = Math.round(score);
   const { bg, text } = rounded >= 75
     ? { bg: 'bg-green-100', text: 'text-green-700' }
