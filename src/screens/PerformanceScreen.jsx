@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { pnlBase, fmtPnl, fmtShort } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
+import { computeAdherenceBreakdown } from '../lib/adherenceScore';
 import PrivacyValue from '../components/PrivacyValue';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -83,6 +84,7 @@ export default function PerformanceScreen({ session }) {
   const navigate = useNavigate();
   const baseCurrency = useBaseCurrency();
   const [allTrades, setAllTrades] = useState([]);
+  const [plansMap, setPlansMap] = useState({});
   const [loading, setLoading] = useState(true);
 
   // period control
@@ -96,15 +98,29 @@ export default function PerformanceScreen({ session }) {
 
   useEffect(() => {
     if (!userId) return;
-    supabase
-      .from('logical_trades')
-      .select('id, symbol, direction, asset_category, currency, fx_rate_to_base, status, closed_at, opened_at, total_realized_pnl, matching_status')
-      .eq('user_id', userId)
-      .eq('status', 'closed')
-      .then(({ data }) => {
-        setAllTrades(data || []);
-        setLoading(false);
-      });
+    // Fetch closed trades + plans together so we can compute adherence
+    // breakdown per period on the fly (no reliance on stored adherence_score
+    // which may be stale if plans were edited since last sync).
+    // Using select('*') on logical_trades to keep the adherence calc
+    // flexible — needs avg_entry_price, total_closing_quantity,
+    // total_opening_quantity, planned_trade_id, direction, etc.
+    Promise.all([
+      supabase
+        .from('logical_trades')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('status', 'closed'),
+      supabase
+        .from('planned_trades')
+        .select('id, planned_entry_price, planned_target_price, planned_stop_loss, planned_quantity')
+        .eq('user_id', userId),
+    ]).then(([tradesRes, plansRes]) => {
+      setAllTrades(tradesRes.data || []);
+      const map = {};
+      for (const p of (plansRes.data || [])) map[p.id] = p;
+      setPlansMap(map);
+      setLoading(false);
+    });
   }, [userId]);
 
   const handlePreset = (p) => {
@@ -150,6 +166,35 @@ export default function PerformanceScreen({ session }) {
     const expectancy = netPnl / n;
     return { n, winners: winners.length, losers: losers.length, netPnl, winRate, wlRatio, avgWin, avgLoss, expectancy };
   }, [trades]);
+
+  // ── adherence breakdown across the period ──
+  // For every matched closed trade in the filtered period, compute the
+  // 4-pillar breakdown and average each pillar separately. Null sub-scores
+  // (plan didn't specify that field) are skipped per pillar.
+  const adherenceStats = useMemo(() => {
+    const sums = { entry: 0, target: 0, stop: 0, size: 0 };
+    const counts = { entry: 0, target: 0, stop: 0, size: 0 };
+    let matchedCount = 0;
+    for (const t of trades) {
+      if (t.matching_status !== 'matched' || !t.planned_trade_id) continue;
+      const plan = plansMap[t.planned_trade_id];
+      if (!plan) continue;
+      const b = computeAdherenceBreakdown(plan, t);
+      if (!b) continue;
+      matchedCount++;
+      for (const key of ['entry', 'target', 'stop', 'size']) {
+        if (b[key] != null) { sums[key] += b[key]; counts[key]++; }
+      }
+    }
+    if (matchedCount === 0) return null;
+    const avg = (key) => counts[key] > 0 ? Math.round((sums[key] / counts[key]) * 10) / 10 : null;
+    const pillars = { entry: avg('entry'), target: avg('target'), stop: avg('stop'), size: avg('size') };
+    const scored = Object.values(pillars).filter(v => v != null);
+    const overall = scored.length > 0
+      ? Math.round((scored.reduce((a, b) => a + b, 0) / scored.length) * 10) / 10
+      : null;
+    return { ...pillars, overall, matchedCount };
+  }, [trades, plansMap]);
 
   // ── cumulative curve data ──
   const curveData = useMemo(() => {
@@ -294,6 +339,17 @@ export default function PerformanceScreen({ session }) {
       color: stats ? (stats.expectancy >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400',
       maskValue: true,
     },
+    {
+      label: 'Avg adherence',
+      value: adherenceStats ? `${Math.round(adherenceStats.overall)}` : '—',
+      sub: adherenceStats ? `${adherenceStats.matchedCount} matched trade${adherenceStats.matchedCount !== 1 ? 's' : ''}` : 'No matched trades',
+      color: adherenceStats
+        ? (adherenceStats.overall >= 75 ? 'text-green-600'
+          : adherenceStats.overall >= 50 ? 'text-amber-600'
+          : 'text-red-500')
+        : 'text-gray-400',
+      maskValue: false,
+    },
   ];
 
   const SYM_COLS = [
@@ -344,8 +400,8 @@ export default function PerformanceScreen({ session }) {
         </div>
       </div>
 
-      {/* ── 4 KPI cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* ── KPI cards ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {kpis.map(card => (
           <div key={card.label} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
             <p className="text-xs font-medium text-gray-400 mb-1.5">{card.label}</p>
@@ -397,6 +453,73 @@ export default function PerformanceScreen({ session }) {
               />
             </LineChart>
           </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* ── adherence decomposition ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700">Adherence breakdown</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Where is your discipline strongest — and where are you slipping?
+            </p>
+          </div>
+          {adherenceStats && (
+            <div className="text-right">
+              <p className="text-xs text-gray-400">Overall</p>
+              <p className={`text-2xl font-semibold leading-none ${
+                adherenceStats.overall >= 75 ? 'text-green-600'
+                : adherenceStats.overall >= 50 ? 'text-amber-600'
+                : 'text-red-500'
+              }`}>
+                {Math.round(adherenceStats.overall)}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {!adherenceStats ? (
+          <p className="text-sm text-gray-400 text-center py-8">
+            No matched trades in this period — create plans and link them to your trades to see your adherence breakdown.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {[
+              { key: 'entry',  label: 'Entry',    help: 'How close to your planned entry price' },
+              { key: 'target', label: 'Target',   help: 'How much of the planned move you captured' },
+              { key: 'stop',   label: 'Stop',     help: 'Whether stops were respected' },
+              { key: 'size',   label: 'Size',     help: 'How close to your planned quantity' },
+            ].map(({ key, label, help }) => {
+              const score = adherenceStats[key];
+              const scored = score != null;
+              const color = !scored ? 'bg-gray-200'
+                : score >= 75 ? 'bg-green-500'
+                : score >= 50 ? 'bg-amber-500'
+                : 'bg-red-500';
+              const textColor = !scored ? 'text-gray-300'
+                : score >= 75 ? 'text-green-700'
+                : score >= 50 ? 'text-amber-700'
+                : 'text-red-600';
+              return (
+                <div key={key} className="flex items-center gap-3">
+                  <div className="w-20 shrink-0">
+                    <p className="text-xs font-semibold text-gray-700">{label}</p>
+                    <p className="text-[10px] text-gray-400 leading-tight">{help}</p>
+                  </div>
+                  <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${color}`}
+                      style={{ width: scored ? `${score}%` : '0%' }}
+                    />
+                  </div>
+                  <span className={`text-sm font-semibold w-10 text-right shrink-0 ${textColor}`}>
+                    {scored ? Math.round(score) : '—'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 

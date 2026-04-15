@@ -1,25 +1,31 @@
 /**
- * Computes an adherence score (0–100) comparing a planned trade to what actually happened.
- * Only scores fields that exist on the plan — never penalises for missing fields.
- * Returns null if no scoreable fields exist.
+ * Computes an adherence breakdown comparing a planned trade to what actually
+ * happened. Returns FOUR sub-scores plus the overall average:
+ *
+ *   { entry, target, stop, size, overall }
+ *
+ * Each sub-score is 0–100 or null (null = "plan didn't specify that field,
+ * we can't score it — skip it in the average"). The `overall` is the simple
+ * average of whichever sub-scores are non-null, rounded to one decimal.
+ *
+ * Callers that just want a single number use `.overall`. Callers that want
+ * to decompose (the Performance Review panel) use the sub-scores directly.
+ *
+ * Returns null if no sub-score can be computed at all.
  */
-export function computeAdherenceScore(plan, trade) {
+export function computeAdherenceBreakdown(plan, trade) {
   if (!plan || !trade) return null
 
-  const {
-    planned_entry_price: plannedEntry,
-    planned_target_price: plannedTarget,
-    planned_stop_loss:    plannedStop,
-    planned_quantity:     plannedQty,
-  } = plan
+  const plannedEntry  = plan.planned_entry_price
+  const plannedTarget = plan.planned_target_price
+  const plannedStop   = plan.planned_stop_loss
+  const plannedQty    = plan.planned_quantity
 
   const actualEntry  = trade.avg_entry_price
   const actualQty    = trade.total_closing_quantity || trade.total_opening_quantity
   const direction    = trade.direction // 'LONG' | 'SHORT'
 
-  // Derive actual exit from P&L
-  // LONG:  pnl = (exit - entry) * qty  →  exit = entry + pnl / qty
-  // SHORT: pnl = (entry - exit) * qty  →  exit = entry - pnl / qty
+  // Derive actual exit from native-currency P&L
   const closingQty = trade.total_closing_quantity || trade.total_opening_quantity
   let actualExit = null
   if (actualEntry != null && closingQty > 0 && trade.total_realized_pnl != null) {
@@ -28,16 +34,16 @@ export function computeAdherenceScore(plan, trade) {
       : actualEntry - (trade.total_realized_pnl / closingQty)
   }
 
-  const scores = []
-
   // ── Entry: 1% slippage = 5pt deduction, max 100pt ───────────────────────
+  let entry = null
   if (plannedEntry != null && actualEntry != null) {
     const slippage = Math.abs(actualEntry - plannedEntry) / plannedEntry * 100
-    scores.push(Math.max(0, 100 - Math.min(100, slippage * 5)))
+    entry = Math.max(0, 100 - Math.min(100, slippage * 5))
   }
 
   // ── Target: at/beyond target = 100, linear between entry and target, ────
   //            exited against trade = 0
+  let target = null
   if (plannedTarget != null && actualEntry != null && actualExit != null) {
     let score
     if (direction === 'LONG') {
@@ -57,25 +63,40 @@ export function computeAdherenceScore(plan, trade) {
         score = 0
       }
     }
-    scores.push(Math.max(0, Math.min(100, score)))
+    target = Math.max(0, Math.min(100, score))
   }
 
   // ── Stop: respected = 100, violated = 0 ─────────────────────────────────
+  let stop = null
   if (plannedStop != null && actualExit != null) {
     const respected = direction === 'LONG'
       ? actualExit >= plannedStop
       : actualExit <= plannedStop
-    scores.push(respected ? 100 : 0)
+    stop = respected ? 100 : 0
   }
 
-  // ── Quantity: proportional deduction for deviation ───────────────────────
+  // ── Quantity: proportional deduction for deviation ──────────────────────
+  let size = null
   if (plannedQty != null && actualQty != null) {
     const diff = Math.abs(actualQty - plannedQty) / plannedQty * 100
-    scores.push(Math.max(0, 100 - Math.min(100, diff)))
+    size = Math.max(0, 100 - Math.min(100, diff))
   }
 
-  if (scores.length === 0) return null
+  const scored = [entry, target, stop, size].filter(v => v != null)
+  if (scored.length === 0) return null
 
-  const avg = scores.reduce((a, b) => a + b, 0) / scores.length
-  return Math.round(avg * 10) / 10
+  const avg = scored.reduce((a, b) => a + b, 0) / scored.length
+  const overall = Math.round(avg * 10) / 10
+
+  return { entry, target, stop, size, overall }
+}
+
+/**
+ * Backward-compatible scalar shortcut. Returns just the `overall` number
+ * (or null) so legacy callers that imported `computeAdherenceScore` don't
+ * need to change shape immediately.
+ */
+export function computeAdherenceScore(plan, trade) {
+  const b = computeAdherenceBreakdown(plan, trade)
+  return b == null ? null : b.overall
 }

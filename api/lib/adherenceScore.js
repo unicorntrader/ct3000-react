@@ -1,12 +1,11 @@
 /**
- * CommonJS copy of src/lib/adherenceScore.js — consumed by api/rebuild.js.
+ * CommonJS mirror of src/lib/adherenceScore.js — consumed by api/rebuild.js.
  * Keep in sync with the ES module version. If you change one, change both.
  *
- * Computes an adherence score (0–100) comparing a planned trade to what
- * actually happened. Only scores fields that exist on the plan — never
- * penalises for missing fields. Returns null if no scoreable fields exist.
+ * Returns a breakdown { entry, target, stop, size, overall } or null.
+ * computeAdherenceScore is a scalar shortcut that returns just `.overall`.
  */
-function computeAdherenceScore(plan, trade) {
+function computeAdherenceBreakdown(plan, trade) {
   if (!plan || !trade) return null;
 
   const plannedEntry  = plan.planned_entry_price;
@@ -18,7 +17,6 @@ function computeAdherenceScore(plan, trade) {
   const actualQty   = trade.total_closing_quantity || trade.total_opening_quantity;
   const direction   = trade.direction; // 'LONG' | 'SHORT'
 
-  // Derive actual exit from native-currency P&L
   const closingQty = trade.total_closing_quantity || trade.total_opening_quantity;
   let actualExit = null;
   if (actualEntry != null && closingQty > 0 && trade.total_realized_pnl != null) {
@@ -27,16 +25,13 @@ function computeAdherenceScore(plan, trade) {
       : actualEntry - (trade.total_realized_pnl / closingQty);
   }
 
-  const scores = [];
-
-  // Entry: 1% slippage = 5pt deduction, max 100pt
+  let entry = null;
   if (plannedEntry != null && actualEntry != null) {
     const slippage = Math.abs(actualEntry - plannedEntry) / plannedEntry * 100;
-    scores.push(Math.max(0, 100 - Math.min(100, slippage * 5)));
+    entry = Math.max(0, 100 - Math.min(100, slippage * 5));
   }
 
-  // Target: at/beyond target = 100, linear between entry and target,
-  //         exited against trade = 0
+  let target = null;
   if (plannedTarget != null && actualEntry != null && actualExit != null) {
     let score;
     if (direction === 'LONG') {
@@ -56,27 +51,35 @@ function computeAdherenceScore(plan, trade) {
         score = 0;
       }
     }
-    scores.push(Math.max(0, Math.min(100, score)));
+    target = Math.max(0, Math.min(100, score));
   }
 
-  // Stop: respected = 100, violated = 0
+  let stop = null;
   if (plannedStop != null && actualExit != null) {
     const respected = direction === 'LONG'
       ? actualExit >= plannedStop
       : actualExit <= plannedStop;
-    scores.push(respected ? 100 : 0);
+    stop = respected ? 100 : 0;
   }
 
-  // Quantity: proportional deduction for deviation
+  let size = null;
   if (plannedQty != null && actualQty != null) {
     const diff = Math.abs(actualQty - plannedQty) / plannedQty * 100;
-    scores.push(Math.max(0, 100 - Math.min(100, diff)));
+    size = Math.max(0, 100 - Math.min(100, diff));
   }
 
-  if (scores.length === 0) return null;
+  const scored = [entry, target, stop, size].filter(v => v != null);
+  if (scored.length === 0) return null;
 
-  const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
-  return Math.round(avg * 10) / 10;
+  const avg = scored.reduce((a, b) => a + b, 0) / scored.length;
+  const overall = Math.round(avg * 10) / 10;
+
+  return { entry, target, stop, size, overall };
 }
 
-module.exports = { computeAdherenceScore };
+function computeAdherenceScore(plan, trade) {
+  const b = computeAdherenceBreakdown(plan, trade);
+  return b == null ? null : b.overall;
+}
+
+module.exports = { computeAdherenceBreakdown, computeAdherenceScore };
