@@ -120,6 +120,10 @@ export default function JournalScreen({ session }) {
   const [shareRow, setShareRow] = useState(null);
   // Inline-expansion: one row open at a time. Click to toggle.
   const [expandedTradeId, setExpandedTradeId] = useState(null);
+  // Bulk selection — only applies to unmatched/ambiguous trades (the "Needs review" bucket).
+  // Stored as a Set of trade IDs for O(1) toggle/check.
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   // Smart filters
   const [symbolQuery, setSymbolQuery] = useState('');
@@ -172,6 +176,48 @@ export default function JournalScreen({ session }) {
 
   const handleTradeUpdated = (updatedTrade) => {
     setTrades(prev => prev.map(t => t.id === updatedTrade.id ? updatedTrade : t));
+  };
+
+  // ── Bulk selection helpers ──
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+
+  // Bulk "Mark off-plan": applies to all selected unmatched/ambiguous trades.
+  // Sets matching_status='manual' and planned_trade_id=null so they move out
+  // of the Needs review bucket into Off-plan.
+  const handleBulkMarkOffPlan = async () => {
+    if (selectedIds.size === 0 || bulkSaving) return;
+    const ids = [...selectedIds];
+    const ok = window.confirm(
+      `Mark ${ids.length} trade${ids.length !== 1 ? 's' : ''} as off-plan? They'll move out of Needs review.`
+    );
+    if (!ok) return;
+    setBulkSaving(true);
+    const { data: updatedRows, error } = await supabase
+      .from('logical_trades')
+      .update({ matching_status: 'manual', planned_trade_id: null })
+      .in('id', ids)
+      .eq('user_id', userId)
+      .select();
+    setBulkSaving(false);
+    if (error) {
+      console.error('[journal] bulk off-plan failed:', error.message);
+      alert(`Could not mark trades off-plan: ${error.message}`);
+      return;
+    }
+    // Optimistically patch the local trade list with the updated rows
+    if (updatedRows?.length) {
+      const byId = new Map(updatedRows.map(r => [r.id, r]));
+      setTrades(prev => prev.map(t => byId.get(t.id) || t));
+    }
+    clearSelection();
   };
 
   // Derived lists for filter UI
@@ -443,9 +489,34 @@ export default function JournalScreen({ session }) {
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          {/* Sticky bulk-action bar — appears whenever at least one row is selected */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center justify-between px-6 py-3 bg-blue-50 border-b border-blue-100">
+              <p className="text-sm font-medium text-blue-800">
+                {selectedIds.size} selected
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleBulkMarkOffPlan}
+                  disabled={bulkSaving}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {bulkSaving ? 'Saving…' : 'Mark as off-plan'}
+                </button>
+                <button
+                  onClick={clearSelection}
+                  disabled={bulkSaving}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg text-blue-700 hover:bg-blue-100"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
+                <th className="w-10 px-4 py-3" />
                 {['Date', 'Symbol', 'Direction', 'P&L', 'R', 'Adh', 'Outcome', 'Plan', 'Journal', ''].map(h => (
                   <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
                 ))}
@@ -470,12 +541,27 @@ export default function JournalScreen({ session }) {
                       : (matchStatus === 'matched' && plan ? computeAdherenceScore(plan, trade) : null));
 
                 const isExpanded = expandedTradeId === trade.id;
+                const isBulkEligible = matchStatus === 'unmatched' || matchStatus === 'ambiguous';
+                const isChecked = selectedIds.has(trade.id);
                 return (
                   <React.Fragment key={trade.id}>
                     <tr
-                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50/40' : ''}`}
+                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${
+                        isChecked ? 'bg-blue-50/60' : isExpanded ? 'bg-blue-50/40' : ''
+                      }`}
                       onClick={() => setExpandedTradeId(isExpanded ? null : trade.id)}
                     >
+                      <td className="w-10 px-4 py-4" onClick={e => e.stopPropagation()}>
+                        {isBulkEligible ? (
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleSelect(trade.id)}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-400 cursor-pointer"
+                            title="Select for bulk action"
+                          />
+                        ) : null}
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-600">
                         <span className="inline-flex items-center gap-2">
                           <svg
@@ -552,7 +638,7 @@ export default function JournalScreen({ session }) {
                     </tr>
                     {isExpanded && (
                       <tr className="bg-gray-50">
-                        <td colSpan={10} className="p-0">
+                        <td colSpan={11} className="p-0">
                           <TradeInlineDetail
                             trade={trade}
                             plan={plan}
