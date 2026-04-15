@@ -444,13 +444,14 @@ export default function JournalScreen({ session }) {
                         {matchStatus.charAt(0).toUpperCase() + matchStatus.slice(1)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 max-w-[16rem]">
+                    <td className="px-6 py-4">
                       {isOpen ? null : trade.review_notes ? (
                         <span
-                          className="block text-xs text-gray-600 italic truncate"
+                          className="inline-flex items-center gap-1.5 text-xs text-green-600 font-medium"
                           title={trade.review_notes}
                         >
-                          “{trade.review_notes}”
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                          Journalled
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
