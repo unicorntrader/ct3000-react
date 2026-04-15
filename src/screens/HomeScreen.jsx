@@ -64,9 +64,20 @@ export default function HomeScreen({ session }) {
   const losses = closedLast30.filter(t => (t.total_realized_pnl || 0) <= 0).length;
   const winRate = closedLast30.length > 0 ? Math.round((wins / closedLast30.length) * 100) : null;
 
-  const reviewCount = logicalTrades.filter(
+  // Trade review pipeline — three sequential buckets across the last 30d of closed trades:
+  //   1. Need matching — not yet resolved to a plan (unmatched or ambiguous)
+  //   2. Need notes    — resolved (matched or off-plan) but no journal entry yet
+  //   3. Fully done    — resolved AND journalled
+  const pipelineNeedMatching = closedLast30.filter(
     t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'
   ).length;
+  const pipelineNeedNotes = closedLast30.filter(
+    t => (t.matching_status === 'matched' || t.matching_status === 'manual') && !t.review_notes
+  ).length;
+  const pipelineFullyDone = closedLast30.filter(
+    t => (t.matching_status === 'matched' || t.matching_status === 'manual') && t.review_notes
+  ).length;
+  const pipelineTotal = pipelineNeedMatching + pipelineNeedNotes + pipelineFullyDone;
 
   const statCards = [
     {
@@ -134,23 +145,69 @@ export default function HomeScreen({ session }) {
 
   return (
     <div>
-      {reviewCount > 0 && (
-        <div
-          className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center space-x-3 cursor-pointer mb-6 hover:bg-amber-100 transition-colors"
-          onClick={() => navigate('/review')}
-        >
-          <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
-            <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
+      {/* ── Trade review pipeline ── */}
+      {pipelineTotal > 0 && (
+        <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-5 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700">Trade review pipeline</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Last 30 days · {pipelineTotal} closed trade{pipelineTotal !== 1 ? 's' : ''}</p>
+            </div>
           </div>
-          <div className="flex-1">
-            <p className="text-sm font-medium text-amber-800">{reviewCount} trade{reviewCount !== 1 ? 's' : ''} need review</p>
-            <p className="text-xs text-amber-600">Tap to review now -- takes about 2 minutes</p>
+
+          <div className="grid grid-cols-3 gap-3">
+            {/* 1. Need matching */}
+            <button
+              onClick={() => navigate('/review')}
+              disabled={pipelineNeedMatching === 0}
+              className={`group text-left rounded-xl border p-4 transition-colors ${
+                pipelineNeedMatching > 0
+                  ? 'border-amber-200 bg-amber-50 hover:bg-amber-100 cursor-pointer'
+                  : 'border-gray-100 bg-gray-50 cursor-default opacity-60'
+              }`}
+            >
+              <p className={`text-2xl font-semibold mb-0.5 ${pipelineNeedMatching > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
+                {pipelineNeedMatching}
+              </p>
+              <p className={`text-xs font-semibold ${pipelineNeedMatching > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
+                Need matching
+              </p>
+              <p className={`text-[11px] mt-1 ${pipelineNeedMatching > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+                {pipelineNeedMatching > 0 ? 'Link to a plan →' : 'All matched'}
+              </p>
+            </button>
+
+            {/* 2. Need notes */}
+            <button
+              onClick={() => navigate('/journal', { state: { activeFilter: 'Not journalled' } })}
+              disabled={pipelineNeedNotes === 0}
+              className={`group text-left rounded-xl border p-4 transition-colors ${
+                pipelineNeedNotes > 0
+                  ? 'border-blue-200 bg-blue-50 hover:bg-blue-100 cursor-pointer'
+                  : 'border-gray-100 bg-gray-50 cursor-default opacity-60'
+              }`}
+            >
+              <p className={`text-2xl font-semibold mb-0.5 ${pipelineNeedNotes > 0 ? 'text-blue-700' : 'text-gray-400'}`}>
+                {pipelineNeedNotes}
+              </p>
+              <p className={`text-xs font-semibold ${pipelineNeedNotes > 0 ? 'text-blue-700' : 'text-gray-400'}`}>
+                Need notes
+              </p>
+              <p className={`text-[11px] mt-1 ${pipelineNeedNotes > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                {pipelineNeedNotes > 0 ? 'Journal →' : 'All journalled'}
+              </p>
+            </button>
+
+            {/* 3. Fully done */}
+            <button
+              onClick={() => navigate('/journal')}
+              className="text-left rounded-xl border border-green-200 bg-green-50 p-4 hover:bg-green-100 transition-colors cursor-pointer"
+            >
+              <p className="text-2xl font-semibold text-green-700 mb-0.5">{pipelineFullyDone}</p>
+              <p className="text-xs font-semibold text-green-700">Fully done</p>
+              <p className="text-[11px] text-green-600 mt-1">View all →</p>
+            </button>
           </div>
-          <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
         </div>
       )}
 

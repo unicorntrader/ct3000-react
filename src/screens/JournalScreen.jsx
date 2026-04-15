@@ -137,12 +137,13 @@ export default function JournalScreen({ session }) {
   useEffect(() => {
     const s = location.state;
     if (!s) return;
-    const hasFilter = s.symbolFilter || s.dateRange || s.customFrom || s.customTo;
+    const hasFilter = s.symbolFilter || s.dateRange || s.customFrom || s.customTo || s.activeFilter;
     if (!hasFilter) return;
     if (s.symbolFilter != null) setSymbolQuery(s.symbolFilter);
     if (s.dateRange != null) setDateRange(s.dateRange);
     if (s.customFrom != null) setCustomFrom(s.customFrom);
     if (s.customTo != null) setCustomTo(s.customTo);
+    if (s.activeFilter != null) setActiveFilter(s.activeFilter);
     navigate(location.pathname, { replace: true, state: {} });
   }, [location.state, location.pathname, navigate]);
 
