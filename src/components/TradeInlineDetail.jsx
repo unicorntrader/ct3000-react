@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { fmtPrice, fmtPnl, fmtDateLong } from '../lib/formatters'
 import { computeAdherenceScore } from '../lib/adherenceScore'
@@ -39,11 +39,36 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
+  // Refs so the keyboard effect can call the latest handler without having it
+  // in its deps (and without needing to live below the early return).
+  const handleSaveRef = useRef(null)
+  const onCollapseRef = useRef(onCollapse)
+  onCollapseRef.current = onCollapse
+
   // Reset when the trade changes (parent re-expands a different row)
   useEffect(() => {
     setNotes(trade?.review_notes || '')
     setSaved(false)
   }, [trade])
+
+  // Keyboard: Esc collapses the row, Cmd/Ctrl+Enter saves the note.
+  // Declared at the top of the component so the hook count stays stable
+  // regardless of the !trade early return below.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onCollapseRef.current?.()
+        return
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        handleSaveRef.current?.()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const isDirty = notes.trim() !== (trade?.review_notes || '').trim()
 
@@ -111,23 +136,9 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
     setTimeout(() => setSaved(false), 3000)
   }
 
-  // Keyboard: Esc collapses the row, Cmd/Ctrl+Enter saves the note
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onCollapse?.()
-        return
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault()
-        handleSave()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notes, isDirty])
+  // Keep the ref pointed at the latest handleSave so the top-level keyboard
+  // effect always calls the up-to-date version without listing it as a dep.
+  handleSaveRef.current = handleSave
 
   return (
     <div className="px-6 py-5 bg-gray-50 border-y border-gray-100">
