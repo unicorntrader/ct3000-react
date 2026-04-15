@@ -91,13 +91,54 @@ module.exports = async function handler(req, res) {
   if (missingFxRate > 0) warnings.push(`${missingFxRate} trade(s) have no FX rate — run Sync Now to fix`);
   if (missingCurrency > 0) warnings.push(`${missingCurrency} trade(s) have no currency — run Sync Now to fix`);
 
+  // Fetch existing logical trades so we can preserve user-written data
+  // (review_notes, manual matching) across the delete + re-insert.
+  // Key: opening_ib_order_id + ':' + conid — stable across rebuilds.
+  const { data: existingLogical } = await supabaseAdmin
+    .from('logical_trades')
+    .select('opening_ib_order_id, conid, review_notes, matching_status, planned_trade_id')
+    .eq('user_id', userId);
+
+  const preservedByKey = new Map();
+  for (const row of (existingLogical || [])) {
+    if (!row.opening_ib_order_id) continue;
+    const key = `${row.opening_ib_order_id}:${row.conid ?? ''}`;
+    preservedByKey.set(key, {
+      review_notes: row.review_notes || null,
+      was_manual: row.matching_status === 'manual',
+      manual_planned_trade_id: row.matching_status === 'manual' ? row.planned_trade_id : null,
+    });
+  }
+
   // Build in memory
   const logical = buildLogicalTrades(allTrades, userId);
   if (!logical.length) {
     return res.status(200).json({ success: true, count: 0, warnings });
   }
 
-  // Fetch plans and apply matching before insert — single insert, no update pass needed
+  // Apply preservation: restore review_notes always; restore manual match if
+  // the user had one, so the plan-matching pass below skips it.
+  let preservedCount = 0;
+  for (const lt of logical) {
+    if (!lt.opening_ib_order_id) continue;
+    const key = `${lt.opening_ib_order_id}:${lt.conid ?? ''}`;
+    const p = preservedByKey.get(key);
+    if (!p) continue;
+    if (p.review_notes) {
+      lt.review_notes = p.review_notes;
+      preservedCount++;
+    }
+    if (p.was_manual) {
+      lt.matching_status = 'manual';
+      lt.planned_trade_id = p.manual_planned_trade_id;
+    }
+  }
+  if (preservedCount > 0) {
+    console.log(`[rebuild] userId=${userId} — preserved review_notes on ${preservedCount} trade(s)`);
+  }
+
+  // Fetch plans and apply matching before insert — single insert, no update pass needed.
+  // Manual matches are preserved by applyPlanMatching (it skips them).
   const { data: plannedTrades } = await supabaseAdmin
     .from('planned_trades')
     .select('*')
