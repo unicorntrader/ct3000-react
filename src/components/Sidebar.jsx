@@ -27,6 +27,14 @@ export default function Sidebar({ isOpen, onClose, onSignOut, session }) {
       });
   }, [session]);
 
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   return (
     <>
       <div className={`overlay-bg ${isOpen ? 'open' : ''}`} onClick={onClose} />

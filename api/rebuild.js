@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { buildLogicalTrades } = require('./lib/logicalTradeBuilder');
+const { computeAdherenceScore } = require('./lib/adherenceScore');
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://ct3000-react.vercel.app';
 
@@ -8,10 +9,23 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Apply plan matching in-place before insert — avoids N+1 update round-trips
+// Apply plan matching in-place before insert — avoids N+1 update round-trips.
+// When a trade is matched to exactly one plan AND it's closed, also compute
+// and set adherence_score so users see it without having to manually open
+// each drawer. Open trades get null (no exit price yet).
 function applyPlanMatching(logicalTrades, plannedTrades) {
+  const plansById = new Map();
+  for (const pt of plannedTrades) plansById.set(pt.id, pt);
+
   for (const lt of logicalTrades) {
-    if (lt.matching_status === 'manual') continue;
+    if (lt.matching_status === 'manual') {
+      // Preserve manual match but still (re)compute adherence if closed + plan exists
+      if (lt.status === 'closed' && lt.planned_trade_id) {
+        const plan = plansById.get(lt.planned_trade_id);
+        if (plan) lt.adherence_score = computeAdherenceScore(plan, lt);
+      }
+      continue;
+    }
 
     const matches = plannedTrades.filter(pt =>
       pt.symbol?.trim().toUpperCase() === lt.symbol?.trim().toUpperCase() &&
@@ -22,12 +36,17 @@ function applyPlanMatching(logicalTrades, plannedTrades) {
     if (matches.length === 1) {
       lt.matching_status = 'matched';
       lt.planned_trade_id = matches[0].id;
+      if (lt.status === 'closed') {
+        lt.adherence_score = computeAdherenceScore(matches[0], lt);
+      }
     } else if (matches.length === 0) {
       lt.matching_status = 'unmatched';
       lt.planned_trade_id = null;
+      lt.adherence_score = null;
     } else {
       lt.matching_status = 'ambiguous';
       lt.planned_trade_id = null;
+      lt.adherence_score = null;
     }
   }
 }

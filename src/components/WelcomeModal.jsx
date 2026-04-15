@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 
@@ -22,6 +22,18 @@ export default function WelcomeModal({ userId, onDone }) {
     onDone()
     if (destination) navigate(destination)
   }
+
+  // Esc skips the modal; Enter confirms the primary action (Connect IBKR)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (skipping) return
+      if (e.key === 'Escape') dismiss(null)
+      else if (e.key === 'Enter') dismiss('/ibkr')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skipping])
 
   return (
     <div className="fixed inset-0 z-50 bg-white flex items-center justify-center px-6">

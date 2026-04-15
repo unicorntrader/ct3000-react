@@ -71,10 +71,6 @@ export default function JournalScreen({ session }) {
   const userId = session?.user?.id;
   const location = useLocation();
   const navigate = useNavigate();
-  const initialSymbol = location.state?.symbolFilter || '';
-  const initialDateRange = location.state?.dateRange || 'all';
-  const initialCustomFrom = location.state?.customFrom || '';
-  const initialCustomTo = location.state?.customTo || '';
   const [trades, setTrades] = useState([]);
   const [plansMap, setPlansMap] = useState({});
   const [baseCurrency, setBaseCurrency] = useState('USD');
@@ -85,21 +81,29 @@ export default function JournalScreen({ session }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Smart filters
-  const [symbolQuery, setSymbolQuery] = useState(initialSymbol);
+  const [symbolQuery, setSymbolQuery] = useState('');
   const [symbolSuggestOpen, setSymbolSuggestOpen] = useState(false);
   const [directionFilter, setDirectionFilter] = useState('All');
   const [assetFilter, setAssetFilter] = useState('All');
-  const [dateRange, setDateRange] = useState(initialDateRange);
-  const [customFrom, setCustomFrom] = useState(initialCustomFrom);
-  const [customTo, setCustomTo] = useState(initialCustomTo);
+  const [dateRange, setDateRange] = useState('all');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
 
-  // Clear navigation state after consuming so reloads don't re-apply
+  // Apply navigation state (from Performance → Journal symbol click) whenever it
+  // changes, not just once at mount. This handles the case where the user comes
+  // back to Journal a second time with a different symbol while the component
+  // stays mounted. After applying, clear state so a page reload doesn't re-apply.
   useEffect(() => {
-    if (location.state?.symbolFilter || location.state?.dateRange) {
-      navigate(location.pathname, { replace: true, state: {} });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const s = location.state;
+    if (!s) return;
+    const hasFilter = s.symbolFilter || s.dateRange || s.customFrom || s.customTo;
+    if (!hasFilter) return;
+    if (s.symbolFilter != null) setSymbolQuery(s.symbolFilter);
+    if (s.dateRange != null) setDateRange(s.dateRange);
+    if (s.customFrom != null) setCustomFrom(s.customFrom);
+    if (s.customTo != null) setCustomTo(s.customTo);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.state, location.pathname, navigate]);
 
   useEffect(() => {
     if (!userId) return;
