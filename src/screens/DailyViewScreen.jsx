@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { pnlBase, fmtPrice, fmtPnl } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
@@ -447,8 +448,10 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
   );
 }
 
-export default function DailyViewScreen({ session, onReviewOpen = () => {}, refreshKey = 0 }) {
+export default function DailyViewScreen({ session, refreshKey = 0 }) {
   const userId = session?.user?.id;
+  const navigate = useNavigate();
+  const onReviewOpen = () => navigate('/review');
   const baseCurrency = useBaseCurrency();
   const [trades, setTrades] = useState([]);
   const [rawTrades, setRawTrades] = useState([]);

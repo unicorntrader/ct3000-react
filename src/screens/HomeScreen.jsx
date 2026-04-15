@@ -15,7 +15,7 @@ const thirtyDaysAgo = () => {
 
 const PAGE_SIZE = 10;
 
-export default function HomeScreen({ session, onReviewOpen, reviewDismissed }) {
+export default function HomeScreen({ session }) {
   const navigate = useNavigate();
   const userId = session?.user?.id;
   const baseCurrency = useBaseCurrency();
@@ -134,10 +134,10 @@ export default function HomeScreen({ session, onReviewOpen, reviewDismissed }) {
 
   return (
     <div>
-      {!reviewDismissed && reviewCount > 0 && (
+      {reviewCount > 0 && (
         <div
-          className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center space-x-3 cursor-pointer mb-6"
-          onClick={onReviewOpen}
+          className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center space-x-3 cursor-pointer mb-6 hover:bg-amber-100 transition-colors"
+          onClick={() => navigate('/review')}
         >
           <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
             <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

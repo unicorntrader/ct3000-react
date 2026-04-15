@@ -9,7 +9,6 @@ import Header from './components/Header'
 import MobileNav from './components/MobileNav'
 import Sidebar from './components/Sidebar'
 import PlanSheet from './components/PlanSheet'
-import ReviewSheet from './components/ReviewSheet'
 import WelcomeModal from './components/WelcomeModal'
 import DemoBanner from './components/DemoBanner'
 import AnonymousBanner from './components/AnonymousBanner'
@@ -21,6 +20,7 @@ import JournalScreen from './screens/JournalScreen'
 import PerformanceScreen from './screens/PerformanceScreen'
 import IBKRScreen from './screens/IBKRScreen'
 import SettingsScreen from './screens/SettingsScreen'
+import ReviewScreen from './screens/ReviewScreen'
 
 // Captured once at module load — URL params don't change during the session
 const CHECKOUT_SUCCESS = new URLSearchParams(window.location.search).get('checkout') === 'success'
@@ -56,9 +56,6 @@ function LoadingScreen({ message }) {
 function AppShell({ session, subscription, onSubscriptionRefresh, isAnonymous }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [planSheetOpen, setPlanSheetOpen] = useState(false)
-  const [reviewSheetOpen, setReviewSheetOpen] = useState(false)
-  const [reviewDismissed, setReviewDismissed] = useState(false)
-  const [dvRefreshKey, setDvRefreshKey] = useState(0)
   const [planRefreshKey, setPlanRefreshKey] = useState(0)
   const [editingPlan, setEditingPlan] = useState(null)
 
@@ -80,16 +77,16 @@ function AppShell({ session, subscription, onSubscriptionRefresh, isAnonymous })
       {isAnonymous ? <AnonymousBanner /> : (showDemoBanner && <DemoBanner />)}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onSignOut={handleSignOut} session={session} />
       <PlanSheet session={session} isOpen={planSheetOpen} plan={editingPlan} onClose={() => { setPlanSheetOpen(false); setEditingPlan(null) }} onSaved={() => setPlanRefreshKey(k => k + 1)} />
-      <ReviewSheet session={session} isOpen={reviewSheetOpen} onClose={() => setReviewSheetOpen(false)} onComplete={() => { setReviewDismissed(true); setDvRefreshKey(k => k + 1); }} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6">
         <Routes>
-          <Route path="/"            element={<HomeScreen session={session} onReviewOpen={() => setReviewSheetOpen(true)} reviewDismissed={reviewDismissed} />} />
+          <Route path="/"            element={<HomeScreen session={session} />} />
           <Route path="/plans"       element={<PlansScreen session={session} onNewPlan={() => setPlanSheetOpen(true)} onEditPlan={(plan) => { setEditingPlan(plan); setPlanSheetOpen(true) }} refreshKey={planRefreshKey} />} />
-          <Route path="/daily"       element={<DailyViewScreen session={session} onReviewOpen={() => setReviewSheetOpen(true)} refreshKey={dvRefreshKey} />} />
+          <Route path="/daily"       element={<DailyViewScreen session={session} />} />
           <Route path="/journal"     element={<JournalScreen session={session} />} />
           <Route path="/performance" element={<PerformanceScreen session={session} />} />
           <Route path="/ibkr"        element={<IBKRScreen session={session} />} />
           <Route path="/settings"    element={<SettingsScreen session={session} />} />
+          <Route path="/review"      element={<ReviewScreen session={session} />} />
           <Route path="*"            element={<Navigate to="/" replace />} />
         </Routes>
       </main>
