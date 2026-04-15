@@ -73,7 +73,7 @@ export default function SettingsScreen({ session }) {
   }
 
   return (
-    <div className="space-y-6 max-w-lg" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+    <div className="space-y-6 max-w-lg" style={{}}>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-gray-900">Settings</h2>
         <button

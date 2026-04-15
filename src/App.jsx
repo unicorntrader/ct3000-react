@@ -57,6 +57,7 @@ function AppShell({ session, subscription, onSubscriptionRefresh, isAnonymous })
   const [planSheetOpen, setPlanSheetOpen] = useState(false)
   const [reviewSheetOpen, setReviewSheetOpen] = useState(false)
   const [reviewDismissed, setReviewDismissed] = useState(false)
+  const [dvRefreshKey, setDvRefreshKey] = useState(0)
   const [planRefreshKey, setPlanRefreshKey] = useState(0)
   const [editingPlan, setEditingPlan] = useState(null)
 
@@ -78,12 +79,12 @@ function AppShell({ session, subscription, onSubscriptionRefresh, isAnonymous })
       {isAnonymous ? <AnonymousBanner /> : (showDemoBanner && <DemoBanner />)}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onSignOut={handleSignOut} session={session} />
       <PlanSheet session={session} isOpen={planSheetOpen} plan={editingPlan} onClose={() => { setPlanSheetOpen(false); setEditingPlan(null) }} onSaved={() => setPlanRefreshKey(k => k + 1)} />
-      <ReviewSheet session={session} isOpen={reviewSheetOpen} onClose={() => setReviewSheetOpen(false)} onComplete={() => setReviewDismissed(true)} />
+      <ReviewSheet session={session} isOpen={reviewSheetOpen} onClose={() => setReviewSheetOpen(false)} onComplete={() => { setReviewDismissed(true); setDvRefreshKey(k => k + 1); }} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6">
         <Routes>
           <Route path="/"            element={<HomeScreen session={session} onReviewOpen={() => setReviewSheetOpen(true)} reviewDismissed={reviewDismissed} />} />
           <Route path="/plans"       element={<PlansScreen session={session} onNewPlan={() => setPlanSheetOpen(true)} onEditPlan={(plan) => { setEditingPlan(plan); setPlanSheetOpen(true) }} refreshKey={planRefreshKey} />} />
-          <Route path="/daily"       element={<DailyViewScreen session={session} />} />
+          <Route path="/daily"       element={<DailyViewScreen session={session} onReviewOpen={() => setReviewSheetOpen(true)} refreshKey={dvRefreshKey} />} />
           <Route path="/journal"     element={<JournalScreen session={session} />} />
           <Route path="/performance" element={<PerformanceScreen session={session} />} />
           <Route path="/ibkr"        element={<IBKRScreen session={session} />} />

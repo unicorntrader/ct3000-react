@@ -105,7 +105,7 @@ export default function PerformanceScreen({ session }) {
         .from('user_ibkr_credentials')
         .select('base_currency')
         .eq('user_id', userId)
-        .single(),
+        .maybeSingle(),
     ]).then(([tradesRes, credRes]) => {
       setAllTrades(tradesRes.data || []);
       if (credRes.data?.base_currency) setBaseCurrency(credRes.data.base_currency);

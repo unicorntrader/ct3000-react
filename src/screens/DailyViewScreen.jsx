@@ -163,7 +163,7 @@ function ExecSubTable({ execs }) {
 }
 
 
-function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, baseCurrency = 'USD', userId }) {
+function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, baseCurrency = 'USD', userId, onReviewOpen }) {
   const [note, setNote] = useState(day.note);
   const [editingNote, setEditingNote] = useState(false);
   const [noteInput, setNoteInput] = useState(day.note || '');
@@ -224,7 +224,18 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
           <p className="text-sm text-gray-500 mt-0.5">
             {day.trades} trade{day.trades !== 1 ? 's' : ''} &middot; {day.wins}W, {day.losses}L
             {day.needsReview > 0 && (
-              <span className="text-amber-600 font-medium"> &middot; {day.needsReview} need review</span>
+              <>
+                {' · '}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={onReviewOpen}
+                  onKeyDown={e => e.key === 'Enter' && onReviewOpen?.()}
+                  className="text-amber-600 font-medium cursor-pointer hover:text-amber-800 hover:underline"
+                >
+                  {day.needsReview} need review →
+                </span>
+              </>
             )}
           </p>
         </div>
@@ -431,7 +442,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
   );
 }
 
-export default function DailyViewScreen({ session }) {
+export default function DailyViewScreen({ session, onReviewOpen = () => {}, refreshKey = 0 }) {
   const userId = session?.user?.id;
   const [trades, setTrades] = useState([]);
   const [rawTrades, setRawTrades] = useState([]);
@@ -460,7 +471,7 @@ export default function DailyViewScreen({ session }) {
           .from('user_ibkr_credentials')
           .select('base_currency')
           .eq('user_id', userId)
-          .single(),
+          .maybeSingle(),
         supabase
           .from('planned_trades')
           .select('id, planned_stop_loss')
@@ -482,7 +493,7 @@ export default function DailyViewScreen({ session }) {
       setLoading(false);
     };
     load();
-  }, [userId]);
+  }, [userId, refreshKey]);
 
   const handleResolve = async (tradeId, newStatus) => {
     await supabase
@@ -570,6 +581,11 @@ export default function DailyViewScreen({ session }) {
     [trades]
   );
 
+  const totalNeedsReview = useMemo(() =>
+    trades.filter(t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous').length,
+    [trades]
+  );
+
   if (loading) {
     return (
       <div className="animate-pulse">
@@ -598,6 +614,22 @@ export default function DailyViewScreen({ session }) {
 
   return (
     <div>
+      {totalNeedsReview > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3.5 mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
+            <p className="text-sm font-medium text-amber-800">
+              {totalNeedsReview} trade{totalNeedsReview !== 1 ? 's' : ''} need{totalNeedsReview === 1 ? 's' : ''} review
+            </p>
+          </div>
+          <button
+            onClick={onReviewOpen}
+            className="text-sm font-semibold text-amber-700 hover:text-amber-900 whitespace-nowrap"
+          >
+            Review all →
+          </button>
+        </div>
+      )}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           <div className="relative">
@@ -642,7 +674,7 @@ export default function DailyViewScreen({ session }) {
         </div>
       ) : (
         days.map(day => (
-          <DayBlock key={day.dateKey} day={day} rawTradesWithIso={rawTradesWithIso} onResolve={handleResolve} plannedTradesMap={plannedTradesMap} baseCurrency={baseCurrency} userId={session.user.id} />
+          <DayBlock key={day.dateKey} day={day} rawTradesWithIso={rawTradesWithIso} onResolve={handleResolve} plannedTradesMap={plannedTradesMap} baseCurrency={baseCurrency} userId={session.user.id} onReviewOpen={onReviewOpen} />
         ))
       )}
     </div>

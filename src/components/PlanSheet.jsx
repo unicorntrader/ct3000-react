@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { currencySymbol, fmtPrice, fmtPnl, fmtDate, pnlBase } from '../lib/formatters';
 import { usePrivacy } from '../lib/PrivacyContext';
@@ -99,9 +99,18 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
 
   const showCalc = e > 0 && q > 0;
 
+  // Ref so keyboard effect always calls the latest handleSave without stale closure
+  const handleSaveRef = useRef(null);
+
   useEffect(() => {
     if (!isOpen) return;
-    const handleKeyDown = (ev) => { if (ev.key === 'Escape') handleClose(); };
+    const handleKeyDown = (ev) => {
+      if (ev.key === 'Escape') { handleClose(); return; }
+      if (ev.key === 'Enter' && !ev.shiftKey && !['INPUT', 'TEXTAREA', 'SELECT'].includes(ev.target.tagName)) {
+        ev.preventDefault();
+        handleSaveRef.current?.();
+      }
+    };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, handleClose]);
@@ -171,6 +180,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
     setSaved(true);
     setTimeout(() => { handleClose(); onSaved?.(); }, 1200);
   };
+  handleSaveRef.current = handleSave;
 
   const handleDelete = async () => {
     if (!confirmDelete) {

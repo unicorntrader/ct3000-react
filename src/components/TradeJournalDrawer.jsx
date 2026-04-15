@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { fmtPrice, fmtPnl, fmtDateLong, pnlBase } from '../lib/formatters'
 import { computeAdherenceScore } from '../lib/adherenceScore'
@@ -36,13 +36,22 @@ export default function TradeJournalDrawer({ trade, plan, baseCurrency, isOpen, 
     setSaved(false)
   }, [trade])
 
-  // Close on Escape key
+  const handleSaveRef = useRef(null)
+  const onCloseRef    = useRef(onClose)
+  onCloseRef.current  = onClose   // always points to the latest prop, no stale closure
+
   useEffect(() => {
     if (!isOpen) return
-    const onKey = (e) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [isOpen, onClose])
+    const handler = (e) => {
+      if (e.key === 'Escape') { onCloseRef.current(); return }
+      if (e.key === 'Enter' && !e.shiftKey && !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
+        e.preventDefault()
+        handleSaveRef.current?.()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [isOpen])   // isOpen only — onClose is stable via ref
 
   if (!trade) return (
     <>
@@ -104,6 +113,8 @@ export default function TradeJournalDrawer({ trade, plan, baseCurrency, isOpen, 
     if (updated && onSaved) onSaved(updated)
     setTimeout(() => { setSaved(false); onClose() }, 1000)
   }
+  // Keep ref up-to-date so the keyboard effect always calls the latest version
+  handleSaveRef.current = handleSave
 
   return (
     <>

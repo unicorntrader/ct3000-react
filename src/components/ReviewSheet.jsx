@@ -30,13 +30,7 @@ function TradeCard({ trade }) {
           <div className="text-center"><p className="text-xs text-gray-400">Qty</p><p className="text-sm font-medium mt-0.5">{trade.total_opening_quantity}</p></div>
         )}
         {trade.direction && (
-          <div className="text-center"><p className="text-xs text-gray-400">Direction</p><p className="text-sm font-medium mt-0.5">{trade.direction}</p></div>
-        )}
-        {trade.status === 'open' && (
-          <div className="text-center"><p className="text-xs text-gray-400">Status</p><p className="text-sm font-medium text-blue-600 mt-0.5">Open</p></div>
-        )}
-        {trade.currency && (
-          <div className="text-center"><p className="text-xs text-gray-400">Currency</p><p className="text-sm font-medium mt-0.5">{trade.currency}</p></div>
+          <div className="text-center"><p className="text-xs text-gray-400">Dir</p><p className="text-sm font-medium mt-0.5">{trade.direction}</p></div>
         )}
       </div>
     </div>
@@ -50,6 +44,17 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  const current = trades[step] || null;
+  const total = trades.length;
+  const done = total > 0 && step >= total;
+  const candidates = current ? (candidatesMap[current.id] || []) : [];
+
+  // Auto-select first candidate whenever the trade changes
+  useEffect(() => {
+    setSelected(candidates.length > 0 ? candidates[0].id : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, current?.id]);
 
   const loadReviewTrades = useCallback(async () => {
     if (!session?.user?.id) return;
@@ -89,51 +94,69 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
   }, [session]);
 
   useEffect(() => {
-    if (isOpen) {
-      loadReviewTrades();
-    }
+    if (isOpen) loadReviewTrades();
   }, [isOpen, loadReviewTrades]);
 
-  const current = trades[step] || null;
-  const total = trades.length;
-  const done = step >= total;
-
-  const handleConfirm = async () => {
-    if (!current || !selected) return;
-    setSaving(true);
-
-    if (selected === '__unplanned__') {
-      await supabase
-        .from('logical_trades')
-        .update({ matching_status: 'manual', planned_trade_id: null })
-        .eq('id', current.id);
-    } else {
-      await supabase
-        .from('logical_trades')
-        .update({ matching_status: 'matched', planned_trade_id: selected })
-        .eq('id', current.id);
-    }
-
-    setSaving(false);
-    setSelected(null);
-    setStep(s => s + 1);
-  };
-
-  const handleSkip = () => {
-    setSelected(null);
-    setStep(s => s + 1);
-  };
-
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setStep(0);
     setSelected(null);
     onClose();
-  };
+  }, [onClose]);
 
-  const handleDone = () => {
+  const handleMatch = useCallback(async () => {
+    if (!current || !selected || saving) return;
+    setSaving(true);
+    await supabase
+      .from('logical_trades')
+      .update({ matching_status: 'matched', planned_trade_id: selected })
+      .eq('id', current.id);
+    setSaving(false);
+    setSelected(null);
+    setStep(s => s + 1);
+  }, [current, selected, saving]);
+
+  const handleNoPlan = useCallback(async () => {
+    if (!current || saving) return;
+    setSaving(true);
+    await supabase
+      .from('logical_trades')
+      .update({ matching_status: 'manual', planned_trade_id: null })
+      .eq('id', current.id);
+    setSaving(false);
+    setSelected(null);
+    setStep(s => s + 1);
+  }, [current, saving]);
+
+  const handleSkip = useCallback(() => {
+    setSelected(null);
+    setStep(s => s + 1);
+  }, []);
+
+  const handleDone = useCallback(() => {
     onComplete();
     handleClose();
-  };
+  }, [onComplete, handleClose]);
+
+  // Keyboard shortcuts: Enter=match, N=no plan, Escape=exit
+  useEffect(() => {
+    if (!isOpen || loading) return;
+    const handler = (e) => {
+      const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName);
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleClose();
+      } else if (e.key === 'Enter' && !e.shiftKey && !isTyping) {
+        e.preventDefault();
+        if (done) handleDone();
+        else if (selected) handleMatch();
+      } else if ((e.key === 'n' || e.key === 'N') && !isTyping) {
+        e.preventDefault();
+        if (!done) handleNoPlan();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isOpen, loading, selected, done, handleClose, handleMatch, handleNoPlan, handleDone]);
 
   return (
     <>
@@ -145,11 +168,11 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-base font-semibold text-gray-900">
-                {loading ? 'Loading...' : done ? 'Review complete' : 'Review trades'}
+                {loading ? 'Loading…' : done ? 'Review complete' : 'Review trades'}
               </h3>
               {!loading && !done && current && (
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Step {step + 1} of {total} &middot; {current.symbol} {current.matching_status}
+                  Trade {step + 1} of {total}
                 </p>
               )}
             </div>
@@ -179,6 +202,7 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
             </div>
           ) : (
             <>
+              {/* Progress dots */}
               <div className="flex space-x-1.5 mb-5">
                 {trades.map((_, i) => (
                   <div
@@ -203,83 +227,80 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
                   <p className="text-sm text-gray-400 mb-1">{total} trade{total !== 1 ? 's' : ''} reviewed</p>
                   <p className="text-xs text-gray-400 mb-6">Skipped trades still appear in Daily View whenever you're ready.</p>
                   <button onClick={handleDone} className="w-full bg-blue-600 text-white font-semibold py-3 rounded-xl text-sm hover:bg-blue-700">
-                    Done
+                    Done <span className="opacity-60 text-xs ml-1">↵</span>
                   </button>
                 </div>
               ) : (
                 <>
                   <TradeCard trade={current} />
 
-                  {current.matching_status === 'ambiguous' && (
-                    <p className="text-xs text-gray-400 mb-3">2 plans matched — which one is it?</p>
+                  {candidates.length === 0 ? (
+                    <p className="text-sm text-gray-400 mb-4">No matching plan found for this trade.</p>
+                  ) : (
+                    <>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                        {candidates.length > 1 ? 'Multiple plans matched — choose one:' : 'Suggested plan:'}
+                      </p>
+                      <div className="space-y-2 mb-4">
+                        {candidates.map(plan => (
+                          <label
+                            key={plan.id}
+                            className={`radio-label flex items-start space-x-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                              selected === plan.id ? 'selected-blue border-blue-300' : 'border-gray-200'
+                            }`}
+                            onClick={() => setSelected(plan.id)}
+                          >
+                            <input
+                              type="radio"
+                              name={`rs-${step}`}
+                              value={plan.id}
+                              checked={selected === plan.id}
+                              onChange={() => setSelected(plan.id)}
+                              className="mt-0.5 flex-shrink-0"
+                            />
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {plan.symbol} — {(plan.direction || '').toUpperCase()}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {fmtDate(plan.created_at)}
+                                {plan.planned_entry_price != null && ` · Entry ${fmtPrice(plan.planned_entry_price)}`}
+                                {(plan.notes || plan.thesis) && ` · ${(plan.notes || plan.thesis).slice(0, 40)}`}
+                              </p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </>
                   )}
 
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-                    {current.matching_status === 'ambiguous' ? 'Choose the correct plan:' : 'Match to a plan:'}
+                  {/* Keyboard hint */}
+                  <p className="text-xs text-gray-300 text-center mb-3">
+                    {selected ? '↵ Match' : ''}{selected ? ' · ' : ''}N No plan · Esc Exit
                   </p>
 
-                  <div className="space-y-2 mb-4">
-                    {(candidatesMap[current.id] || []).map(plan => (
-                      <label
-                        key={plan.id}
-                        className={`radio-label flex items-start space-x-3 p-3 rounded-xl border border-gray-200 cursor-pointer ${
-                          selected === plan.id ? 'selected-blue' : ''
-                        }`}
-                        onClick={() => setSelected(plan.id)}
-                      >
-                        <input
-                          type="radio"
-                          name={`rs-${step}`}
-                          value={plan.id}
-                          checked={selected === plan.id}
-                          onChange={() => setSelected(plan.id)}
-                          className="mt-0.5 flex-shrink-0"
-                        />
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {plan.symbol} — {(plan.direction || '').toUpperCase()}
-                          </p>
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            {fmtDate(plan.created_at)}
-                            {plan.planned_entry_price != null && ` · Entry ${fmtPrice(plan.planned_entry_price)}`}
-                            {(plan.notes || plan.thesis) && ` · ${(plan.notes || plan.thesis).slice(0, 40)}`}
-                          </p>
-                        </div>
-                      </label>
-                    ))}
-
-                    <label
-                      className={`radio-label flex items-start space-x-3 p-3 rounded-xl border border-gray-200 cursor-pointer ${
-                        selected === '__unplanned__' ? 'selected-red' : ''
-                      }`}
-                      onClick={() => setSelected('__unplanned__')}
-                    >
-                      <input
-                        type="radio"
-                        name={`rs-${step}`}
-                        value="__unplanned__"
-                        checked={selected === '__unplanned__'}
-                        onChange={() => setSelected('__unplanned__')}
-                        className="mt-0.5 flex-shrink-0"
-                      />
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Mark as unplanned</p>
-                        <p className="text-xs text-gray-400 mt-0.5">Discretionary trade — no plan</p>
-                      </div>
-                    </label>
-                  </div>
-
-                  <div className="flex space-x-2">
+                  {/* Action buttons */}
+                  <div className="flex gap-2">
                     <button
-                      onClick={handleConfirm}
+                      onClick={handleMatch}
                       disabled={!selected || saving}
-                      className="flex-1 bg-blue-600 text-white font-semibold py-3 rounded-xl text-sm hover:bg-blue-700 disabled:opacity-40"
+                      className="flex-1 bg-blue-600 text-white font-semibold py-3 rounded-xl text-sm hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 transition-colors"
                     >
-                      {saving ? 'Saving...' : 'Confirm →'}
+                      {saving ? 'Saving…' : (
+                        <>Match <span className="text-[10px] opacity-50 border border-white/30 rounded px-1 ml-0.5">↵</span></>
+                      )}
+                    </button>
+                    <button
+                      onClick={handleNoPlan}
+                      disabled={saving}
+                      className="flex-1 border border-gray-200 text-gray-700 font-medium py-3 rounded-xl text-sm hover:bg-gray-50 disabled:opacity-40 flex items-center justify-center gap-1.5 transition-colors"
+                    >
+                      No plan <span className="text-[10px] text-gray-400 border border-gray-200 rounded px-1">N</span>
                     </button>
                     <button
                       onClick={handleSkip}
-                      className="border border-gray-200 text-gray-500 font-medium py-3 px-4 rounded-xl text-sm hover:bg-gray-50"
+                      disabled={saving}
+                      className="border border-gray-200 text-gray-400 font-medium py-3 px-4 rounded-xl text-sm hover:bg-gray-50 disabled:opacity-40 transition-colors"
                     >
                       Skip
                     </button>
