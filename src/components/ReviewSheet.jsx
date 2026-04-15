@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPnl, fmtPrice, fmtDate } from '../lib/formatters';
+import { fmtPnl, fmtPrice, fmtDate, pnlBase } from '../lib/formatters';
 
-function TradeCard({ trade }) {
-  const pnl = trade.total_realized_pnl || 0;
+function TradeCard({ trade, baseCurrency }) {
+  const pnl = pnlBase(trade);
   const isPositive = pnl >= 0;
   return (
     <div className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-100">
@@ -19,7 +19,7 @@ function TradeCard({ trade }) {
           </span>
         </div>
         <span className={`text-base font-semibold ${isPositive ? 'text-green-600' : 'text-red-500'}`}>
-          {fmtPnl(pnl)}
+          {fmtPnl(pnl, baseCurrency)}
         </span>
       </div>
       <div className="grid grid-cols-3 gap-2">
@@ -40,6 +40,7 @@ function TradeCard({ trade }) {
 export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
   const [trades, setTrades] = useState([]);
   const [candidatesMap, setCandidatesMap] = useState({});
+  const [baseCurrency, setBaseCurrency] = useState('USD');
   const [step, setStep] = useState(0);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -62,12 +63,21 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
     setStep(0);
     setSelected(null);
 
-    const { data: reviewTrades } = await supabase
-      .from('logical_trades')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .in('matching_status', ['unmatched', 'ambiguous'])
-      .order('opened_at', { ascending: false });
+    const [{ data: reviewTrades }, { data: creds }] = await Promise.all([
+      supabase
+        .from('logical_trades')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .in('matching_status', ['unmatched', 'ambiguous'])
+        .order('opened_at', { ascending: false }),
+      supabase
+        .from('user_ibkr_credentials')
+        .select('base_currency')
+        .eq('user_id', session.user.id)
+        .maybeSingle(),
+    ]);
+
+    if (creds?.base_currency) setBaseCurrency(creds.base_currency);
 
     const tradeList = reviewTrades || [];
     setTrades(tradeList);
@@ -232,7 +242,7 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
                 </div>
               ) : (
                 <>
-                  <TradeCard trade={current} />
+                  <TradeCard trade={current} baseCurrency={baseCurrency} />
 
                   {candidates.length === 0 ? (
                     <p className="text-sm text-gray-400 mb-4">No matching plan found for this trade.</p>
