@@ -52,7 +52,7 @@ module.exports = async function handler(req, res) {
   // Mark invite as redeemed
   const { error: redeemErr } = await supabaseAdmin.from('invited_users').update({
     redeemed_at: new Date().toISOString(),
-    redeemed_by_user_id: user.id,
+    redeemed_by: user.id,
   }).eq('token', token)
   if (redeemErr) {
     console.error('[redeem-invite] failed to mark invite redeemed:', redeemErr.message)
