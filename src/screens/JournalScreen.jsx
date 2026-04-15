@@ -6,7 +6,7 @@ import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import { computeAdherenceScore } from '../lib/adherenceScore';
 import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
-import TradeJournalDrawer from '../components/TradeJournalDrawer';
+import TradeInlineDetail from '../components/TradeInlineDetail';
 
 // Adherence pill — same color thresholds as the drawer
 function AdherencePill({ score }) {
@@ -78,8 +78,8 @@ export default function JournalScreen({ session }) {
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [shareRow, setShareRow] = useState(null);
-  const [drawerTrade, setDrawerTrade] = useState(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Inline-expansion: one row open at a time. Click to toggle.
+  const [expandedTradeId, setExpandedTradeId] = useState(null);
 
   // Smart filters
   const [symbolQuery, setSymbolQuery] = useState('');
@@ -416,79 +416,97 @@ export default function JournalScreen({ session }) {
                       ? trade.adherence_score
                       : (matchStatus === 'matched' && plan ? computeAdherenceScore(plan, trade) : null));
 
+                const isExpanded = expandedTradeId === trade.id;
                 return (
-                  <tr key={trade.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => { setDrawerTrade(trade); setDrawerOpen(true) }}>
-                    <td className="px-6 py-4 text-sm text-gray-600">{dateDisplay}</td>
-                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">{trade.symbol}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
-                    <td className={`px-6 py-4 text-sm font-semibold ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>
-                      {isOpen ? '—' : <PrivacyValue value={fmtPnl(pnl, rowCurrency)} />}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{rMultiple ?? '—'}</td>
-                    <td className="px-6 py-4">
-                      <AdherencePill score={adherence} />
-                    </td>
-                    <td className="px-6 py-4">
-                      {isOpen ? (
-                        <span className="px-2.5 py-1 text-xs rounded-full font-medium bg-blue-50 text-blue-600">open</span>
-                      ) : (
-                        <span className={`px-2.5 py-1 text-xs rounded-full font-medium ${
-                          isWin ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'
-                        }`}>
-                          {isWin ? 'win' : 'loss'}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${planStyles[matchStatus] || 'bg-gray-100 text-gray-500'}`}>
-                        {matchStatus.charAt(0).toUpperCase() + matchStatus.slice(1)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {isOpen ? null : trade.review_notes ? (
-                        <span
-                          className="inline-flex items-center gap-1.5 text-xs text-green-600 font-medium"
-                          title={trade.review_notes}
-                        >
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-                          Journalled
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
-                          <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block" />
-                          Add notes
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-4">
-                      {!isOpen && (
-                        <button
-                          onClick={e => { e.stopPropagation(); setShareRow(trade); }}
-                          className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                          title="Share on X"
-                        >
-                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.74l7.73-8.835L1.254 2.25H8.08l4.259 5.632 5.905-5.632zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  <React.Fragment key={trade.id}>
+                    <tr
+                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50/40' : ''}`}
+                      onClick={() => setExpandedTradeId(isExpanded ? null : trade.id)}
+                    >
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        <span className="inline-flex items-center gap-2">
+                          <svg
+                            className={`w-3 h-3 text-gray-300 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
                           </svg>
-                        </button>
-                      )}
-                    </td>
-                  </tr>
+                          {dateDisplay}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm font-semibold text-gray-900">{trade.symbol}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
+                      <td className={`px-6 py-4 text-sm font-semibold ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>
+                        {isOpen ? '—' : <PrivacyValue value={fmtPnl(pnl, rowCurrency)} />}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{rMultiple ?? '—'}</td>
+                      <td className="px-6 py-4">
+                        <AdherencePill score={adherence} />
+                      </td>
+                      <td className="px-6 py-4">
+                        {isOpen ? (
+                          <span className="px-2.5 py-1 text-xs rounded-full font-medium bg-blue-50 text-blue-600">open</span>
+                        ) : (
+                          <span className={`px-2.5 py-1 text-xs rounded-full font-medium ${
+                            isWin ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'
+                          }`}>
+                            {isWin ? 'win' : 'loss'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${planStyles[matchStatus] || 'bg-gray-100 text-gray-500'}`}>
+                          {matchStatus.charAt(0).toUpperCase() + matchStatus.slice(1)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {isOpen ? null : trade.review_notes ? (
+                          <span
+                            className="inline-flex items-center gap-1.5 text-xs text-green-600 font-medium"
+                            title={trade.review_notes}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                            Journalled
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block" />
+                            Add notes
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
+                        {!isOpen && (
+                          <button
+                            onClick={e => { e.stopPropagation(); setShareRow(trade); }}
+                            className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                            title="Share on X"
+                          >
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.74l7.73-8.835L1.254 2.25H8.08l4.259 5.632 5.905-5.632zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                            </svg>
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr className="bg-gray-50">
+                        <td colSpan={10} className="p-0">
+                          <TradeInlineDetail
+                            trade={trade}
+                            plan={plan}
+                            onSaved={handleTradeUpdated}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
           </table>
         </div>
       )}
-
-      <TradeJournalDrawer
-        trade={drawerTrade}
-        plan={plansMap[drawerTrade?.planned_trade_id]}
-        baseCurrency={baseCurrency}
-        isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        onSaved={handleTradeUpdated}
-      />
 
       {shareRow && (() => {
         const plan = plansMap[shareRow.planned_trade_id];
