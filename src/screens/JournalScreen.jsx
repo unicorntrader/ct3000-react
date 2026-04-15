@@ -50,7 +50,16 @@ function AdherencePill({ score }) {
   );
 }
 
-const FILTERS = ['All', 'Open', 'Wins', 'Losses', 'Matched', 'Unmatched', 'Ambiguous', 'Journalled', 'Not journalled'];
+// Filter semantics:
+//   All            — no filter
+//   Open           — active positions (status = 'open')
+//   Wins / Losses  — closed, by P&L sign
+//   Needs review   — matching_status IN ('unmatched', 'ambiguous') — user action queue
+//   Matched        — matching_status = 'matched' (plan linked, auto or user-picked)
+//   Off-plan       — matching_status = 'manual' AND no planned_trade_id
+//                    (user reviewed and confirmed no plan applied — real discipline signal)
+//   Not journalled — closed, no review_notes
+const FILTERS = ['All', 'Open', 'Wins', 'Losses', 'Needs review', 'Matched', 'Off-plan', 'Not journalled'];
 
 const DATE_RANGES = [
   { key: 'all', label: 'All time' },
@@ -73,13 +82,17 @@ const rangeStartDate = (key) => {
 const displaySymbol = (t) =>
   t.asset_category === 'OPT' ? (t.symbol || '').split(' ')[0] : (t.symbol || '');
 
-const planStyles = {
-  matched: 'bg-blue-50 text-blue-600',
-  unmatched: 'bg-amber-50 text-amber-600',
-  ambiguous: 'bg-purple-50 text-purple-600',
-  auto: 'bg-gray-100 text-gray-500',
-  manual: 'bg-green-50 text-green-700',
-};
+// Plan pill: maps (matching_status, has planned_trade_id) → label + color.
+// `manual` splits two ways: if the user manually picked a plan it's a match;
+// if they confirmed "no plan" it's Off-plan (the real discipline signal).
+function planPillFor(trade) {
+  const s = trade.matching_status || 'auto';
+  const hasPlan = !!trade.planned_trade_id;
+  if (s === 'matched' || (s === 'manual' && hasPlan)) return { label: 'Matched',    cls: 'bg-blue-50 text-blue-600' };
+  if (s === 'unmatched' || s === 'ambiguous')          return { label: 'Needs review', cls: 'bg-amber-50 text-amber-700' };
+  if (s === 'manual' && !hasPlan)                      return { label: 'Off-plan',   cls: 'bg-gray-100 text-gray-600' };
+  return { label: 'Auto', cls: 'bg-gray-100 text-gray-500' };
+}
 
 const calcR = (trade, plan) => {
   if (!plan) return null;
@@ -185,15 +198,23 @@ export default function JournalScreen({ session }) {
     // Stage 1: tab filter (status/outcome/matching/journal)
     let list;
     switch (activeFilter) {
-      case 'Open':      list = trades.filter(t => t.status === 'open'); break;
-      case 'Wins':      list = trades.filter(t => t.status === 'closed' && (t.total_realized_pnl || 0) > 0); break;
-      case 'Losses':    list = trades.filter(t => t.status === 'closed' && (t.total_realized_pnl || 0) <= 0); break;
-      case 'Matched':   list = trades.filter(t => t.matching_status === 'matched'); break;
-      case 'Unmatched': list = trades.filter(t => t.matching_status === 'unmatched'); break;
-      case 'Ambiguous':      list = trades.filter(t => t.matching_status === 'ambiguous'); break;
-      case 'Journalled':     list = trades.filter(t => t.review_notes); break;
-      case 'Not journalled': list = trades.filter(t => t.status === 'closed' && !t.review_notes); break;
-      default:               list = trades;
+      case 'Open':
+        list = trades.filter(t => t.status === 'open'); break;
+      case 'Wins':
+        list = trades.filter(t => t.status === 'closed' && (t.total_realized_pnl || 0) > 0); break;
+      case 'Losses':
+        list = trades.filter(t => t.status === 'closed' && (t.total_realized_pnl || 0) <= 0); break;
+      case 'Needs review':
+        list = trades.filter(t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'); break;
+      case 'Matched':
+        list = trades.filter(t => t.matching_status === 'matched'); break;
+      case 'Off-plan':
+        // User reviewed and confirmed no plan applied — real discipline signal
+        list = trades.filter(t => t.matching_status === 'manual' && !t.planned_trade_id); break;
+      case 'Not journalled':
+        list = trades.filter(t => t.status === 'closed' && !t.review_notes); break;
+      default:
+        list = trades;
     }
 
     // Stage 2: smart filters (AND logic)
@@ -484,9 +505,14 @@ export default function JournalScreen({ session }) {
                         )}
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${planStyles[matchStatus] || 'bg-gray-100 text-gray-500'}`}>
-                          {matchStatus.charAt(0).toUpperCase() + matchStatus.slice(1)}
-                        </span>
+                        {(() => {
+                          const { label, cls } = planPillFor(trade);
+                          return (
+                            <span className={`px-2 py-0.5 text-xs rounded-full font-medium whitespace-nowrap ${cls}`}>
+                              {label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-6 py-4">
                         {isOpen ? null : trade.review_notes ? (
