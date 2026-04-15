@@ -116,26 +116,38 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
   const handleMatch = useCallback(async () => {
     if (!current || !selected || saving) return;
     setSaving(true);
-    await supabase
+    const { error } = await supabase
       .from('logical_trades')
       .update({ matching_status: 'matched', planned_trade_id: selected })
-      .eq('id', current.id);
+      .eq('id', current.id)
+      .eq('user_id', session.user.id);
     setSaving(false);
+    if (error) {
+      console.error('[review] match update failed:', error.message);
+      alert(`Could not save match: ${error.message}`);
+      return;
+    }
     setSelected(null);
     setStep(s => s + 1);
-  }, [current, selected, saving]);
+  }, [current, selected, saving, session]);
 
   const handleNoPlan = useCallback(async () => {
     if (!current || saving) return;
     setSaving(true);
-    await supabase
+    const { error } = await supabase
       .from('logical_trades')
       .update({ matching_status: 'manual', planned_trade_id: null })
-      .eq('id', current.id);
+      .eq('id', current.id)
+      .eq('user_id', session.user.id);
     setSaving(false);
+    if (error) {
+      console.error('[review] no-plan update failed:', error.message);
+      alert(`Could not save: ${error.message}`);
+      return;
+    }
     setSelected(null);
     setStep(s => s + 1);
-  }, [current, saving]);
+  }, [current, saving, session]);
 
   const handleSkip = useCallback(() => {
     setSelected(null);

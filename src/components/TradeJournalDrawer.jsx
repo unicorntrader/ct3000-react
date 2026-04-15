@@ -102,13 +102,19 @@ export default function TradeJournalDrawer({ trade, plan, baseCurrency, isOpen, 
   const handleSave = async () => {
     setSaving(true)
     const score = isMatchedClosed ? computeAdherenceScore(plan, trade) : null
-    const { data: updated } = await supabase
+    const { data: updated, error } = await supabase
       .from('logical_trades')
       .update({ review_notes: notes.trim() || null, adherence_score: score })
       .eq('id', trade.id)
+      .eq('user_id', trade.user_id)
       .select()
       .single()
     setSaving(false)
+    if (error) {
+      console.error('[drawer] save failed:', error.message)
+      alert(`Could not save notes: ${error.message}`)
+      return
+    }
     setSaved(true)
     if (updated && onSaved) onSaved(updated)
     setTimeout(() => { setSaved(false); onClose() }, 1000)
