@@ -189,6 +189,7 @@ Safe `.select('*')` queries exist in `App.jsx`, `PlansScreen.jsx`, `HomeScreen.j
 - **Bug fix (H1):** `JournalScreen` plans query was silently 400ing on missing `notes` column — plans never loaded → drawer never showed adherence. (`a6a19062`)
 - Adherence column added to Smart Journal — colored pill per matched trade, uses stored `adherence_score` with live fallback (`cd9e71ea`)
 - `.claude/launch.json` saved for future local dev
+- **Security:** RLS migration for 5 previously-exposed tables flagged by Supabase linter — `securities`, `anonymous_sessions`, `ghost_webhook_events`, `user_subscriptions`, `invited_users` (`6955b502`). Sensitive tables locked to service_role only.
 
 **Bugs found but not yet fixed** (logged in audit above):
 - C1, C2 — multi-currency P&L wrong on HomeScreen + ReviewSheet
