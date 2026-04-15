@@ -50,16 +50,17 @@ function AdherencePill({ score }) {
   );
 }
 
-// Filter semantics:
-//   All            — no filter
-//   Open           — active positions (status = 'open')
+// Filter semantics — Smart Journal is for REVIEWING completed trades, so
+// every filter except 'Open' is implicitly scoped to closed trades.
+//   Closed         — default view, all closed trades
+//   Open           — active positions (separate escape hatch)
 //   Wins / Losses  — closed, by P&L sign
-//   Needs review   — matching_status IN ('unmatched', 'ambiguous') — user action queue
-//   Matched        — matching_status = 'matched' (plan linked, auto or user-picked)
-//   Off-plan       — matching_status = 'manual' AND no planned_trade_id
-//                    (user reviewed and confirmed no plan applied — real discipline signal)
-//   Not journalled — closed, no review_notes
-const FILTERS = ['All', 'Open', 'Wins', 'Losses', 'Needs review', 'Matched', 'Off-plan', 'Not journalled'];
+//   Needs review   — closed AND matching_status IN ('unmatched', 'ambiguous')
+//   Matched        — closed AND matching_status = 'matched' (plan linked)
+//   Off-plan       — closed AND matching_status = 'manual' AND no planned_trade_id
+//                    (user reviewed and confirmed no plan — discipline signal)
+//   Not journalled — closed AND no review_notes
+const FILTERS = ['Closed', 'Open', 'Wins', 'Losses', 'Needs review', 'Matched', 'Off-plan', 'Not journalled'];
 
 const DATE_RANGES = [
   { key: 'all', label: 'All time' },
@@ -115,7 +116,7 @@ export default function JournalScreen({ session }) {
   const [trades, setTrades] = useState([]);
   const [plansMap, setPlansMap] = useState({});
   const [loading, setLoading] = useState(true);
-  const [activeFilter, setActiveFilter] = useState('All');
+  const [activeFilter, setActiveFilter] = useState('Closed');
   const [shareRow, setShareRow] = useState(null);
   // Inline-expansion: one row open at a time. Click to toggle.
   const [expandedTradeId, setExpandedTradeId] = useState(null);
@@ -195,26 +196,31 @@ export default function JournalScreen({ session }) {
   }, [symbolQuery, allSymbols]);
 
   const filtered = useMemo(() => {
-    // Stage 1: tab filter (status/outcome/matching/journal)
+    // Stage 1: tab filter. All filters except 'Open' are scoped to closed
+    // trades — Smart Journal is for reviewing what already happened.
+    const closedOnly = (predicate = () => true) =>
+      trades.filter(t => t.status === 'closed' && predicate(t));
+
     let list;
     switch (activeFilter) {
       case 'Open':
         list = trades.filter(t => t.status === 'open'); break;
       case 'Wins':
-        list = trades.filter(t => t.status === 'closed' && (t.total_realized_pnl || 0) > 0); break;
+        list = closedOnly(t => (t.total_realized_pnl || 0) > 0); break;
       case 'Losses':
-        list = trades.filter(t => t.status === 'closed' && (t.total_realized_pnl || 0) <= 0); break;
+        list = closedOnly(t => (t.total_realized_pnl || 0) <= 0); break;
       case 'Needs review':
-        list = trades.filter(t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'); break;
+        list = closedOnly(t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'); break;
       case 'Matched':
-        list = trades.filter(t => t.matching_status === 'matched'); break;
+        list = closedOnly(t => t.matching_status === 'matched'); break;
       case 'Off-plan':
         // User reviewed and confirmed no plan applied — real discipline signal
-        list = trades.filter(t => t.matching_status === 'manual' && !t.planned_trade_id); break;
+        list = closedOnly(t => t.matching_status === 'manual' && !t.planned_trade_id); break;
       case 'Not journalled':
-        list = trades.filter(t => t.status === 'closed' && !t.review_notes); break;
+        list = closedOnly(t => !t.review_notes); break;
+      case 'Closed':
       default:
-        list = trades;
+        list = closedOnly();
     }
 
     // Stage 2: smart filters (AND logic)
