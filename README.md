@@ -262,7 +262,54 @@ Safe `.select('*')` queries exist in `App.jsx`, `PlansScreen.jsx`, `HomeScreen.j
 - **Schema drift keeps biting:** same `notes` column bug hit twice in 24 hours (JournalScreen yesterday, ReviewSheet today). Root cause: explicit column lists in `.select()`. Mitigation: prefer `select('*')` per CLAUDE.md, grep whole codebase when touching schema-related code.
 - **Supabase database linter exists** — visit the Security page in the dashboard regularly. Today's RLS issues had been there since the tables were created; no one had checked.
 
-**Estimated completion:** still ~75–80%. Progress on quality, not scope.
+**Continued work later on April 15 (quality sweep):**
+
+- **Native vs base currency, corrected:** `TradeJournalDrawer`, Journal row P&L column, Journal `calcR`, ReviewSheet TradeCard now all show **native currency** for single-trade views. Aggregates (HomeScreen today's P&L, Performance KPIs, cumulative chart) stay in base. R-multiple numerator now uses native P&L so it shares units with the native risk denominator — previously silently scaled by fx_rate for non-base trades. (`c9401e72`)
+- **Workflow doc:** new `docs/WORKFLOW.md` — 643-line file/function map with user flows, data-flow diagram, and "who reads/writes each table" matrix. Reader guide for the non-expert project owner. (`7bb1be3e`)
+- **Esc handlers closed:** `Sidebar` and `WelcomeModal` now close on Escape. WelcomeModal also fires "Connect IBKR" on Enter. Every popup/drawer now has keyboard support. (`46fee411`)
+- **JournalScreen `location.state` fix:** filter now updates on every navigation via `useEffect(…, [location.state])` instead of only at mount. Second click from Performance on a different symbol updates the filter correctly. (`46fee411`)
+- **🎯 Adherence auto-computed during sync:** `api/rebuild.js` now calls `computeAdherenceScore(plan, trade)` for every matched closed trade, writing `adherence_score` alongside the upsert. New `api/lib/adherenceScore.js` (CommonJS mirror of `src/lib/adherenceScore.js`). This was the biggest architectural gap — closed. (`46fee411`)
+- **🎯 review_notes preservation across rebuild:** rebuild.js previously did delete → insert, silently wiping user journal notes and manual match overrides on every sync. Now fetches existing logical_trades first, keys by `(opening_ib_order_id, conid)`, and restores `review_notes` + `matching_status='manual'` on the new rows before insert. Data-loss bug closed. (`aca8dd42`)
+- **BaseCurrency context provider:** new `src/lib/BaseCurrencyContext.js`. App shell wraps consumers in `<BaseCurrencyProvider>`. HomeScreen, DailyViewScreen, JournalScreen, PerformanceScreen dropped their local fetch + state. Net: 5 queries per app load → 1. (`989b788f`)
+- **Error handling sweep (Medium items):** `DailyViewScreen.persistNote`, `PlanSheet` historical trades query now check `.error` and surface failures instead of swallowing. (`989b788f`)
+
+**Audit status end-of-day April 15:**
+
+- ✅ Closed: all 4 Critical, all 3 High from morning audit, 3 Medium (baseCurrency context, daily_notes error, PlanSheet error), 1 brand-new High (review_notes wipe) discovered and fixed same day, Esc on Sidebar + WelcomeModal.
+- ⚠️ Still open:
+  - **New bug found today:** `totalUnrealized` on HomeScreen line 51 has an FX bug for open positions. `open_positions` table stores `currency` but not `fx_rate_to_base`, so we can't convert without a schema + `api/sync.js` change. Needs design.
+  - **Architectural:** `docs/backend.md` says `api/sync.js` "never touches the database" — stale (uses `supabaseAdmin` now). Sweep the docs.
+  - **Dead-ish:** `api/seed-demo.js` inserts into `playbooks` table that no screen reads. Either wire up or drop.
+  - **Low:** `TradeJournalDrawer` uses `fmtDateLong` (lossy for same-day trades).
+  - **Question:** `api/redeem-invite.js` exists but no UI path. Planned or abandoned?
+  - **Still medium:** ReviewSheet resets step on close (UX nit for interrupted reviews).
+
+**Commits shipped today (chronological):**
+
+| Commit | Scope |
+|---|---|
+| `5c2ddd1e` | Merge pre-session backup branch (11 files, +482 lines) |
+| `5780d106` | Commit .gitignore + docs/architecture.md + docs/backend.md from main folder |
+| `6955b502` | RLS migration for 5 flagged tables |
+| `c2c3e8d3` | Log RLS in README |
+| `dc7dbc7d` | Critical #1: ReviewSheet `notes` column fix |
+| `193dfc27` | Critical #2: HomeScreen + ReviewSheet multi-currency aggregate fix |
+| `b2395d2d` | Critical #3: seed-demo.js `thesis` + `strategy` |
+| `4ada87e9` | Critical #4: user_id + error handling on .update() calls |
+| `331f2785` | README April 15 daily log |
+| `7bb1be3e` | docs/WORKFLOW.md — full file/function map |
+| `c9401e72` | Single-trade native currency fix (drawer, journal row, review card) |
+| `46fee411` | Audit sweep: Esc on Sidebar/Welcome, location.state, adherence-in-rebuild |
+| `aca8dd42` | review_notes preservation across rebuild |
+| `989b788f` | BaseCurrency context + error handling sweep |
+
+**Dev notes for future me:**
+- **rebuild.js does delete + insert** — any new user-data column added to `logical_trades` must be added to the preservation logic in rebuild.js (currently preserves `review_notes` and manual matching). Grep for `preservedByKey` when touching the schema.
+- **Native vs base rule of thumb:** if the surface shows ONE trade → native (`trade.currency`, `trade.total_realized_pnl`). If it sums/aggregates trades → base (`pnlBase(t)`, `useBaseCurrency()`).
+- **BaseCurrency must come from context now** — don't fetch it per-screen. `useBaseCurrency()` from `src/lib/BaseCurrencyContext`.
+- **Two copies of adherence + builder in src/lib and api/lib** — if you change the algorithm, change both. Consider unifying via a shared folder or transpilation if this gets painful.
+
+**Estimated completion:** ~82%. Significant progress on quality today — moved from "working but fragile" to "working with known-small-list-of-bugs." Feature work (adherence decomposition for Performance Review) next.
 
 ---
 
