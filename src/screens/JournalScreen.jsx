@@ -1,12 +1,32 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPnl, fmtDate } from '../lib/formatters';
+import { fmtPnl, fmtDate, fmtSymbol } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import { computeAdherenceScore } from '../lib/adherenceScore';
 import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
 import TradeInlineDetail from '../components/TradeInlineDetail';
+
+// Small asset-class badge shown next to the symbol for non-stock trades.
+// STK is the default "assumed" case so we don't clutter every row with it.
+const ASSET_BADGE_STYLES = {
+  OPT:  'bg-purple-50 text-purple-600',
+  FX:   'bg-amber-50 text-amber-700',
+  CASH: 'bg-amber-50 text-amber-700',
+  FUT:  'bg-indigo-50 text-indigo-600',
+  CFD:  'bg-teal-50 text-teal-700',
+  BOND: 'bg-slate-100 text-slate-600',
+};
+function AssetBadge({ category }) {
+  if (!category || category === 'STK') return null;
+  const cls = ASSET_BADGE_STYLES[category] || 'bg-gray-100 text-gray-500';
+  return (
+    <span className={`ml-1.5 px-1.5 py-0.5 text-[10px] font-semibold rounded ${cls}`}>
+      {category}
+    </span>
+  );
+}
 
 // Adherence pill — same color thresholds as the drawer.
 // Both branches use identical padding so the row height doesn't jitter
@@ -440,7 +460,10 @@ export default function JournalScreen({ session }) {
                           {dateDisplay}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm font-semibold text-gray-900">{trade.symbol}</td>
+                      <td className="px-6 py-4 text-sm font-semibold text-gray-900 whitespace-nowrap">
+                        {fmtSymbol(trade)}
+                        <AssetBadge category={trade.asset_category} />
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
                       <td className={`px-6 py-4 text-sm font-semibold ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>
                         {isOpen ? '—' : <PrivacyValue value={fmtPnl(pnl, rowCurrency)} />}

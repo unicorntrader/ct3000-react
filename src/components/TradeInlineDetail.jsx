@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { fmtPrice, fmtPnl, fmtDateLong } from '../lib/formatters'
+import { fmtPrice, fmtPnl, fmtDateLong, fmtSymbol } from '../lib/formatters'
 import { computeAdherenceScore } from '../lib/adherenceScore'
 
 // Rendered inline underneath a trade row in the Smart Journal table. Same
@@ -147,7 +147,12 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
         <div>
           {/* Header row */}
           <div className="flex items-center flex-wrap gap-2 mb-4">
-            <span className="text-base font-semibold text-gray-900">{trade.symbol}</span>
+            <span className="text-base font-semibold text-gray-900">{fmtSymbol(trade)}</span>
+            {trade.asset_category && trade.asset_category !== 'STK' && (
+              <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-gray-100 text-gray-500">
+                {trade.asset_category}
+              </span>
+            )}
             <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
               trade.direction === 'LONG' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'
             }`}>
