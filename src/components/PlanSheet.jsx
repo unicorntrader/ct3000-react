@@ -132,7 +132,14 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
       .eq('symbol', debouncedSymbol)
       .eq('status', 'closed')
       .order('closed_at', { ascending: false })
-      .then(({ data }) => setHistTrades(data || []));
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('[plan-sheet] historical trades fetch failed:', error.message);
+          setHistTrades([]);
+          return;
+        }
+        setHistTrades(data || []);
+      });
   }, [debouncedSymbol, session?.user?.id]);
 
   const handleSave = async () => {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { pnlBase, fmtPnl, fmtShort } from '../lib/formatters';
+import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import PrivacyValue from '../components/PrivacyValue';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -80,8 +81,8 @@ function BarRow({ label, pnl, trades, wins, maxAbsPnl, baseCurrency = 'USD' }) {
 export default function PerformanceScreen({ session }) {
   const userId = session?.user?.id;
   const navigate = useNavigate();
+  const baseCurrency = useBaseCurrency();
   const [allTrades, setAllTrades] = useState([]);
-  const [baseCurrency, setBaseCurrency] = useState('USD');
   const [loading, setLoading] = useState(true);
 
   // period control
@@ -95,22 +96,15 @@ export default function PerformanceScreen({ session }) {
 
   useEffect(() => {
     if (!userId) return;
-    Promise.all([
-      supabase
-        .from('logical_trades')
-        .select('id, symbol, direction, asset_category, currency, fx_rate_to_base, status, closed_at, opened_at, total_realized_pnl, matching_status')
-        .eq('user_id', userId)
-        .eq('status', 'closed'),
-      supabase
-        .from('user_ibkr_credentials')
-        .select('base_currency')
-        .eq('user_id', userId)
-        .maybeSingle(),
-    ]).then(([tradesRes, credRes]) => {
-      setAllTrades(tradesRes.data || []);
-      if (credRes.data?.base_currency) setBaseCurrency(credRes.data.base_currency);
-      setLoading(false);
-    });
+    supabase
+      .from('logical_trades')
+      .select('id, symbol, direction, asset_category, currency, fx_rate_to_base, status, closed_at, opened_at, total_realized_pnl, matching_status')
+      .eq('user_id', userId)
+      .eq('status', 'closed')
+      .then(({ data }) => {
+        setAllTrades(data || []);
+        setLoading(false);
+      });
   }, [userId]);
 
   const handlePreset = (p) => {

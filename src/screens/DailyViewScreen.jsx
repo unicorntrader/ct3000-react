@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { pnlBase, fmtPrice, fmtPnl } from '../lib/formatters';
+import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
 
@@ -181,10 +182,14 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
   };
 
   const persistNote = async (text) => {
-    await supabase.from('daily_notes').upsert(
+    const { error } = await supabase.from('daily_notes').upsert(
       { user_id: userId, date_key: day.dateKey, note: text, updated_at: new Date().toISOString() },
       { onConflict: 'user_id,date_key' }
     );
+    if (error) {
+      console.error('[daily-notes] upsert failed:', error.message);
+      alert(`Could not save daily note: ${error.message}`);
+    }
   };
 
   const handleSaveNote = async () => {
@@ -444,10 +449,10 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
 
 export default function DailyViewScreen({ session, onReviewOpen = () => {}, refreshKey = 0 }) {
   const userId = session?.user?.id;
+  const baseCurrency = useBaseCurrency();
   const [trades, setTrades] = useState([]);
   const [rawTrades, setRawTrades] = useState([]);
   const [plannedTradesMap, setPlannedTradesMap] = useState({});
-  const [baseCurrency, setBaseCurrency] = useState('USD');
   const [dailyNotes, setDailyNotes] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -457,7 +462,7 @@ export default function DailyViewScreen({ session, onReviewOpen = () => {}, refr
   useEffect(() => {
     if (!userId) return;
     const load = async () => {
-      const [logicalRes, rawRes, credRes, plansRes, notesRes] = await Promise.all([
+      const [logicalRes, rawRes, plansRes, notesRes] = await Promise.all([
         supabase
           .from('logical_trades')
           .select('*')
@@ -467,11 +472,6 @@ export default function DailyViewScreen({ session, onReviewOpen = () => {}, refr
           .from('trades')
           .select('ib_exec_id, ib_order_id, conid, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, currency')
           .eq('user_id', userId),
-        supabase
-          .from('user_ibkr_credentials')
-          .select('base_currency')
-          .eq('user_id', userId)
-          .maybeSingle(),
         supabase
           .from('planned_trades')
           .select('id, planned_stop_loss')
@@ -483,7 +483,6 @@ export default function DailyViewScreen({ session, onReviewOpen = () => {}, refr
       ]);
       setTrades(logicalRes.data || []);
       setRawTrades(rawRes.data || []);
-      if (credRes.data?.base_currency) setBaseCurrency(credRes.data.base_currency);
       const map = {};
       for (const p of (plansRes.data || [])) map[p.id] = p;
       setPlannedTradesMap(map);

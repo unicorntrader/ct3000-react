@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabaseClient'
 import { PrivacyProvider } from './lib/PrivacyContext'
+import { BaseCurrencyProvider } from './lib/BaseCurrencyContext'
 import AuthScreen from './components/AuthScreen'
 import PaywallScreen from './screens/PaywallScreen'
 import Header from './components/Header'
@@ -244,7 +245,9 @@ export default function App() {
     if (!anonReady) return <LoadingScreen message="Setting up your demo…" />
     return (
       <PrivacyProvider>
-        <AppShell session={session} subscription={null} onSubscriptionRefresh={() => {}} isAnonymous />
+        <BaseCurrencyProvider userId={session.user.id}>
+          <AppShell session={session} subscription={null} onSubscriptionRefresh={() => {}} isAnonymous />
+        </BaseCurrencyProvider>
       </PrivacyProvider>
     )
   }
@@ -253,11 +256,13 @@ export default function App() {
   if (isActive(subscription)) {
     return (
       <PrivacyProvider>
-        <AppShell
-          session={session}
-          subscription={subscription}
-          onSubscriptionRefresh={() => fetchSubscription(session.user.id)}
-        />
+        <BaseCurrencyProvider userId={session.user.id}>
+          <AppShell
+            session={session}
+            subscription={subscription}
+            onSubscriptionRefresh={() => fetchSubscription(session.user.id)}
+          />
+        </BaseCurrencyProvider>
       </PrivacyProvider>
     )
   }

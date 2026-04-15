@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtDate } from '../lib/formatters';
+import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import { computeAdherenceScore } from '../lib/adherenceScore';
 import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
@@ -71,9 +72,9 @@ export default function JournalScreen({ session }) {
   const userId = session?.user?.id;
   const location = useLocation();
   const navigate = useNavigate();
+  const baseCurrency = useBaseCurrency();
   const [trades, setTrades] = useState([]);
   const [plansMap, setPlansMap] = useState({});
-  const [baseCurrency, setBaseCurrency] = useState('USD');
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [shareRow, setShareRow] = useState(null);
@@ -108,7 +109,7 @@ export default function JournalScreen({ session }) {
   useEffect(() => {
     if (!userId) return;
     const load = async () => {
-      const [tradesRes, plansRes, credsRes] = await Promise.all([
+      const [tradesRes, plansRes] = await Promise.all([
         supabase
           .from('logical_trades')
           .select('*')
@@ -118,17 +119,11 @@ export default function JournalScreen({ session }) {
           .from('planned_trades')
           .select('id, symbol, direction, planned_entry_price, planned_stop_loss, planned_target_price, planned_quantity, thesis')
           .eq('user_id', userId),
-        supabase
-          .from('user_ibkr_credentials')
-          .select('base_currency')
-          .eq('user_id', userId)
-          .maybeSingle(),
       ]);
       const map = {};
       for (const p of (plansRes.data || [])) map[p.id] = p;
       setPlansMap(map);
       setTrades(tradesRes.data || []);
-      if (credsRes.data?.base_currency) setBaseCurrency(credsRes.data.base_currency);
       setLoading(false);
     };
     load();

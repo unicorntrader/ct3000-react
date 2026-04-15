@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtPrice, pnlBase } from '../lib/formatters';
+import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import PrivacyValue from '../components/PrivacyValue';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -17,17 +18,17 @@ const PAGE_SIZE = 10;
 export default function HomeScreen({ session, onReviewOpen, reviewDismissed }) {
   const navigate = useNavigate();
   const userId = session?.user?.id;
+  const baseCurrency = useBaseCurrency();
   const [positions, setPositions] = useState([]);
   const [plans, setPlans] = useState([]);
   const [logicalTrades, setLogicalTrades] = useState([]);
-  const [baseCurrency, setBaseCurrency] = useState('USD');
   const [loading, setLoading] = useState(true);
   const [posSort, setPosSort] = useState('size'); // 'size' | 'date'
 
   useEffect(() => {
     if (!userId) return;
     const load = async () => {
-      const [posRes, plansRes, tradesRes, credsRes] = await Promise.all([
+      const [posRes, plansRes, tradesRes] = await Promise.all([
         supabase.from('open_positions').select('*').eq('user_id', userId),
         supabase.from('planned_trades').select('*').eq('user_id', userId),
         supabase
@@ -35,16 +36,10 @@ export default function HomeScreen({ session, onReviewOpen, reviewDismissed }) {
           .select('status, total_realized_pnl, fx_rate_to_base, closed_at, matching_status, direction, currency')
           .eq('user_id', userId)
           .gte('closed_at', thirtyDaysAgo()),
-        supabase
-          .from('user_ibkr_credentials')
-          .select('base_currency')
-          .eq('user_id', userId)
-          .maybeSingle(),
       ]);
       setPositions(posRes.data || []);
       setPlans(plansRes.data || []);
       setLogicalTrades(tradesRes.data || []);
-      if (credsRes.data?.base_currency) setBaseCurrency(credsRes.data.base_currency);
       setLoading(false);
     };
     load();
