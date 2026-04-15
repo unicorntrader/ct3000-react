@@ -75,7 +75,7 @@ export default function ReviewSheet({ session, isOpen, onClose, onComplete }) {
     if (tradeList.length > 0) {
       const { data: allPlans } = await supabase
         .from('planned_trades')
-        .select('id, symbol, direction, asset_category, planned_entry_price, created_at, notes, thesis')
+        .select('id, symbol, direction, asset_category, planned_entry_price, created_at, thesis')
         .eq('user_id', session.user.id);
 
       const plans = allPlans || [];
