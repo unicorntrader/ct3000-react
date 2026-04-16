@@ -177,11 +177,11 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
                   {[
-                    { label: 'Entry', value: fmtPrice(plan.planned_entry_price, baseCurrency), mask: false },
-                    { label: 'Target', value: fmtPrice(plan.planned_target_price, baseCurrency), color: 'text-green-600', mask: false },
-                    { label: 'Stop', value: fmtPrice(plan.planned_stop_loss, baseCurrency), color: 'text-red-500', mask: false },
-                    { label: 'Risk', value: fmtPnl(risk, baseCurrency), color: 'text-red-500', mask: true },
-                    { label: 'Reward', value: fmtPnl(reward, baseCurrency), color: 'text-green-600', mask: true },
+                    { label: 'Entry', value: fmtPrice(plan.planned_entry_price, plan.currency || baseCurrency), mask: false },
+                    { label: 'Target', value: fmtPrice(plan.planned_target_price, plan.currency || baseCurrency), color: 'text-green-600', mask: false },
+                    { label: 'Stop', value: fmtPrice(plan.planned_stop_loss, plan.currency || baseCurrency), color: 'text-red-500', mask: false },
+                    { label: 'Risk', value: fmtPnl(risk, plan.currency || baseCurrency), color: 'text-red-500', mask: true },
+                    { label: 'Reward', value: fmtPnl(reward, plan.currency || baseCurrency), color: 'text-green-600', mask: true },
                     { label: 'R:R', value: rr ?? 'N/A', color: 'text-blue-600', mask: false },
                   ].map(f => (
                     <div key={f.label} className="text-center bg-gray-50 rounded-lg py-2">

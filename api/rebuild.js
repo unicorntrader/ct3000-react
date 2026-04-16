@@ -13,13 +13,15 @@ const supabaseAdmin = createClient(
 // When a trade is matched to exactly one plan AND it's closed, also compute
 // and set adherence_score so users see it without having to manually open
 // each drawer. Open trades get null (no exit price yet).
+// Returns an array of { planId, currency } for plans that need their currency
+// backfilled from the trade data (plan has no currency, trade does).
 function applyPlanMatching(logicalTrades, plannedTrades) {
   const plansById = new Map();
   for (const pt of plannedTrades) plansById.set(pt.id, pt);
+  const currencyBackfills = [];
 
   for (const lt of logicalTrades) {
     if (lt.matching_status === 'manual') {
-      // Preserve manual match but still (re)compute adherence if closed + plan exists
       if (lt.status === 'closed' && lt.planned_trade_id) {
         const plan = plansById.get(lt.planned_trade_id);
         if (plan) lt.adherence_score = computeAdherenceScore(plan, lt);
@@ -39,6 +41,11 @@ function applyPlanMatching(logicalTrades, plannedTrades) {
       if (lt.status === 'closed') {
         lt.adherence_score = computeAdherenceScore(matches[0], lt);
       }
+      // Backfill plan currency from trade if plan doesn't have one
+      if (!matches[0].currency && lt.currency) {
+        currencyBackfills.push({ planId: matches[0].id, currency: lt.currency });
+        matches[0].currency = lt.currency; // update in-memory too
+      }
     } else if (matches.length === 0) {
       lt.matching_status = 'unmatched';
       lt.planned_trade_id = null;
@@ -49,6 +56,7 @@ function applyPlanMatching(logicalTrades, plannedTrades) {
       lt.adherence_score = null;
     }
   }
+  return currencyBackfills;
 }
 
 module.exports = async function handler(req, res) {
@@ -144,8 +152,21 @@ module.exports = async function handler(req, res) {
     .select('*')
     .eq('user_id', userId);
 
+  let currencyBackfills = [];
   if (plannedTrades?.length) {
-    applyPlanMatching(logical, plannedTrades);
+    currencyBackfills = applyPlanMatching(logical, plannedTrades);
+  }
+
+  // Backfill plan currencies from trade data where plans were missing them
+  if (currencyBackfills.length > 0) {
+    for (const { planId, currency } of currencyBackfills) {
+      await supabaseAdmin
+        .from('planned_trades')
+        .update({ currency })
+        .eq('id', planId)
+        .eq('user_id', userId);
+    }
+    console.log(`[rebuild] backfilled currency on ${currencyBackfills.length} plan(s)`);
   }
 
   // Swap: delete old → insert new

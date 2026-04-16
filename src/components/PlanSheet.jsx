@@ -42,11 +42,18 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   const [histTrades, setHistTrades] = useState([]);
   const [histExpanded, setHistExpanded] = useState(false);
 
+  // Securities lookup — autocomplete + instrument info
+  const [secSuggestions, setSecSuggestions] = useState([]);
+  const [secSuggestOpen, setSecSuggestOpen] = useState(false);
+  const [selectedSecurity, setSelectedSecurity] = useState(null);
+  const [planCurrency, setPlanCurrency] = useState(null);
+
   const resetForm = useCallback(() => {
     setSymbol(''); setStrategy(''); setDirection('long'); setAssetCategory('STK');
     setEntry(''); setTarget(''); setStop(''); setQty(''); setThesis('');
     setError(null); setSaved(false); setConfirmDelete(false);
     setDebouncedSymbol(''); setHistTrades([]); setHistExpanded(false);
+    setSecSuggestions([]); setSecSuggestOpen(false); setSelectedSecurity(null); setPlanCurrency(null);
   }, []);
 
   const handleClose = useCallback(() => { resetForm(); onClose(); }, [resetForm, onClose]);
@@ -88,7 +95,10 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   const s = parseFloat(stop) || 0;
   const q = parseFloat(qty) || 0;
 
-  const cs = currencySymbol(baseCurrency);
+  // Use the instrument's native currency for position calcs. Falls back to
+  // baseCurrency when the security isn't in our lookup yet (new instrument).
+  const displayCurrency = planCurrency || baseCurrency;
+  const cs = currencySymbol(displayCurrency);
   const posSize = e && q ? `${cs}${(e * q).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '--';
   const risk = e && s && q ? `${cs}${(Math.abs(e - s) * q).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '--';
   const reward = e && t && q ? `${cs}${(Math.abs(t - e) * q).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '--';
@@ -115,11 +125,49 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, handleClose]);
 
-  // Debounce ticker input for hist trade lookup
+  // Debounce ticker input for hist trade lookup + securities search
   useEffect(() => {
-    const id = setTimeout(() => setDebouncedSymbol(symbol.trim().toUpperCase()), 500);
+    const id = setTimeout(() => setDebouncedSymbol(symbol.trim().toUpperCase()), 300);
     return () => clearTimeout(id);
   }, [symbol]);
+
+  // Search securities table for autocomplete
+  useEffect(() => {
+    if (!debouncedSymbol || debouncedSymbol.length < 2) {
+      setSecSuggestions([]);
+      return;
+    }
+    supabase
+      .from('securities')
+      .select('conid, symbol, asset_category, description, currency')
+      .ilike('symbol', `${debouncedSymbol}%`)
+      .limit(8)
+      .then(({ data }) => {
+        setSecSuggestions(data || []);
+        if (data?.length > 0) setSecSuggestOpen(true);
+      });
+  }, [debouncedSymbol]);
+
+  // When user picks a security from autocomplete (or exact match on debounce)
+  const handleSelectSecurity = (sec) => {
+    setSymbol(sec.symbol);
+    setAssetCategory(sec.asset_category || 'STK');
+    setPlanCurrency(sec.currency || null);
+    setSelectedSecurity(sec);
+    setSecSuggestOpen(false);
+  };
+
+  // Auto-match on exact symbol (user typed full ticker and tabbed out)
+  useEffect(() => {
+    if (!debouncedSymbol) { setSelectedSecurity(null); setPlanCurrency(null); return; }
+    const exact = secSuggestions.find(s => s.symbol.toUpperCase() === debouncedSymbol);
+    if (exact && (!selectedSecurity || selectedSecurity.symbol !== exact.symbol)) {
+      setAssetCategory(exact.asset_category || 'STK');
+      setPlanCurrency(exact.currency || null);
+      setSelectedSecurity(exact);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSymbol, secSuggestions]);
 
   // Fetch historical closed trades for this ticker
   useEffect(() => {
@@ -158,6 +206,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
       symbol:                symbol.trim().toUpperCase(),
       direction:             direction.toUpperCase(),
       asset_category:        assetCategory,
+      currency:              planCurrency || null,
       planned_entry_price:   e || null,
       planned_target_price:  t || null,
       planned_stop_loss:     s || null,
@@ -246,13 +295,53 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                 <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
                   Ticker <span className="text-red-400">*</span>
                 </label>
-                <input
-                  type="text"
-                  placeholder="AAPL, ES, EUR/USD..."
-                  value={symbol}
-                  onChange={ev => setSymbol(ev.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 uppercase"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="AAPL, ES, EUR/USD..."
+                    value={symbol}
+                    onChange={ev => { setSymbol(ev.target.value); setSecSuggestOpen(true); }}
+                    onFocus={() => { if (secSuggestions.length > 0) setSecSuggestOpen(true); }}
+                    onBlur={() => setTimeout(() => setSecSuggestOpen(false), 150)}
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 uppercase"
+                  />
+                  {/* Autocomplete dropdown from securities table */}
+                  {secSuggestOpen && secSuggestions.length > 0 && (
+                    <div className="absolute z-20 mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-100 max-h-56 overflow-y-auto">
+                      {secSuggestions.map(sec => (
+                        <button
+                          key={sec.conid}
+                          type="button"
+                          onMouseDown={e => { e.preventDefault(); handleSelectSecurity(sec); }}
+                          className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 border-b border-gray-50 last:border-0"
+                        >
+                          <span className="text-sm font-semibold text-gray-900">{sec.symbol}</span>
+                          <span className="ml-2 text-xs text-gray-400">{sec.asset_category}</span>
+                          {sec.currency && (
+                            <span className="ml-1.5 text-xs text-gray-400">{sec.currency}</span>
+                          )}
+                          {sec.description && (
+                            <p className="text-xs text-gray-400 truncate">{sec.description}</p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Instrument info card — shows when a security is matched */}
+                {selectedSecurity && (
+                  <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs">
+                    <span className="font-semibold text-blue-800">{selectedSecurity.symbol}</span>
+                    <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">{selectedSecurity.asset_category}</span>
+                    {selectedSecurity.description && (
+                      <span className="text-blue-600 truncate">{selectedSecurity.description}</span>
+                    )}
+                    {selectedSecurity.currency && (
+                      <span className="ml-auto text-blue-700 font-semibold shrink-0">{selectedSecurity.currency}</span>
+                    )}
+                  </div>
+                )}
 
                 {histTrades.length > 0 && (() => {
                   const wins = histTrades.filter(t => pnlBase(t) > 0).length;

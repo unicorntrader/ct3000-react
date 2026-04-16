@@ -342,15 +342,15 @@ export default function HomeScreen({ session }) {
                     <div className="grid grid-cols-3 gap-2 mb-2">
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
                         <p className="text-xs text-gray-400 mb-0.5">Entry</p>
-                        <p className="text-sm font-medium">{fmtPrice(plan.planned_entry_price, baseCurrency)}</p>
+                        <p className="text-sm font-medium">{fmtPrice(plan.planned_entry_price, plan.currency || baseCurrency)}</p>
                       </div>
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
                         <p className="text-xs text-gray-400 mb-0.5">Target</p>
-                        <p className="text-sm font-medium text-green-600">{fmtPrice(plan.planned_target_price, baseCurrency)}</p>
+                        <p className="text-sm font-medium text-green-600">{fmtPrice(plan.planned_target_price, plan.currency || baseCurrency)}</p>
                       </div>
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
                         <p className="text-xs text-gray-400 mb-0.5">Stop</p>
-                        <p className="text-sm font-medium text-red-500">{fmtPrice(plan.planned_stop_loss, baseCurrency)}</p>
+                        <p className="text-sm font-medium text-red-500">{fmtPrice(plan.planned_stop_loss, plan.currency || baseCurrency)}</p>
                       </div>
                     </div>
                     {plan.thesis && (
