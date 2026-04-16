@@ -48,6 +48,10 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   const [selectedSecurity, setSelectedSecurity] = useState(null);
   const [planCurrency, setPlanCurrency] = useState(null);
 
+  // Match protection — count how many trades reference this plan
+  // Edit warns the user, delete is blocked, until matches are reset
+  const [matchedCount, setMatchedCount] = useState(0);
+
   const resetForm = useCallback(() => {
     setSymbol(''); setStrategy(''); setDirection('long'); setAssetCategory('STK');
     setEntry(''); setTarget(''); setStop(''); setQty(''); setThesis('');
@@ -82,13 +86,34 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
       setStop(plan.planned_stop_loss != null ? String(plan.planned_stop_loss) : '');
       setQty(plan.planned_quantity != null ? String(plan.planned_quantity) : '');
       setThesis(plan.thesis ?? plan.notes ?? '');
+      setPlanCurrency(plan.currency || null);
     } else {
       resetForm();
     }
     setError(null);
     setSaved(false);
     setConfirmDelete(false);
+    setMatchedCount(0);
   }, [isOpen, plan, resetForm]);
+
+  // Count how many trades reference this plan (edit mode only).
+  // Used to block delete + warn on edit.
+  useEffect(() => {
+    if (!isOpen || !plan?.id || !session?.user?.id) { setMatchedCount(0); return; }
+    supabase
+      .from('logical_trades')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', session.user.id)
+      .eq('planned_trade_id', plan.id)
+      .then(({ count, error }) => {
+        if (error) {
+          console.error('[plan-sheet] matched count fetch failed:', error.message);
+          setMatchedCount(0);
+          return;
+        }
+        setMatchedCount(count || 0);
+      });
+  }, [isOpen, plan?.id, session?.user?.id]);
 
   const e = parseFloat(entry) || 0;
   const t = parseFloat(target) || 0;
@@ -197,6 +222,16 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
     }
     if (!symbol.trim()) { setError('Ticker is required.'); return; }
     if (!e) { setError('Entry price is required.'); return; }
+
+    // Warn when editing a plan that has matched trades — changes affect
+    // historical adherence scores on those trades.
+    if (isEdit && matchedCount > 0) {
+      const ok = window.confirm(
+        `This plan is matched to ${matchedCount} trade${matchedCount !== 1 ? 's' : ''}. ` +
+        `Editing will change their plan-vs-actual comparison and adherence scores. Continue?`
+      );
+      if (!ok) return;
+    }
 
     setError(null);
     setSaving(true);
@@ -526,17 +561,25 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
               </button>
 
               {isEdit && (
-                <button
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className={`w-full font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-50 ${
-                    confirmDelete
-                      ? 'bg-red-600 text-white hover:bg-red-700'
-                      : 'border border-red-200 text-red-500 hover:bg-red-50'
-                  }`}
-                >
-                  {deleting ? 'Deleting...' : confirmDelete ? 'Tap again to confirm delete' : 'Delete plan'}
-                </button>
+                matchedCount > 0 ? (
+                  <div className="w-full font-medium py-3 px-4 rounded-xl text-xs text-center border border-gray-200 bg-gray-50 text-gray-500">
+                    Can't delete — {matchedCount} trade{matchedCount !== 1 ? 's' : ''} matched to this plan.
+                    <br />
+                    Reset those matches in Smart Journal first.
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    className={`w-full font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-50 ${
+                      confirmDelete
+                        ? 'bg-red-600 text-white hover:bg-red-700'
+                        : 'border border-red-200 text-red-500 hover:bg-red-50'
+                    }`}
+                  >
+                    {deleting ? 'Deleting...' : confirmDelete ? 'Tap again to confirm delete' : 'Delete plan'}
+                  </button>
+                )
               )}
             </div>
           )}
