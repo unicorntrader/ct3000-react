@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPrice, fmtPnl, fmtDateLong } from '../lib/formatters';
+import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import PrivacyValue from '../components/PrivacyValue';
 
 const statusStyles = {
@@ -10,6 +11,10 @@ const statusStyles = {
 };
 
 export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey }) {
+  // TODO: planned_trades has no 'currency' column. Once added, use plan.currency
+  // for prices/risk/reward instead of baseCurrency. For now baseCurrency is the
+  // best available fallback — at least it shows the user's own symbol, not '$'.
+  const baseCurrency = useBaseCurrency();
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -172,11 +177,11 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
                   {[
-                    { label: 'Entry', value: fmtPrice(plan.planned_entry_price), mask: false },
-                    { label: 'Target', value: fmtPrice(plan.planned_target_price), color: 'text-green-600', mask: false },
-                    { label: 'Stop', value: fmtPrice(plan.planned_stop_loss), color: 'text-red-500', mask: false },
-                    { label: 'Risk', value: fmtPnl(risk), color: 'text-red-500', mask: true },
-                    { label: 'Reward', value: fmtPnl(reward), color: 'text-green-600', mask: true },
+                    { label: 'Entry', value: fmtPrice(plan.planned_entry_price, baseCurrency), mask: false },
+                    { label: 'Target', value: fmtPrice(plan.planned_target_price, baseCurrency), color: 'text-green-600', mask: false },
+                    { label: 'Stop', value: fmtPrice(plan.planned_stop_loss, baseCurrency), color: 'text-red-500', mask: false },
+                    { label: 'Risk', value: fmtPnl(risk, baseCurrency), color: 'text-red-500', mask: true },
+                    { label: 'Reward', value: fmtPnl(reward, baseCurrency), color: 'text-green-600', mask: true },
                     { label: 'R:R', value: rr ?? 'N/A', color: 'text-blue-600', mask: false },
                   ].map(f => (
                     <div key={f.label} className="text-center bg-gray-50 rounded-lg py-2">

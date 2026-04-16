@@ -270,7 +270,7 @@ export default function ReviewScreen({ session }) {
                       </p>
                       <p className="text-xs text-gray-400 mt-0.5">
                         {fmtDate(plan.created_at)}
-                        {plan.planned_entry_price != null && ` · Entry ${fmtPrice(plan.planned_entry_price)}`}
+                        {plan.planned_entry_price != null && ` · Entry ${fmtPrice(plan.planned_entry_price, current?.currency)}`}
                         {plan.thesis && ` · ${plan.thesis.slice(0, 40)}`}
                       </p>
                     </div>

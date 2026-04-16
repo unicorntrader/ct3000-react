@@ -4,25 +4,40 @@
  */
 export const pnlBase = (t) => (t.total_realized_pnl || 0) * (t.fx_rate_to_base || 1);
 
+/**
+ * Maps a currency code to its display symbol.
+ * Returns '¤' (the generic currency sign) when currency is missing — this
+ * makes any forgotten-argument call site immediately visible in the UI as
+ * "¤1,234.56" instead of silently defaulting to '$'.
+ *
+ * RULE: every fmtPnl / fmtPrice call MUST pass an explicit currency.
+ *   - Single trade → trade.currency (native)
+ *   - Aggregate    → baseCurrency from useBaseCurrency() context
+ */
 export const currencySymbol = (c) => {
   switch (c) {
     case 'USD': return '$';
     case 'JPY': return '¥';
     case 'EUR': return '€';
     case 'GBP': return '£';
-    default: return c ? c + ' ' : '$';
+    case 'CHF': return 'CHF ';
+    case 'CAD': return 'C$';
+    case 'AUD': return 'A$';
+    case 'HKD': return 'HK$';
+    case 'SGD': return 'S$';
+    default: return c ? c + ' ' : '¤';
   }
 };
 
-/** Price with currency symbol, e.g. "$1,234.56" */
-export const fmtPrice = (n, currency = 'USD') => {
+/** Price with currency symbol, e.g. "£1,234.56". Currency is REQUIRED. */
+export const fmtPrice = (n, currency) => {
   if (n == null) return '—';
   return currencySymbol(currency) + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
-/** Signed P&L with currency symbol, e.g. "+$1,234.56" or "-¥500.00"
- *  Pass decimals=0 for whole-number display: "+$1,234" */
-export const fmtPnl = (n, currency = 'USD', decimals = 2) => {
+/** Signed P&L with currency symbol, e.g. "+£1,234.56". Currency is REQUIRED.
+ *  Pass decimals=0 for whole-number display: "+£1,234" */
+export const fmtPnl = (n, currency, decimals = 2) => {
   if (n == null) return '—';
   const sym = currencySymbol(currency);
   const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });

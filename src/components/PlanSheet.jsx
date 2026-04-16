@@ -309,7 +309,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                                 <span className="text-gray-300">→</span>
                                 <span className="text-gray-600">{exit != null ? fmtPrice(exit, tCurrency) : 'N/A'}</span>
                                 <span className={`font-medium ml-auto shrink-0 ${tPnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                  {isPrivate ? '••••' : fmtPnl(tPnl, baseCurrency, 0)}
+                                  {isPrivate ? '••••' : fmtPnl(tPnl, tCurrency, 0)}
                                 </span>
                                 {dur && <span className="text-gray-400 shrink-0">{dur}</span>}
                               </div>
