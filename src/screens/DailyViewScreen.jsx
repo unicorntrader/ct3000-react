@@ -462,19 +462,31 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
   const [dateFilter, setDateFilter] = useState('all');
   const [sortAsc, setSortAsc] = useState(false);
 
+  // Default window: last 30 days. Prevents fetching entire trade history.
+  // Raw trades use IBKR's YYYYMMDD;HHMMSS format, so string comparison works.
+  const [dvWindow, setDvWindow] = useState(30); // days
   useEffect(() => {
     if (!userId) return;
+    setLoading(true);
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - dvWindow);
+    const isoDate = cutoff.toISOString().slice(0, 10);   // '2026-03-17'
+    const ibkrDate = isoDate.replace(/-/g, '');           // '20260317'
+
     const load = async () => {
       const [logicalRes, rawRes, plansRes, notesRes] = await Promise.all([
         supabase
           .from('logical_trades')
           .select('*')
           .eq('user_id', userId)
+          .gte('opened_at', isoDate)
           .order('opened_at', { ascending: false }),
         supabase
           .from('trades')
           .select('ib_exec_id, ib_order_id, conid, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, currency')
-          .eq('user_id', userId),
+          .eq('user_id', userId)
+          .gte('date_time', ibkrDate),
         supabase
           .from('planned_trades')
           .select('id, planned_stop_loss')
@@ -482,7 +494,8 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
         supabase
           .from('daily_notes')
           .select('date_key, note')
-          .eq('user_id', userId),
+          .eq('user_id', userId)
+          .gte('date_key', isoDate),
       ]);
       setTrades(logicalRes.data || []);
       setRawTrades(rawRes.data || []);
@@ -495,7 +508,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
       setLoading(false);
     };
     load();
-  }, [userId, refreshKey]);
+  }, [userId, refreshKey, dvWindow]);
 
   const handleResolve = async (tradeId, newStatus) => {
     await supabase
@@ -675,9 +688,18 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
           <p className="text-xs text-gray-400">Sync your IBKR account to import trades</p>
         </div>
       ) : (
-        days.map(day => (
-          <DayBlock key={day.dateKey} day={day} rawTradesWithIso={rawTradesWithIso} onResolve={handleResolve} plannedTradesMap={plannedTradesMap} baseCurrency={baseCurrency} userId={session.user.id} onReviewOpen={onReviewOpen} />
-        ))
+        <>
+          {days.map(day => (
+            <DayBlock key={day.dateKey} day={day} rawTradesWithIso={rawTradesWithIso} onResolve={handleResolve} plannedTradesMap={plannedTradesMap} baseCurrency={baseCurrency} userId={session.user.id} onReviewOpen={onReviewOpen} />
+          ))}
+          <button
+            type="button"
+            onClick={() => setDvWindow(w => w + 30)}
+            className="w-full text-center text-xs font-medium text-blue-600 hover:bg-gray-50 py-3 mt-4 border border-gray-200 rounded-xl"
+          >
+            Load older trades (currently showing last {dvWindow} days)
+          </button>
+        </>
       )}
     </div>
   );

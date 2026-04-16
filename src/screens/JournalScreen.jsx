@@ -151,18 +151,34 @@ export default function JournalScreen({ session }) {
     navigate(location.pathname, { replace: true, state: {} });
   }, [location.state, location.pathname, navigate]);
 
+  // Server-side date scoping — push the date range into the Supabase query
+  // so we don't fetch the user's entire trade history on every load.
+  // Symbol / direction / asset filters stay client-side (symbol autocomplete
+  // needs the full result set within the date window).
   useEffect(() => {
     if (!userId) return;
+    setLoading(true);
+
+    // Compute the date boundary from the current dateRange state
+    const startDate = dateRange === 'custom' ? (customFrom || null) : rangeStartDate(dateRange);
+    const endDate = dateRange === 'custom' ? (customTo || null) : null;
+
+    let query = supabase
+      .from('logical_trades')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'closed')
+      .order('closed_at', { ascending: false });
+
+    if (startDate) query = query.gte('closed_at', startDate);
+    if (endDate) query = query.lte('closed_at', endDate + 'T23:59:59');
+
     const load = async () => {
       const [tradesRes, plansRes] = await Promise.all([
-        supabase
-          .from('logical_trades')
-          .select('*')
-          .eq('user_id', userId)
-          .order('opened_at', { ascending: false }),
+        query,
         supabase
           .from('planned_trades')
-          .select('id, symbol, direction, planned_entry_price, planned_stop_loss, planned_target_price, planned_quantity, thesis')
+          .select('id, symbol, direction, planned_entry_price, planned_stop_loss, planned_target_price, planned_quantity, thesis, currency')
           .eq('user_id', userId),
       ]);
       const map = {};
@@ -172,7 +188,7 @@ export default function JournalScreen({ session }) {
       setLoading(false);
     };
     load();
-  }, [userId]);
+  }, [userId, dateRange, customFrom, customTo]);
 
   const handleTradeUpdated = (updatedTrade) => {
     setTrades(prev => prev.map(t => t.id === updatedTrade.id ? updatedTrade : t));
@@ -243,37 +259,32 @@ export default function JournalScreen({ session }) {
   }, [symbolQuery, allSymbols]);
 
   const filtered = useMemo(() => {
-    // Smart Journal only ever shows closed trades. Open positions belong on
-    // HomeScreen / DailyView, not here. Every tab below is a subset of
-    // status = 'closed'.
-    const closedOnly = (predicate = () => true) =>
-      trades.filter(t => t.status === 'closed' && predicate(t));
+    // Date filtering is now server-side (pushed into the Supabase query).
+    // The query also already filters to status='closed'.
+    // Here we only apply: tab filter + symbol + direction + asset class.
 
+    // Tab filter
     let list;
     switch (activeFilter) {
       case 'Wins':
-        list = closedOnly(t => (t.total_realized_pnl || 0) > 0); break;
+        list = trades.filter(t => (t.total_realized_pnl || 0) > 0); break;
       case 'Losses':
-        list = closedOnly(t => (t.total_realized_pnl || 0) <= 0); break;
+        list = trades.filter(t => (t.total_realized_pnl || 0) <= 0); break;
       case 'Needs review':
-        list = closedOnly(t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'); break;
+        list = trades.filter(t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'); break;
       case 'Matched':
-        list = closedOnly(t => t.matching_status === 'matched'); break;
+        list = trades.filter(t => t.matching_status === 'matched'); break;
       case 'Off-plan':
-        // User reviewed and confirmed no plan applied — real discipline signal
-        list = closedOnly(t => t.matching_status === 'manual' && !t.planned_trade_id); break;
+        list = trades.filter(t => t.matching_status === 'manual' && !t.planned_trade_id); break;
       case 'Not journalled':
-        list = closedOnly(t => !t.review_notes); break;
+        list = trades.filter(t => !t.review_notes); break;
       case 'All':
       default:
-        list = closedOnly();
+        list = trades;
     }
 
-    // Stage 2: smart filters (AND logic)
+    // Symbol / direction / asset (client-side — symbol autocomplete needs these)
     const symQ = symbolQuery.trim().toUpperCase();
-    const startDate = dateRange === 'custom' ? (customFrom || null) : rangeStartDate(dateRange);
-    const endDate = dateRange === 'custom' ? (customTo || null) : null;
-
     return list.filter(t => {
       if (symQ) {
         const s = displaySymbol(t).toUpperCase();
@@ -281,16 +292,9 @@ export default function JournalScreen({ session }) {
       }
       if (directionFilter !== 'All' && t.direction !== directionFilter) return false;
       if (assetFilter !== 'All' && t.asset_category !== assetFilter) return false;
-      if (startDate || endDate) {
-        const iso = t.status === 'open' ? t.opened_at : (t.closed_at || t.opened_at);
-        if (!iso) return false;
-        const day = iso.slice(0, 10);
-        if (startDate && day < startDate) return false;
-        if (endDate && day > endDate) return false;
-      }
       return true;
     });
-  }, [trades, activeFilter, symbolQuery, directionFilter, assetFilter, dateRange, customFrom, customTo]);
+  }, [trades, activeFilter, symbolQuery, directionFilter, assetFilter]);
 
   const hasSmartFilters = symbolQuery || directionFilter !== 'All' || assetFilter !== 'All' || dateRange !== 'all';
   const clearSmartFilters = () => {
