@@ -12,7 +12,6 @@ import {
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 const PRESETS = ['1D', '1W', '1M', '3M', 'All'];
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // Returns a YYYY-MM-DD string so we can compare against closed_at.slice(0,10)
 const presetStartDate = (p) => {
@@ -330,39 +329,6 @@ export default function PerformanceScreen({ session }) {
   const maxDirAbs = Math.max(...dirRows.map(r => Math.abs(r.pnl)), 1);
   const maxAssetAbs = Math.max(...assetRows.map(r => Math.abs(r.pnl)), 1);
 
-  // ── by-day-of-week ──
-  const dayOfWeekRows = useMemo(() => {
-    const buckets = {};
-    for (const t of trades) {
-      if (!t.closed_at) continue;
-      const day = new Date(t.closed_at).getDay(); // 0=Sun … 6=Sat
-      const label = DAY_LABELS[day];
-      if (!buckets[label]) buckets[label] = { label, trades: 0, wins: 0, pnl: 0, sortKey: day };
-      buckets[label].trades++;
-      buckets[label].pnl += pnlBase(t);
-      if (pnlBase(t) > 0) buckets[label].wins++;
-    }
-    return Object.values(buckets).sort((a, b) => a.sortKey - b.sortKey);
-  }, [trades]);
-
-  // ── by-hour-of-day ──
-  const hourOfDayRows = useMemo(() => {
-    const buckets = {};
-    for (const t of trades) {
-      if (!t.closed_at) continue;
-      const hour = new Date(t.closed_at).getHours();
-      const label = `${hour.toString().padStart(2, '0')}:00`;
-      if (!buckets[label]) buckets[label] = { label, trades: 0, wins: 0, pnl: 0, sortKey: hour };
-      buckets[label].trades++;
-      buckets[label].pnl += pnlBase(t);
-      if (pnlBase(t) > 0) buckets[label].wins++;
-    }
-    return Object.values(buckets).sort((a, b) => a.sortKey - b.sortKey);
-  }, [trades]);
-
-  const maxDayAbs = Math.max(...dayOfWeekRows.map(r => Math.abs(r.pnl)), 1);
-  const maxHourAbs = Math.max(...hourOfDayRows.map(r => Math.abs(r.pnl)), 1);
-
   // ── auto-generated callouts ──
   // Deterministic rules that fire when the data shows something notable.
   // Returns an array of { type: 'positive'|'warning'|'insight', text: string }.
@@ -407,17 +373,6 @@ export default function PerformanceScreen({ session }) {
       }
     }
 
-    // Rule 4: Day-of-week outlier (worst day)
-    if (dayOfWeekRows.length >= 3) {
-      const worstDay = [...dayOfWeekRows].sort((a, b) => a.pnl - b.pnl)[0];
-      if (worstDay && worstDay.pnl < 0 && worstDay.trades >= 2) {
-        results.push({
-          type: 'insight',
-          text: `${worstDay.label} is your worst day: ${fmtPnl(worstDay.pnl, baseCurrency)} across ${worstDay.trades} trades.`,
-        });
-      }
-    }
-
     // Rule 5: Off-plan trading signal
     // Counts both the new 'off_plan' status (auto-detected 0 candidates) and
     // the legacy manual+!hasPlan representation (user confirmed "no plan" in review).
@@ -443,7 +398,7 @@ export default function PerformanceScreen({ session }) {
     }
 
     return results;
-  }, [trades, stats, symbolRows, adherenceStats, dayOfWeekRows, baseCurrency]);
+  }, [trades, stats, symbolRows, adherenceStats, baseCurrency]);
 
   // ── chart domain ──
   const allCumVals = curveData.map(d => d.cumPnl);
@@ -823,32 +778,6 @@ export default function PerformanceScreen({ session }) {
           ) : (
             assetRows.map(r => (
               <BarRow key={r.label} {...r} maxAbsPnl={maxAssetAbs} baseCurrency={baseCurrency} />
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* ── by-day-of-week + by-hour-of-day ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-1">By day of week</h3>
-          <p className="text-xs text-gray-400 mb-3">Which days are you most profitable on?</p>
-          {dayOfWeekRows.length === 0 ? (
-            <p className="text-sm text-gray-400 py-4 text-center">No data</p>
-          ) : (
-            dayOfWeekRows.map(r => (
-              <BarRow key={r.label} {...r} maxAbsPnl={maxDayAbs} baseCurrency={baseCurrency} />
-            ))
-          )}
-        </div>
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-1">By hour of day</h3>
-          <p className="text-xs text-gray-400 mb-3">Are you sharper at certain times?</p>
-          {hourOfDayRows.length === 0 ? (
-            <p className="text-sm text-gray-400 py-4 text-center">No data</p>
-          ) : (
-            hourOfDayRows.map(r => (
-              <BarRow key={r.label} {...r} maxAbsPnl={maxHourAbs} baseCurrency={baseCurrency} />
             ))
           )}
         </div>
