@@ -35,12 +35,12 @@ function AdherencePill({ score }) {
 // bar is implicitly scoped to status = 'closed'.
 //   All            — default view, all closed trades
 //   Wins / Losses  — by P&L sign
-//   Needs review   — matching_status IN ('unmatched', 'ambiguous')
-//   Matched        — matching_status = 'matched' (plan linked)
+//   Need matching  — matching_status IN ('unmatched', 'ambiguous', 'auto')
+//   Planned        — matching_status = 'matched' (plan linked)
 //   Off-plan       — matching_status = 'manual' AND no planned_trade_id
 //                    (user reviewed and confirmed no plan — discipline signal)
 //   Not journalled — no review_notes
-const FILTERS = ['All', 'Wins', 'Losses', 'Needs review', 'Matched', 'Off-plan', 'Not journalled'];
+const FILTERS = ['All', 'Wins', 'Losses', 'Need matching', 'Planned', 'Off-plan', 'Not journalled'];
 
 const DATE_RANGES = [
   { key: 'all', label: 'All time' },
@@ -69,10 +69,10 @@ const displaySymbol = (t) =>
 function planPillFor(trade) {
   const s = trade.matching_status || 'auto';
   const hasPlan = !!trade.planned_trade_id;
-  if (s === 'matched' || (s === 'manual' && hasPlan)) return { label: 'Matched',    cls: 'bg-blue-50 text-blue-600' };
-  if (s === 'unmatched' || s === 'ambiguous')          return { label: 'Needs review', cls: 'bg-amber-50 text-amber-700' };
-  if (s === 'manual' && !hasPlan)                      return { label: 'Off-plan',   cls: 'bg-gray-100 text-gray-600' };
-  return { label: 'Auto', cls: 'bg-gray-100 text-gray-500' };
+  if (s === 'matched' || (s === 'manual' && hasPlan))              return { label: 'Planned',       cls: 'bg-blue-50 text-blue-600' };
+  if (s === 'unmatched' || s === 'ambiguous' || s === 'auto')      return { label: 'Need matching', cls: 'bg-amber-50 text-amber-700' };
+  if (s === 'manual' && !hasPlan)                                  return { label: 'Off-plan',      cls: 'bg-gray-100 text-gray-600' };
+  return { label: 'Need matching', cls: 'bg-amber-50 text-amber-700' };
 }
 
 const calcR = (trade, plan) => {
@@ -250,9 +250,9 @@ export default function JournalScreen({ session }) {
         list = trades.filter(t => (t.total_realized_pnl || 0) > 0); break;
       case 'Losses':
         list = trades.filter(t => (t.total_realized_pnl || 0) <= 0); break;
-      case 'Needs review':
-        list = trades.filter(t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'); break;
-      case 'Matched':
+      case 'Need matching':
+        list = trades.filter(t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous' || t.matching_status === 'auto'); break;
+      case 'Planned':
         list = trades.filter(t => t.matching_status === 'matched'); break;
       case 'Off-plan':
         list = trades.filter(t => t.matching_status === 'manual' && !t.planned_trade_id); break;
@@ -541,7 +541,7 @@ export default function JournalScreen({ session }) {
                       : (matchStatus === 'matched' && plan ? computeAdherenceScore(plan, trade) : null));
 
                 const isExpanded = expandedTradeId === trade.id;
-                const isBulkEligible = matchStatus === 'unmatched' || matchStatus === 'ambiguous';
+                const isBulkEligible = matchStatus === 'unmatched' || matchStatus === 'ambiguous' || matchStatus === 'auto';
                 const isChecked = selectedIds.has(trade.id);
                 return (
                   <React.Fragment key={trade.id}>

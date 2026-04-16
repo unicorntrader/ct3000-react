@@ -77,15 +77,21 @@ export default function HomeScreen({ session }) {
 
   // Trade review pipeline — all-time counts (not windowed).
   // A user who hasn't logged in for 5 days should see ALL pending trades.
-  const pipelineNeedMatching = pipelineTrades.filter(
-    t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'
-  ).length;
-  const pipelineNeedNotes = pipelineTrades.filter(
-    t => (t.matching_status === 'matched' || t.matching_status === 'manual') && !t.review_notes
-  ).length;
-  const pipelineFullyDone = pipelineTrades.filter(
-    t => (t.matching_status === 'matched' || t.matching_status === 'manual') && t.review_notes
-  ).length;
+  //
+  // matching_status values and their pipeline bucket:
+  //   'auto'      → Need matching (builder default, plan matching hasn't run or failed)
+  //   'unmatched' → Need matching (0 plans found)
+  //   'ambiguous' → Need matching (2+ plans found, user must pick)
+  //   'matched'   → Need notes (if no review_notes) or Fully done (if has notes)
+  //   'manual'    → Need notes (if no review_notes) or Fully done (if has notes)
+  const isUnresolved = (t) =>
+    t.matching_status === 'unmatched' || t.matching_status === 'ambiguous' || t.matching_status === 'auto';
+  const isResolved = (t) =>
+    t.matching_status === 'matched' || t.matching_status === 'manual';
+
+  const pipelineNeedMatching = pipelineTrades.filter(isUnresolved).length;
+  const pipelineNeedNotes = pipelineTrades.filter(t => isResolved(t) && !t.review_notes).length;
+  const pipelineFullyDone = pipelineTrades.filter(t => isResolved(t) && t.review_notes).length;
   const pipelineTotal = pipelineNeedMatching + pipelineNeedNotes + pipelineFullyDone;
 
   const statCards = [
