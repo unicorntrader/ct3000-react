@@ -287,8 +287,6 @@ export default function JournalScreen({ session }) {
   };
 
   const closedTrades = trades.filter(t => t.status === 'closed');
-  const wins = closedTrades.filter(t => (t.total_realized_pnl || 0) > 0).length;
-  const winRate = closedTrades.length > 0 ? Math.round((wins / closedTrades.length) * 100) : null;
 
   if (loading) {
     return (
@@ -324,22 +322,47 @@ export default function JournalScreen({ session }) {
         <h2 className="text-xl font-semibold text-gray-900">Smart Journal</h2>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        {[
-          { label: 'Closed trades', value: closedTrades.length > 0 ? String(closedTrades.length) : '—', color: 'text-gray-900', onClick: () => setActiveFilter('All') },
-          { label: 'Win rate', value: winRate != null ? `${winRate}%` : '—', color: 'text-green-600', onClick: () => setActiveFilter('Wins') },
-          { label: 'Journalled', value: closedTrades.length > 0 ? `${closedTrades.filter(t => t.review_notes).length} / ${closedTrades.length}` : '—', color: 'text-blue-600', onClick: () => setActiveFilter('Not journalled') },
-        ].map(c => (
-          <div
-            key={c.label}
-            onClick={c.onClick}
-            className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100 cursor-pointer hover:border-blue-200 hover:shadow-md transition-all"
-          >
-            <p className="text-xs text-gray-400 mb-1">{c.label}</p>
-            <p className={`text-2xl font-semibold ${c.color}`}>{c.value}</p>
+      {(() => {
+        // Cards reflect the journal workflow: how many trades, how far along on
+        // matching, how far along on journalling. Each card's click takes you
+        // to the "gap" — the trades still needing that step.
+        const matchedCount = closedTrades.filter(t =>
+          t.matching_status === 'matched' ||
+          (t.matching_status === 'manual' && t.planned_trade_id)
+        ).length;
+        const journalledCount = closedTrades.filter(t => t.review_notes).length;
+        const total = closedTrades.length;
+        return (
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            {[
+              { label: 'Trades', value: total > 0 ? String(total) : '—', color: 'text-gray-900', onClick: null },
+              {
+                label: 'Matched to plan',
+                value: total > 0 ? `${matchedCount} / ${total}` : '—',
+                color: 'text-blue-600',
+                onClick: matchedCount < total ? () => setActiveFilter('Need matching') : null,
+              },
+              {
+                label: 'Journalled',
+                value: total > 0 ? `${journalledCount} / ${total}` : '—',
+                color: 'text-green-600',
+                onClick: journalledCount < total ? () => setActiveFilter('Not journalled') : null,
+              },
+            ].map(c => (
+              <div
+                key={c.label}
+                onClick={c.onClick || undefined}
+                className={`bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100 ${
+                  c.onClick ? 'cursor-pointer hover:border-blue-200 hover:shadow-md transition-all' : ''
+                }`}
+              >
+                <p className="text-xs text-gray-400 mb-1">{c.label}</p>
+                <p className={`text-2xl font-semibold ${c.color}`}>{c.value}</p>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        );
+      })()}
 
       {/* Smart filter bar */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
