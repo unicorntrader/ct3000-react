@@ -35,10 +35,11 @@ function AdherencePill({ score }) {
 // bar is implicitly scoped to status = 'closed'.
 //   All            — default view, all closed trades
 //   Wins / Losses  — by P&L sign
-//   Need matching  — matching_status IN ('unmatched', 'ambiguous', 'auto')
-//   Planned        — matching_status = 'matched' (plan linked)
-//   Off-plan       — matching_status = 'manual' AND no planned_trade_id
-//                    (user reviewed and confirmed no plan — discipline signal)
+//   Need matching  — matching_status IN ('ambiguous', 'auto') — plans exist
+//                    for this ticker/direction but the system can't pick one
+//   Planned        — matched, or legacy manual+hasPlan
+//   Off-plan       — matching_status = 'off_plan' (0 candidates, auto-detected)
+//                    OR legacy manual+!hasPlan (user confirmed "no plan" in review)
 //   Not journalled — no review_notes
 const FILTERS = ['All', 'Wins', 'Losses', 'Need matching', 'Planned', 'Off-plan', 'Not journalled'];
 
@@ -64,14 +65,17 @@ const displaySymbol = (t) =>
   t.asset_category === 'OPT' ? (t.symbol || '').split(' ')[0] : (t.symbol || '');
 
 // Plan pill: maps (matching_status, has planned_trade_id) → label + color.
-// `manual` splits two ways: if the user manually picked a plan it's a match;
-// if they confirmed "no plan" it's Off-plan (the real discipline signal).
+//   Planned      = matched, or legacy manual+hasPlan (user picked a plan in review)
+//   Need matching = ambiguous (2+ candidates, user must pick) or auto (builder
+//                   placeholder before applyPlanMatching runs)
+//   Off-plan     = off_plan (system-detected 0 candidates), or legacy
+//                  manual+!hasPlan (user confirmed "no plan" in review)
 function planPillFor(trade) {
   const s = trade.matching_status || 'auto';
   const hasPlan = !!trade.planned_trade_id;
   if (s === 'matched' || (s === 'manual' && hasPlan))              return { label: 'Planned',       cls: 'bg-blue-50 text-blue-600' };
-  if (s === 'unmatched' || s === 'ambiguous' || s === 'auto')      return { label: 'Need matching', cls: 'bg-amber-50 text-amber-700' };
-  if (s === 'manual' && !hasPlan)                                  return { label: 'Off-plan',      cls: 'bg-gray-100 text-gray-600' };
+  if (s === 'off_plan' || (s === 'manual' && !hasPlan))            return { label: 'Off-plan',      cls: 'bg-gray-100 text-gray-600' };
+  if (s === 'ambiguous' || s === 'auto' || s === 'unmatched')      return { label: 'Need matching', cls: 'bg-amber-50 text-amber-700' };
   return { label: 'Need matching', cls: 'bg-amber-50 text-amber-700' };
 }
 
@@ -185,9 +189,9 @@ export default function JournalScreen({ session }) {
   };
   const clearSelection = () => setSelectedIds(new Set());
 
-  // Bulk "Mark off-plan": applies to all selected unmatched/ambiguous trades.
-  // Sets matching_status='manual' and planned_trade_id=null so they move out
-  // of the Needs review bucket into Off-plan.
+  // Bulk "Mark off-plan": applies to all selected ambiguous/auto trades.
+  // Sets matching_status='off_plan' and planned_trade_id=null so they move
+  // out of the Needs review bucket into Off-plan.
   const handleBulkMarkOffPlan = async () => {
     if (selectedIds.size === 0 || bulkSaving) return;
     const ids = [...selectedIds];
@@ -198,7 +202,7 @@ export default function JournalScreen({ session }) {
     setBulkSaving(true);
     const { data: updatedRows, error } = await supabase
       .from('logical_trades')
-      .update({ matching_status: 'manual', planned_trade_id: null })
+      .update({ matching_status: 'off_plan', planned_trade_id: null })
       .in('id', ids)
       .eq('user_id', userId)
       .select();
@@ -251,11 +255,11 @@ export default function JournalScreen({ session }) {
       case 'Losses':
         list = trades.filter(t => (t.total_realized_pnl || 0) <= 0); break;
       case 'Need matching':
-        list = trades.filter(t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous' || t.matching_status === 'auto'); break;
+        list = trades.filter(t => t.matching_status === 'ambiguous' || t.matching_status === 'auto' || t.matching_status === 'unmatched'); break;
       case 'Planned':
-        list = trades.filter(t => t.matching_status === 'matched'); break;
+        list = trades.filter(t => t.matching_status === 'matched' || (t.matching_status === 'manual' && t.planned_trade_id)); break;
       case 'Off-plan':
-        list = trades.filter(t => t.matching_status === 'manual' && !t.planned_trade_id); break;
+        list = trades.filter(t => t.matching_status === 'off_plan' || (t.matching_status === 'manual' && !t.planned_trade_id)); break;
       case 'Not journalled':
         list = trades.filter(t => !t.review_notes); break;
       case 'All':

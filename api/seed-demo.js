@@ -97,7 +97,7 @@ module.exports = async function handler(req, res) {
     closed_at: null,
     fx_rate_to_base: 1,
     currency: 'USD',
-    matching_status: 'unmatched',
+    matching_status: 'off_plan',
     is_reversal: false,
     planned_trade_id: null,
     is_demo: true,
@@ -110,31 +110,31 @@ module.exports = async function handler(req, res) {
     lt({ symbol: 'NVDA', direction: 'LONG',  opened_at: daysAgo(6),  closed_at: daysAgo(5),  total_opening_quantity: 100, avg_entry_price: 140.00, total_realized_pnl: 1000,  planned_trade_id: planId['NVDA_LONG'], matching_status: 'matched'   }),
     lt({ symbol: 'NVDA', direction: 'LONG',  opened_at: daysAgo(9),  closed_at: daysAgo(8),  total_opening_quantity: 50,  avg_entry_price: 145.00, total_realized_pnl: 500                                                                              }),
     lt({ symbol: 'NVDA', direction: 'SHORT', opened_at: daysAgo(14), closed_at: daysAgo(12), total_opening_quantity: 100, avg_entry_price: 160.00, total_realized_pnl: 1200                                                                             }),
-    lt({ symbol: 'NVDA', direction: 'LONG',  opened_at: daysAgo(20), closed_at: daysAgo(18), total_opening_quantity: 75,  avg_entry_price: 150.00, total_realized_pnl: -600,  matching_status: 'unmatched'                                              }),
-    lt({ symbol: 'NVDA', direction: 'SHORT', opened_at: daysAgo(27), closed_at: daysAgo(25), total_opening_quantity: 80,  avg_entry_price: 155.00, total_realized_pnl: -560,  matching_status: 'unmatched'                                              }),
+    lt({ symbol: 'NVDA', direction: 'LONG',  opened_at: daysAgo(20), closed_at: daysAgo(18), total_opening_quantity: 75,  avg_entry_price: 150.00, total_realized_pnl: -600,  matching_status: 'off_plan'                                              }),
+    lt({ symbol: 'NVDA', direction: 'SHORT', opened_at: daysAgo(27), closed_at: daysAgo(25), total_opening_quantity: 80,  avg_entry_price: 155.00, total_realized_pnl: -560,  matching_status: 'off_plan'                                              }),
 
     // ── AAPL ─────────────────────────────────────────────────────────────────
     lt({ symbol: 'AAPL', direction: 'LONG',  opened_at: daysAgo(4),  closed_at: daysAgo(3),  total_opening_quantity: 50,  avg_entry_price: 185.00, total_realized_pnl: 550,   planned_trade_id: planId['AAPL_LONG'], matching_status: 'matched'   }),
     lt({ symbol: 'AAPL', direction: 'LONG',  opened_at: daysAgo(11), closed_at: daysAgo(10), total_opening_quantity: 100, avg_entry_price: 188.00, total_realized_pnl: 1000                                                                             }),
     lt({ symbol: 'AAPL', direction: 'LONG',  opened_at: daysAgo(17), closed_at: daysAgo(15), total_opening_quantity: 75,  avg_entry_price: 190.00, total_realized_pnl: 750                                                                              }),
-    lt({ symbol: 'AAPL', direction: 'LONG',  opened_at: daysAgo(24), closed_at: daysAgo(22), total_opening_quantity: 60,  avg_entry_price: 192.00, total_realized_pnl: -420,  matching_status: 'unmatched'                                              }),
+    lt({ symbol: 'AAPL', direction: 'LONG',  opened_at: daysAgo(24), closed_at: daysAgo(22), total_opening_quantity: 60,  avg_entry_price: 192.00, total_realized_pnl: -420,  matching_status: 'off_plan'                                              }),
 
     // ── TSLA ─────────────────────────────────────────────────────────────────
     lt({ symbol: 'TSLA', direction: 'LONG',  opened_at: daysAgo(5),  closed_at: daysAgo(4),  total_opening_quantity: 30,  avg_entry_price: 220.00, total_realized_pnl: 540                                                                              }),
     lt({ symbol: 'TSLA', direction: 'SHORT', opened_at: daysAgo(10), closed_at: daysAgo(9),  total_opening_quantity: 20,  avg_entry_price: 250.00, total_realized_pnl: 300,   planned_trade_id: planId['TSLA_SHORT'], matching_status: 'matched'  }),
-    lt({ symbol: 'TSLA', direction: 'LONG',  opened_at: daysAgo(18), closed_at: daysAgo(16), total_opening_quantity: 25,  avg_entry_price: 235.00, total_realized_pnl: -375,  matching_status: 'unmatched'                                              }),
+    lt({ symbol: 'TSLA', direction: 'LONG',  opened_at: daysAgo(18), closed_at: daysAgo(16), total_opening_quantity: 25,  avg_entry_price: 235.00, total_realized_pnl: -375,  matching_status: 'off_plan'                                              }),
     lt({ symbol: 'TSLA', direction: 'SHORT', opened_at: daysAgo(26), closed_at: daysAgo(24), total_opening_quantity: 30,  avg_entry_price: 240.00, total_realized_pnl: -450                                                                             }),
 
     // ── SPY ──────────────────────────────────────────────────────────────────
     lt({ symbol: 'SPY',  direction: 'LONG',  opened_at: daysAgo(3),  closed_at: daysAgo(2),  total_opening_quantity: 20,  avg_entry_price: 500.00, total_realized_pnl: 200                                                                              }),
     lt({ symbol: 'SPY',  direction: 'LONG',  opened_at: daysAgo(8),  closed_at: daysAgo(7),  total_opening_quantity: 15,  avg_entry_price: 495.00, total_realized_pnl: 195                                                                              }),
     lt({ symbol: 'SPY',  direction: 'LONG',  opened_at: daysAgo(15), closed_at: daysAgo(13), total_opening_quantity: 25,  avg_entry_price: 498.00, total_realized_pnl: 300                                                                              }),
-    lt({ symbol: 'SPY',  direction: 'LONG',  opened_at: daysAgo(22), closed_at: daysAgo(20), total_opening_quantity: 20,  avg_entry_price: 505.00, total_realized_pnl: -140,  matching_status: 'unmatched'                                              }),
+    lt({ symbol: 'SPY',  direction: 'LONG',  opened_at: daysAgo(22), closed_at: daysAgo(20), total_opening_quantity: 20,  avg_entry_price: 505.00, total_realized_pnl: -140,  matching_status: 'off_plan'                                              }),
 
     // ── MSFT ─────────────────────────────────────────────────────────────────
     lt({ symbol: 'MSFT', direction: 'LONG',  opened_at: daysAgo(7),  closed_at: daysAgo(6),  total_opening_quantity: 40,  avg_entry_price: 420.00, total_realized_pnl: 400                                                                              }),
     lt({ symbol: 'MSFT', direction: 'LONG',  opened_at: daysAgo(13), closed_at: daysAgo(11), total_opening_quantity: 30,  avg_entry_price: 415.00, total_realized_pnl: 300                                                                              }),
-    lt({ symbol: 'MSFT', direction: 'LONG',  opened_at: daysAgo(21), closed_at: daysAgo(19), total_opening_quantity: 35,  avg_entry_price: 422.00, total_realized_pnl: -420,  matching_status: 'unmatched'                                              }),
+    lt({ symbol: 'MSFT', direction: 'LONG',  opened_at: daysAgo(21), closed_at: daysAgo(19), total_opening_quantity: 35,  avg_entry_price: 422.00, total_realized_pnl: -420,  matching_status: 'off_plan'                                              }),
 
     // ── Open trades (Journal "Open" tab) ─────────────────────────────────────
     ltOpen({ symbol: 'NVDA', direction: 'LONG', opened_at: daysAgo(1), total_opening_quantity: 50,  avg_entry_price: 162.00 }),

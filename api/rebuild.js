@@ -47,7 +47,10 @@ function applyPlanMatching(logicalTrades, plannedTrades) {
         matches[0].currency = lt.currency; // update in-memory too
       }
     } else if (matches.length === 0) {
-      lt.matching_status = 'unmatched';
+      // Zero plan candidates → off_plan. No plan exists for this
+      // symbol/direction/asset_category combo, so there is nothing for the
+      // user to review. Bypasses the /review queue.
+      lt.matching_status = 'off_plan';
       lt.planned_trade_id = null;
       lt.adherence_score = null;
     } else {

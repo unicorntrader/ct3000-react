@@ -307,7 +307,10 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
           </thead>
           <tbody className="divide-y divide-gray-100">
             {day.rows.map((row) => {
-              const needsAction = row.status === 'unmatched' || row.status === 'ambiguous';
+              // Only ambiguous trades need user action — off_plan trades were
+              // auto-resolved (no plan candidates existed) and don't require
+              // a decision. Keeping 'unmatched' for legacy rows pre-backfill.
+              const needsAction = row.status === 'ambiguous' || row.status === 'unmatched';
               const isExpanded = expandedRows.has(row.id);
               const execs = getExecs(row);
               const isFX = row.assetCategory === 'FXCFD' || row.assetCategory === 'CASH';

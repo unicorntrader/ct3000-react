@@ -42,12 +42,8 @@ function TradeCard({ trade }) {
               {isWin ? 'win' : 'loss'}
             </span>
           )}
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-            trade.matching_status === 'ambiguous'
-              ? 'bg-purple-50 text-purple-700'
-              : 'bg-amber-50 text-amber-700'
-          }`}>
-            {trade.matching_status === 'ambiguous' ? 'Ambiguous' : 'Unmatched'}
+          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+            Ambiguous
           </span>
         </div>
         {dateIso && <span className="text-xs text-gray-400 shrink-0">{fmtDate(dateIso)}</span>}
@@ -112,7 +108,10 @@ export default function ReviewScreen({ session }) {
       .from('logical_trades')
       .select('*')
       .eq('user_id', session.user.id)
-      .in('matching_status', ['unmatched', 'ambiguous'])
+      // Only ambiguous trades need review (2+ plan candidates — system
+      // can't auto-pick). Zero-candidate trades are auto-flipped to
+      // 'off_plan' in applyPlanMatching and bypass this queue.
+      .in('matching_status', ['ambiguous'])
       .order('opened_at', { ascending: false });
 
     const tradeList = reviewTrades || [];
@@ -166,7 +165,7 @@ export default function ReviewScreen({ session }) {
     setSaving(true);
     const { error } = await supabase
       .from('logical_trades')
-      .update({ matching_status: 'manual', planned_trade_id: null })
+      .update({ matching_status: 'off_plan', planned_trade_id: null })
       .eq('id', current.id)
       .eq('user_id', session.user.id);
     setSaving(false);
