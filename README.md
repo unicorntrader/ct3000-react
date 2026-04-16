@@ -313,6 +313,51 @@ Safe `.select('*')` queries exist in `App.jsx`, `PlansScreen.jsx`, `HomeScreen.j
 
 ---
 
+### April 15–16, 2026 (afternoon session → past midnight)
+
+**Major features shipped:**
+
+- **Adherence decomposition on Performance** — refactored `adherenceScore.js` to return `{ entry, target, stop, size, overall }` via `computeAdherenceBreakdown()`. Legacy `computeAdherenceScore()` kept as scalar shortcut. New "Avg adherence" KPI card (5th slot in top row, green/amber/red thresholds). New "Adherence breakdown" panel below the cumulative chart — 4 horizontal bars showing entry/target/stop/size pillar averages with one-line descriptions and color coding. (`d267a2fa`)
+- **Trade review pipeline block on HomeScreen** — replaces the one-line amber banner. Three navigation boxes: Need matching (amber → `/review`), Need notes (blue → `/journal` pre-filtered to "Not journalled"), Fully done (green → `/journal` default). Counts from closedLast30. Hidden when pipelineTotal === 0. JournalScreen taught to accept `activeFilter` via `location.state`. (`66b7716a`)
+- **Bulk mark-off-plan in Smart Journal** — checkbox selection on unmatched/ambiguous trades + sticky blue action bar with "Mark as off-plan" button. Bulk `.update().in('id', ids)` with confirmation dialog + error handling. Clears selection after commit. (`dc955860`)
+- **`/review` full-page route** — ReviewSheet bottom drawer ripped out, replaced with `ReviewScreen.jsx` as a proper page at `/review`. Back button, keyboard shortcuts (Enter/N/Esc), progress dots, same wizard logic. Deleted `ReviewSheet.jsx` + `TradeJournalDrawer.jsx` (both orphaned). (`6e664e56`)
+- **Smart Journal: Journalled pill reverted** — note preview column was too busy, went back to the clean green "Journalled" pill (note still on hover via title attribute). (`69bf8910`)
+- **Smart Journal: inline row expansion** — replaced the bottom drawer with click-to-expand rows in the table. New `TradeInlineDetail.jsx` component. Chevron indicator, only one row open at a time, Cmd+Enter saves, Esc collapses, "Unsaved changes" badge, 4-state save button. (`6897ee8e`, `569ffa24`, `29fd7f55`)
+- **Thesis label in inline detail** — plan thesis was rendering as unlabeled italic text, now has a proper "THESIS" header. (`5e6a2a02`)
+- **Adherence pill height stabilization** — null branch now uses same padding as the scored branch so row height doesn't jitter when filters switch between mixed sets. (`30b09ed3`)
+- **Human-readable option symbols** — new `fmtSymbol(trade)` in formatters.js parses OSI "NVDA 260330P00170000" → "NVDA 170P 30 Mar". + `AssetBadge` component for non-STK trades (OPT/FX/CASH/FUT badges). (`b55efc41`)
+- **Smart Journal filter redesign** — dropped Unmatched/Ambiguous/Journalled, added "Needs review" (action queue) + "Off-plan" (discipline signal). New `planPillFor(trade)` helper maps matching_status × has-plan into 4 display labels (Matched/Needs review/Off-plan/Auto). Dropped "Open" tab (SJ is closed trades only). Renamed "Closed" → "All" (since everything in SJ is closed). (`d705b59e`, `d1f76504`, `a3d7199a`)
+- **Reset match action** in TradeInlineDetail — "Reset match" link for resolved trades, flips back to `unmatched`, clears planned_trade_id + adherence_score, preserves review_notes. Confirmation dialog. (`28a53917`)
+- **IBKR sync lag notice** — success banner now explains Flex Query latency (10–30 min for new fills). (`28a53917`)
+- **fx_rate_to_base on open_positions** — `parseOpenPositions` in sync.js now reads `fxRateToBase` from XML, IBKRScreen writes it per position, HomeScreen `totalUnrealized` converts via `(unrealized_pnl * fx_rate_to_base)`. Migration added. (`f1f65f7a`)
+- **Redeem-invite bug fix** — `redeemed_by_user_id` → `redeemed_by` column name mismatch. Schema migration + `docs/INVITE_FLOW.md` (rewritten to reflect ct3000-admin split). (`3a290dc1`, `70e142ce`)
+
+**Mobile polish (pre-beta):**
+- Removed duplicate privacy toggle from MobileNav (keep in Header only)
+- Smart Journal: progressive column hiding — 4 cols on phones, 7 on tablets, 11 on desktop
+- Performance by-symbol: tighter padding on mobile
+- Explicit `/signup` route for invite link robustness
+(`ac5a05c7`)
+
+**Pre-beta audit result:** no ship-blockers found. All cross-screen flows verified (pipeline block, review flow, reset match, invite redemption, empty states, multi-currency). One documented caveat: fx_rate_to_base is NULL on pre-migration open_positions rows until user syncs. New beta users are unaffected (start fresh).
+
+**Design decisions:**
+- **SJ is for closed trades only.** Open positions belong on Home / DailyView. Removed the "Open" tab.
+- **Native currency for single trades, base for aggregates.** Enforced everywhere.
+- **Filter semantics reworked.** "Needs review" = pending action (unmatched + ambiguous). "Off-plan" = user confirmed no plan (the real discipline signal). "Matched" = plan linked. Each filter answers a distinct question.
+- **The review pipeline has 2 user verbs:** Match (via `/review` wizard or auto) + Journal (via SJ inline expansion). Pipeline block on Home makes this explicit.
+- **Invite creation is ct3000-admin's job.** This repo only handles redemption.
+
+**Dev notes for future me:**
+- **`computeAdherenceBreakdown()` is the new primary export.** Returns `{ entry, target, stop, size, overall }`. `computeAdherenceScore()` is a scalar shortcut that returns `.overall`. Both exist in `src/lib/` (ES module) and `api/lib/` (CJS mirror). Change both when touching the algorithm.
+- **Smart Journal colSpan is now 11** (was 10) because of the checkbox column. If you add/remove columns, update the colSpan on the inline-expansion `<td>`.
+- **Responsive columns in SJ use `hidden sm:table-cell` / `hidden md:table-cell` pattern.** Each column has its own breakpoint class on both `<th>` and `<td>`.
+- **The `/signup` route is explicit but does nothing when logged in** — just redirects to `/`. The invite flow works because when logged OUT, `App.jsx` returns `<AuthScreen />` directly before routes are evaluated, and AuthScreen reads `?invite=` from `window.location.search`.
+
+**Estimated completion:** ~88–90%. Beta-ready for invited users. Remaining: weekly reflection textarea, by-day/by-hour slices, auto-generated callouts (all post-beta).
+
+---
+
 ### Template for future daily entries
 
 Copy this block for each new day:
