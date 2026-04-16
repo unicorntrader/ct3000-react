@@ -326,11 +326,15 @@ export default function JournalScreen({ session }) {
 
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[
-          { label: 'Closed trades', value: closedTrades.length > 0 ? String(closedTrades.length) : '—', color: 'text-gray-900' },
-          { label: 'Win rate', value: winRate != null ? `${winRate}%` : '—', color: 'text-green-600' },
-          { label: 'Journalled', value: closedTrades.length > 0 ? `${closedTrades.filter(t => t.review_notes).length} / ${closedTrades.length}` : '—', color: 'text-blue-600' },
+          { label: 'Closed trades', value: closedTrades.length > 0 ? String(closedTrades.length) : '—', color: 'text-gray-900', onClick: () => setActiveFilter('All') },
+          { label: 'Win rate', value: winRate != null ? `${winRate}%` : '—', color: 'text-green-600', onClick: () => setActiveFilter('Wins') },
+          { label: 'Journalled', value: closedTrades.length > 0 ? `${closedTrades.filter(t => t.review_notes).length} / ${closedTrades.length}` : '—', color: 'text-blue-600', onClick: () => setActiveFilter('Not journalled') },
         ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100">
+          <div
+            key={c.label}
+            onClick={c.onClick}
+            className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100 cursor-pointer hover:border-blue-200 hover:shadow-md transition-all"
+          >
             <p className="text-xs text-gray-400 mb-1">{c.label}</p>
             <p className={`text-2xl font-semibold ${c.color}`}>{c.value}</p>
           </div>

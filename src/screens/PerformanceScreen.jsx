@@ -517,6 +517,7 @@ export default function PerformanceScreen({ session }) {
           : 'text-red-500')
         : 'text-gray-400',
       maskValue: false,
+      onClick: () => document.getElementById('adherence-breakdown')?.scrollIntoView({ behavior: 'smooth' }),
     },
   ];
 
@@ -571,7 +572,13 @@ export default function PerformanceScreen({ session }) {
       {/* ── KPI cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {kpis.map(card => (
-          <div key={card.label} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div
+            key={card.label}
+            onClick={card.onClick || undefined}
+            className={`bg-white rounded-2xl p-5 shadow-sm border border-gray-100 ${
+              card.onClick ? 'cursor-pointer hover:border-blue-200 hover:shadow-md transition-all' : ''
+            }`}
+          >
             <p className="text-xs font-medium text-gray-400 mb-1.5">{card.label}</p>
             <p className={`text-2xl font-semibold leading-none mb-1 ${card.color}`}>
               {card.maskValue ? <PrivacyValue value={card.value} /> : card.value}
@@ -661,7 +668,7 @@ export default function PerformanceScreen({ session }) {
       </div>
 
       {/* ── adherence decomposition ── */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+      <div id="adherence-breakdown" className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-sm font-semibold text-gray-700">Adherence breakdown</h3>

@@ -104,6 +104,7 @@ export default function HomeScreen({ session }) {
       sub: positions.length > 0 ? fmtPnl(totalUnrealized, baseCurrency) + ' unrealized' : 'No open positions',
       maskSub: positions.length > 0,
       color: 'text-blue-600',
+      onClick: () => document.getElementById('open-positions')?.scrollIntoView({ behavior: 'smooth' }),
     },
     {
       label: 'Active plans',
@@ -244,7 +245,7 @@ export default function HomeScreen({ session }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div>
+        <div id="open-positions">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-700">Open positions</h3>
             {positions.length > 0 && (
