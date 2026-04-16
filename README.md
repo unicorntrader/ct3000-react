@@ -100,12 +100,12 @@ IBKR Flex XML
 - **P&L conversion:** always go through `pnlBase(t)` from `src/lib/formatters.js` for aggregates. Never use `trade.total_realized_pnl` raw in an aggregate. For single-trade display, use native P&L directly.
 - **Base currency source of truth:** `useBaseCurrency()` from `src/lib/BaseCurrencyContext`. Do NOT fetch `base_currency` per-screen — it's already fetched once at the app shell level.
 - **Smart Journal filter state:** lives client-side in SJ except date range, which is pushed into the Supabase query (server-side scoping). When adding filters, decide: can the DB do it (push to query) or does autocomplete need the full result set (client)?
-- **`rebuild.js` does delete + insert** — any new user-data column on `logical_trades` must be added to the `preservedByKey` logic in rebuild.js (currently preserves `review_notes` and `matching_status='manual'` + `planned_trade_id`). Otherwise the column gets wiped on every sync.
+- **`rebuild.js` does delete + insert** — any new user-data column on `logical_trades` must be added to the `preservedByKey` logic in rebuild.js (currently preserves `review_notes` and any `user_reviewed=true` row's `matching_status` + `planned_trade_id`). Otherwise the column gets wiped on every sync.
 - **No dynamic `await import()`** — static imports only, to avoid webpack chunk hash issues on deploy.
 - **Canonical column names:** `planned_entry_price`, `planned_stop_loss`, `planned_target_price`, `planned_quantity`. Old aliases (`entry_price`, `stop_price`, `target_price`, `shares`, `quantity`) will not work.
 - **Canonical plan prose field:** `thesis`. The column `notes` does NOT exist on `planned_trades` (this bug has been caught three times — grep any new `.select()` list before committing).
 - **Direction values are uppercase:** `LONG` / `SHORT`. Use those exact strings in filters and comparisons.
-- **`matching_status` vocabulary:** `auto` (builder default, unresolved), `unmatched` (zero candidate plans), `ambiguous` (multiple candidates), `matched` (linked to a plan), `manual` (user reviewed — resolved with or without a plan). For pipeline/filter purposes, treat `auto` the same as `unmatched` ("Need matching").
+- **`matching_status` vocabulary:** 3 mutually-exclusive states. `matched` (linked to exactly one plan), `needs_review` (2+ candidate plans — user must pick in /review), `off_plan` (zero candidate plans — traded without one; terminal). User choices are preserved across rebuilds via the `user_reviewed` boolean — `applyPlanMatching` skips rows with `user_reviewed=true` so explicit decisions survive subsequent syncs.
 - **Two copies of adherence + builder** in `src/lib/` (ES module) and `api/lib/` (CJS). Change both when touching the algorithm.
 
 ---

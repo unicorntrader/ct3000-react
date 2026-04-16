@@ -7,11 +7,15 @@ import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
 
 const statusStyles = {
-  matched: 'bg-blue-50 text-blue-600',
-  unmatched: 'bg-amber-100 text-amber-700',
-  ambiguous: 'bg-purple-50 text-purple-700',
-  auto: 'bg-gray-100 text-gray-500',
-  manual: 'bg-green-50 text-green-700',
+  matched:      'bg-blue-50 text-blue-600',
+  needs_review: 'bg-amber-100 text-amber-700',
+  off_plan:     'bg-gray-100 text-gray-600',
+};
+
+const statusLabels = {
+  matched:      'Matched',
+  needs_review: 'Needs review',
+  off_plan:     'Off-plan',
 };
 
 const fmtTime = (iso) => {
@@ -307,10 +311,9 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
           </thead>
           <tbody className="divide-y divide-gray-100">
             {day.rows.map((row) => {
-              // Only ambiguous trades need user action — off_plan trades were
-              // auto-resolved (no plan candidates existed) and don't require
-              // a decision. Keeping 'unmatched' for legacy rows pre-backfill.
-              const needsAction = row.status === 'ambiguous' || row.status === 'unmatched';
+              // Only needs_review trades need user action — off_plan trades
+              // were auto-resolved (no plan candidates existed).
+              const needsAction = row.status === 'needs_review';
               const isExpanded = expandedRows.has(row.id);
               const execs = getExecs(row);
               const isFX = row.assetCategory === 'FXCFD' || row.assetCategory === 'CASH';
@@ -343,7 +346,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center space-x-2">
                         <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${statusStyles[row.status] || 'bg-gray-100 text-gray-500'}`}>
-                          {row.status.charAt(0).toUpperCase() + row.status.slice(1)}
+                          {statusLabels[row.status] || row.status}
                         </span>
                         {needsAction && (
                           <button
@@ -383,24 +386,14 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                   {needsAction && openResolve === row.id && (
                     <tr className="bg-amber-50">
                       <td colSpan={COL_SPAN} className="px-6 py-3">
-                        <div className={`bg-white rounded-xl p-4 border ${row.status === 'ambiguous' ? 'border-purple-200' : 'border-amber-200'}`}>
+                        <div className="bg-white rounded-xl p-4 border border-purple-200">
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
                             Resolve {row.symbol} &middot; <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency, 0)} />
                           </p>
                           <p className="text-sm text-gray-500 mb-3">
-                            {row.status === 'unmatched'
-                              ? 'No plan was matched to this trade. Mark it as unplanned or link a plan manually.'
-                              : 'Multiple plans matched. Go to the Journal to resolve this trade.'}
+                            Multiple plans matched this trade. Open the Review wizard to pick one.
                           </p>
                           <div className="flex space-x-2">
-                            {row.status === 'unmatched' && (
-                              <button
-                                onClick={() => { onResolve(row.id, 'manual'); setOpenResolve(null); }}
-                                className="bg-blue-600 text-white text-xs font-medium px-4 py-2 rounded-lg hover:bg-blue-700"
-                              >
-                                Mark as unplanned
-                              </button>
-                            )}
                             <button onClick={() => setOpenResolve(null)} className="border border-gray-200 text-gray-600 text-xs px-4 py-2 rounded-lg hover:bg-gray-50">Cancel</button>
                           </div>
                         </div>
@@ -546,9 +539,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
       const wins = closed.filter(t => pnlBase(t) > 0).length;
       const losses = closed.filter(t => pnlBase(t) <= 0).length;
       const totalPnl = closed.reduce((sum, t) => sum + pnlBase(t), 0);
-      const needsReview = dayTrades.filter(
-        t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'
-      ).length;
+      const needsReview = dayTrades.filter(t => t.matching_status === 'needs_review').length;
 
       const rows = dayTrades.map(t => {
         const { entry, exit, isOrphan } = getDisplayPrices(t, exitMap, openOrderIds);
@@ -570,7 +561,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
           nativePnl: t.total_realized_pnl,
           duration: calcDuration(t.opened_at, t.closed_at),
           pnl: pnlBase(t),
-          status: t.matching_status || 'auto',
+          status: t.matching_status || 'needs_review',
           tradeStatus: t.status,
           plannedTradeId: t.planned_trade_id || null,
         };
@@ -597,7 +588,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
   );
 
   const totalNeedsReview = useMemo(() =>
-    trades.filter(t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous').length,
+    trades.filter(t => t.matching_status === 'needs_review').length,
     [trades]
   );
 

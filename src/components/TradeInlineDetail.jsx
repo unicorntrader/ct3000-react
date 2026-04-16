@@ -83,9 +83,7 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
   // plan link or a "no plan" outcome. Resolved trades can be reset so they
   // re-enter the review queue.
   const isResolved = trade.status === 'closed' && (
-    trade.matching_status === 'matched' ||
-    trade.matching_status === 'off_plan' ||
-    trade.matching_status === 'manual'
+    trade.matching_status === 'matched' || trade.matching_status === 'off_plan'
   )
   const currency = trade.currency || 'USD'
 
@@ -156,12 +154,13 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
     const { data: updated, error } = await supabase
       .from('logical_trades')
       .update({
-        // 'ambiguous' so the trade re-enters the /review queue — if there
-        // are no candidate plans at that point, the user can still exit,
-        // and next rebuild will flip it to 'off_plan' anyway.
-        matching_status: 'ambiguous',
+        // needs_review puts the trade back in the /review queue. Clearing
+        // user_reviewed lets applyPlanMatching redecide on the next rebuild
+        // (which may promote it to 'matched' if there is only 1 candidate).
+        matching_status: 'needs_review',
         planned_trade_id: null,
         adherence_score: null,
+        user_reviewed: false,
       })
       .eq('id', trade.id)
       .eq('user_id', trade.user_id)

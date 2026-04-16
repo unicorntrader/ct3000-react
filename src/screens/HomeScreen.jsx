@@ -79,18 +79,12 @@ export default function HomeScreen({ session }) {
   // A user who hasn't logged in for 5 days should see ALL pending trades.
   //
   // matching_status values and their pipeline bucket:
-  //   'auto'      → Need matching (builder default, plan matching hasn't run or failed)
-  //   'ambiguous' → Need matching (2+ plans found, user must pick)
-  //   'unmatched' → Need matching (legacy; pre-backfill — 0 plans found)
-  //   'matched'   → Need notes (if no review_notes) or Fully done (if has notes)
-  //   'off_plan'  → Need notes (if no review_notes) or Fully done (if has notes)
-  //   'manual'    → Need notes (if no review_notes) or Fully done (if has notes)
-  const isUnresolved = (t) =>
-    t.matching_status === 'unmatched' || t.matching_status === 'ambiguous' || t.matching_status === 'auto';
+  //   'needs_review' → Need matching (2+ candidate plans, user must pick)
+  //   'matched'      → Need notes (if no review_notes) or Fully done (if has notes)
+  //   'off_plan'     → Need notes (if no review_notes) or Fully done (if has notes)
+  const isUnresolved = (t) => t.matching_status === 'needs_review';
   const isResolved = (t) =>
-    t.matching_status === 'matched' ||
-    t.matching_status === 'off_plan' ||
-    t.matching_status === 'manual';
+    t.matching_status === 'matched' || t.matching_status === 'off_plan';
 
   const pipelineNeedMatching = pipelineTrades.filter(isUnresolved).length;
   const pipelineNeedNotes = pipelineTrades.filter(t => isResolved(t) && !t.review_notes).length;

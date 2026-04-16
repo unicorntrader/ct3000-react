@@ -133,7 +133,7 @@ function buildLogicalTrades(rawTrades, userId) {
         total_realized_pnl: 0,
         fx_rate_to_base: weightedAvgFxRate(group),
         is_reversal: true,
-        matching_status: 'auto',
+        matching_status: 'needs_review',
         planned_trade_id: null,
         source_notes: `C;O reversal from order ${firstTrade.ib_order_id}`,
       };
@@ -164,7 +164,7 @@ function buildLogicalTrades(rawTrades, userId) {
         total_realized_pnl: pnl,
         fx_rate_to_base: weightedAvgFxRate(group),
         is_reversal: false,
-        matching_status: 'auto',
+        matching_status: 'needs_review',
         planned_trade_id: null,
         source_notes: null,
       };
@@ -200,7 +200,7 @@ function buildLogicalTrades(rawTrades, userId) {
           total_realized_pnl: sumField(group, 'fifo_pnl_realized'),
           fx_rate_to_base: weightedAvgFxRate(group),
           is_reversal: false,
-          matching_status: 'unmatched',
+          matching_status: 'needs_review',
           planned_trade_id: null,
           source_notes: 'No matching open trade found — outside query window',
         };

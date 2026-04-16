@@ -11,7 +11,7 @@ IBKR Flex XML → `api/sync.js` → `trades` table → `logicalTradeBuilder.js` 
 ### Tables (Supabase)
 Core trading data:
 - `trades` — raw IBKR executions; includes `fx_rate_to_base`, `currency`
-- `logical_trades` — FIFO-matched positions built from raw trades; includes `fx_rate_to_base`, `total_realized_pnl`, `matching_status`, `planned_trade_id`
+- `logical_trades` — FIFO-matched positions built from raw trades; `matching_status` is one of `matched` / `needs_review` / `off_plan`; also includes `fx_rate_to_base`, `total_realized_pnl`, `planned_trade_id`, `user_reviewed` (true = user's decision is preserved across rebuilds)
 - `logical_trade_executions` — join table linking `trades` rows to their `logical_trades` parent (execution_type, quantity_applied) — FIFO provenance
 - `open_positions` — current open positions from IBKR
 - `securities` — instrument metadata cache: `conid`, `symbol`, `multiplier`, `currency`, `underlying_*`

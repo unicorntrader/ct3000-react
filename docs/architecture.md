@@ -91,7 +91,7 @@ There is no traditional backend server. The SPA talks directly to Supabase using
 | `MobileNav.jsx` | Fixed bottom bar on mobile (`md:hidden`). Five tabs: Home, Plans, Daily, Journal, Perf. IBKR and Settings are not in the mobile nav. |
 | `Sidebar.jsx` | Slide-right drawer (320 px). Shows user avatar, name, email, IBKR connection status, account ID. Links to IBKR screen and Settings screen. Contains the sign-out button. |
 | `PlanSheet.jsx` | Slide-up modal form for creating a `planned_trade`. Computes live position size / risk / reward / R:R. Inserts to Supabase. Calls `onSaved` to trigger `planRefreshKey` in parent. |
-| `ReviewSheet.jsx` | Slide-up step-through wizard for `unmatched`/`ambiguous` logical trades. For each trade it shows candidate plans (matching symbol + direction + asset_category) and lets the user pick one or mark as unplanned. Updates `logical_trades.matching_status` and `planned_trade_id`. |
+| `ReviewSheet.jsx` | Slide-up step-through wizard for `needs_review` logical trades (2+ candidate plans). For each trade it shows candidate plans (matching symbol + direction + asset_category) and lets the user pick one or mark as off-plan. Updates `logical_trades.matching_status`, `planned_trade_id`, and sets `user_reviewed=true`. |
 
 ### Lib modules
 
@@ -99,7 +99,7 @@ There is no traditional backend server. The SPA talks directly to Supabase using
 |---|---|
 | `supabaseClient.js` | Creates and exports the Supabase client singleton. Reads `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_ANON_KEY` (also accepts `NEXT_PUBLIC_` prefix variants for future Next.js migration). |
 | `logicalTradeBuilder.js` | Pure function. Takes raw `trades[]` and `userId`, returns `logical_trades[]` ready for Supabase insert. Groups executions by `ib_order_id` (or `ib_order_id + conid` for options), classifies open/close/C;O reversals, and applies FIFO cascade matching. |
-| `planMatcher.js` | Pure function. Takes `logicalTrades[]` and `plannedTrades[]`, returns update objects `{ id, matching_status, planned_trade_id }`. Skips trades already marked `manual`. One match → `matched`, zero → `unmatched`, two or more → `ambiguous`. |
+| `applyPlanMatching` (in `api/rebuild.js`) | Mutates `logicalTrades[]` in place with `matching_status` based on candidate plan count. Skips rows where `user_reviewed=true`. One match → `matched`, zero → `off_plan`, two or more → `needs_review`. (The standalone `src/lib/planMatcher.js` was removed with the 3-state rename — matching is now only done server-side.) |
 
 ---
 

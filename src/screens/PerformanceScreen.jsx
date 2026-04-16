@@ -374,11 +374,7 @@ export default function PerformanceScreen({ session }) {
     }
 
     // Rule 5: Off-plan trading signal
-    // Counts both the new 'off_plan' status (auto-detected 0 candidates) and
-    // the legacy manual+!hasPlan representation (user confirmed "no plan" in review).
-    const offPlanCount = trades.filter(t =>
-      t.matching_status === 'off_plan' || (t.matching_status === 'manual' && !t.planned_trade_id)
-    ).length;
+    const offPlanCount = trades.filter(t => t.matching_status === 'off_plan').length;
     if (offPlanCount > 0 && trades.length > 0) {
       const pct = Math.round((offPlanCount / trades.length) * 100);
       if (pct >= 30) {

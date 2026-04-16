@@ -79,7 +79,7 @@ module.exports = async function handler(req, res) {
     remaining_quantity: 0,
     fx_rate_to_base: 1,
     currency: 'USD',
-    matching_status: 'auto',
+    matching_status: 'needs_review',
     is_reversal: false,
     planned_trade_id: null,
     is_demo: true,

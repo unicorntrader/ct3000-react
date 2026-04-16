@@ -43,7 +43,7 @@ function TradeCard({ trade }) {
             </span>
           )}
           <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
-            Ambiguous
+            Needs review
           </span>
         </div>
         {dateIso && <span className="text-xs text-gray-400 shrink-0">{fmtDate(dateIso)}</span>}
@@ -108,10 +108,10 @@ export default function ReviewScreen({ session }) {
       .from('logical_trades')
       .select('*')
       .eq('user_id', session.user.id)
-      // Only ambiguous trades need review (2+ plan candidates — system
+      // Only needs_review trades land here (2+ plan candidates — system
       // can't auto-pick). Zero-candidate trades are auto-flipped to
       // 'off_plan' in applyPlanMatching and bypass this queue.
-      .in('matching_status', ['ambiguous'])
+      .eq('matching_status', 'needs_review')
       .order('opened_at', { ascending: false });
 
     const tradeList = reviewTrades || [];
@@ -147,7 +147,7 @@ export default function ReviewScreen({ session }) {
     setSaving(true);
     const { error } = await supabase
       .from('logical_trades')
-      .update({ matching_status: 'matched', planned_trade_id: selected })
+      .update({ matching_status: 'matched', planned_trade_id: selected, user_reviewed: true })
       .eq('id', current.id)
       .eq('user_id', session.user.id);
     setSaving(false);
@@ -165,7 +165,7 @@ export default function ReviewScreen({ session }) {
     setSaving(true);
     const { error } = await supabase
       .from('logical_trades')
-      .update({ matching_status: 'off_plan', planned_trade_id: null })
+      .update({ matching_status: 'off_plan', planned_trade_id: null, user_reviewed: true })
       .eq('id', current.id)
       .eq('user_id', session.user.id);
     setSaving(false);
@@ -227,7 +227,7 @@ export default function ReviewScreen({ session }) {
       </h2>
       <p className="text-sm text-gray-400 mb-6">
         {loading
-          ? 'Fetching unmatched trades…'
+          ? 'Fetching trades that need review…'
           : total === 0
           ? 'All trades are matched or already reviewed.'
           : done

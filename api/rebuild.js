@@ -13,6 +13,16 @@ const supabaseAdmin = createClient(
 // When a trade is matched to exactly one plan AND it's closed, also compute
 // and set adherence_score so users see it without having to manually open
 // each drawer. Open trades get null (no exit price yet).
+//
+// Status vocabulary (3 states, mutually exclusive):
+//   matched       — linked to exactly one plan
+//   needs_review  — multiple candidate plans, user must pick
+//   off_plan      — zero candidate plans, terminal
+//
+// User-reviewed trades (user_reviewed=true) are skipped so the user's
+// explicit decision survives rebuilds. Adherence is still recomputed for
+// user-matched trades so plan edits flow through to the score.
+//
 // Returns an array of { planId, currency } for plans that need their currency
 // backfilled from the trade data (plan has no currency, trade does).
 function applyPlanMatching(logicalTrades, plannedTrades) {
@@ -21,7 +31,7 @@ function applyPlanMatching(logicalTrades, plannedTrades) {
   const currencyBackfills = [];
 
   for (const lt of logicalTrades) {
-    if (lt.matching_status === 'manual') {
+    if (lt.user_reviewed) {
       if (lt.status === 'closed' && lt.planned_trade_id) {
         const plan = plansById.get(lt.planned_trade_id);
         if (plan) lt.adherence_score = computeAdherenceScore(plan, lt);
@@ -47,14 +57,11 @@ function applyPlanMatching(logicalTrades, plannedTrades) {
         matches[0].currency = lt.currency; // update in-memory too
       }
     } else if (matches.length === 0) {
-      // Zero plan candidates → off_plan. No plan exists for this
-      // symbol/direction/asset_category combo, so there is nothing for the
-      // user to review. Bypasses the /review queue.
       lt.matching_status = 'off_plan';
       lt.planned_trade_id = null;
       lt.adherence_score = null;
     } else {
-      lt.matching_status = 'ambiguous';
+      lt.matching_status = 'needs_review';
       lt.planned_trade_id = null;
       lt.adherence_score = null;
     }
@@ -103,11 +110,11 @@ module.exports = async function handler(req, res) {
   if (missingCurrency > 0) warnings.push(`${missingCurrency} trade(s) have no currency — run Sync Now to fix`);
 
   // Fetch existing logical trades so we can preserve user-written data
-  // (review_notes, manual matching) across the delete + re-insert.
+  // (review_notes, user-reviewed status + plan link) across the delete + re-insert.
   // Key: opening_ib_order_id + ':' + conid — stable across rebuilds.
   const { data: existingLogical } = await supabaseAdmin
     .from('logical_trades')
-    .select('opening_ib_order_id, conid, review_notes, matching_status, planned_trade_id')
+    .select('opening_ib_order_id, conid, review_notes, matching_status, planned_trade_id, user_reviewed')
     .eq('user_id', userId);
 
   const preservedByKey = new Map();
@@ -116,8 +123,10 @@ module.exports = async function handler(req, res) {
     const key = `${row.opening_ib_order_id}:${row.conid ?? ''}`;
     preservedByKey.set(key, {
       review_notes: row.review_notes || null,
-      was_manual: row.matching_status === 'manual',
-      manual_planned_trade_id: row.matching_status === 'manual' ? row.planned_trade_id : null,
+      user_reviewed: !!row.user_reviewed,
+      // Snapshot the user's decision so the rebuild carries it forward.
+      preserved_status: row.user_reviewed ? row.matching_status : null,
+      preserved_planned_trade_id: row.user_reviewed ? row.planned_trade_id : null,
     });
   }
 
@@ -127,8 +136,8 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ success: true, count: 0, warnings });
   }
 
-  // Apply preservation: restore review_notes always; restore manual match if
-  // the user had one, so the plan-matching pass below skips it.
+  // Apply preservation: restore review_notes always; restore user-reviewed
+  // decisions (matched + plan, or off_plan) so applyPlanMatching skips them.
   let preservedCount = 0;
   for (const lt of logical) {
     if (!lt.opening_ib_order_id) continue;
@@ -139,9 +148,10 @@ module.exports = async function handler(req, res) {
       lt.review_notes = p.review_notes;
       preservedCount++;
     }
-    if (p.was_manual) {
-      lt.matching_status = 'manual';
-      lt.planned_trade_id = p.manual_planned_trade_id;
+    if (p.user_reviewed) {
+      lt.user_reviewed = true;
+      lt.matching_status = p.preserved_status;
+      lt.planned_trade_id = p.preserved_planned_trade_id;
     }
   }
   if (preservedCount > 0) {
@@ -149,7 +159,7 @@ module.exports = async function handler(req, res) {
   }
 
   // Fetch plans and apply matching before insert — single insert, no update pass needed.
-  // Manual matches are preserved by applyPlanMatching (it skips them).
+  // User-reviewed trades are preserved by applyPlanMatching (it skips them).
   const { data: plannedTrades } = await supabaseAdmin
     .from('planned_trades')
     .select('*')

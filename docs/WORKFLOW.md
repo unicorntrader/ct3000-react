@@ -180,9 +180,9 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 **Tables touched:** `planned_trades` (insert, update, delete), `user_ibkr_credentials` (read base_currency), `logical_trades` (read historical).
 
 #### `src/components/ReviewSheet.jsx`
-**Purpose:** Multi-step wizard to manually resolve unmatched/ambiguous trades.
+**Purpose:** Multi-step wizard to resolve `needs_review` trades (those with 2+ candidate plans that the system couldn't auto-pick).
 
-**Flow:** For each unmatched/ambiguous trade, show candidate plans (matching symbol + direction + asset class) → user picks one or says "no plan" → update `matching_status` and `planned_trade_id`.
+**Flow:** For each `needs_review` trade, show candidate plans (matching symbol + direction + asset class) → user picks one or says "no plan" → update `matching_status` to `matched` / `off_plan` with `user_reviewed=true` so the decision survives subsequent rebuilds.
 
 **Keyboard shortcuts:** Enter = match, N = no plan, Esc = close.
 **Tables touched:** `logical_trades` (read + update), `planned_trades` (read), `user_ibkr_credentials` (read base_currency).
@@ -275,10 +275,10 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 
 **Outcome per trade:**
 - Exactly 1 plan matches → `matching_status = 'matched'`, `planned_trade_id` set
-- 0 plans match → `matching_status = 'unmatched'`
-- 2+ plans match → `matching_status = 'ambiguous'`
+- 0 plans match → `matching_status = 'off_plan'` (terminal)
+- 2+ plans match → `matching_status = 'needs_review'` (user picks in ReviewSheet)
 
-`'manual'` status (user resolved it in ReviewSheet) is preserved and never overwritten.
+Rows where `user_reviewed = true` (user made an explicit choice) are preserved and never overwritten.
 
 **Used by:** `api/rebuild.js`.
 
@@ -469,9 +469,9 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 
 1. HomeScreen review banner: "3 trades need review"
 2. Click banner → `ReviewSheet` opens
-3. Fetches unmatched + ambiguous `logical_trades` + `planned_trades`
+3. Fetches `needs_review` `logical_trades` + `planned_trades`
 4. For each trade, filters candidate plans by symbol + direction + asset
-5. User picks a match (or "No plan") → writes `matching_status='matched'|'manual'` + `planned_trade_id`
+5. User picks a match (or "No plan") → writes `matching_status='matched'|'off_plan'` + `planned_trade_id` + `user_reviewed=true`
 6. Advance step → next trade → ... → done
 7. Banner disappears
 
@@ -591,14 +591,14 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 ### Plan matching
 ```
 for trade in logical_trades:
-    if trade.matching_status == 'manual': skip
+    if trade.user_reviewed: skip
     matches = [p for p in plans
                if upper(p.symbol) == upper(trade.symbol)
                and upper(p.direction) == upper(trade.direction)
                and upper(p.asset_category) == upper(trade.asset_category)]
-    if len(matches) == 1: matched, set planned_trade_id
-    elif len(matches) == 0: unmatched
-    else: ambiguous
+    if len(matches) == 1: matching_status = 'matched', set planned_trade_id
+    elif len(matches) == 0: matching_status = 'off_plan'
+    else: matching_status = 'needs_review'
 ```
 
 ### Adherence scoring

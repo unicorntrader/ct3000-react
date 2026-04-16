@@ -35,13 +35,11 @@ function AdherencePill({ score }) {
 // bar is implicitly scoped to status = 'closed'.
 //   All            — default view, all closed trades
 //   Wins / Losses  — by P&L sign
-//   Need matching  — matching_status IN ('ambiguous', 'auto') — plans exist
-//                    for this ticker/direction but the system can't pick one
-//   Planned        — matched, or legacy manual+hasPlan
-//   Off-plan       — matching_status = 'off_plan' (0 candidates, auto-detected)
-//                    OR legacy manual+!hasPlan (user confirmed "no plan" in review)
+//   Need matching  — matching_status = 'needs_review' (2+ candidate plans)
+//   Planned        — matching_status = 'matched'
+//   Off-plan       — matching_status = 'off_plan'
 //   Not journalled — no review_notes
-//   Fully done     — resolved (matched/off_plan/manual) AND has review_notes.
+//   Fully done     — resolved (matched or off_plan) AND has review_notes.
 //                    Matches the "Fully done" card on HomeScreen pipeline.
 const FILTERS = ['All', 'Wins', 'Losses', 'Need matching', 'Planned', 'Off-plan', 'Not journalled', 'Fully done'];
 
@@ -66,18 +64,12 @@ const rangeStartDate = (key) => {
 const displaySymbol = (t) =>
   t.asset_category === 'OPT' ? (t.symbol || '').split(' ')[0] : (t.symbol || '');
 
-// Plan pill: maps (matching_status, has planned_trade_id) → label + color.
-//   Planned      = matched, or legacy manual+hasPlan (user picked a plan in review)
-//   Need matching = ambiguous (2+ candidates, user must pick) or auto (builder
-//                   placeholder before applyPlanMatching runs)
-//   Off-plan     = off_plan (system-detected 0 candidates), or legacy
-//                  manual+!hasPlan (user confirmed "no plan" in review)
+// Plan pill: 1:1 with matching_status now that vocabulary is 3-state.
 function planPillFor(trade) {
-  const s = trade.matching_status || 'auto';
-  const hasPlan = !!trade.planned_trade_id;
-  if (s === 'matched' || (s === 'manual' && hasPlan))              return { label: 'Planned',       cls: 'bg-blue-50 text-blue-600' };
-  if (s === 'off_plan' || (s === 'manual' && !hasPlan))            return { label: 'Off-plan',      cls: 'bg-gray-100 text-gray-600' };
-  if (s === 'ambiguous' || s === 'auto' || s === 'unmatched')      return { label: 'Need matching', cls: 'bg-amber-50 text-amber-700' };
+  const s = trade.matching_status;
+  if (s === 'matched')      return { label: 'Planned',       cls: 'bg-blue-50 text-blue-600' };
+  if (s === 'off_plan')     return { label: 'Off-plan',      cls: 'bg-gray-100 text-gray-600' };
+  // needs_review, and any unknown/legacy value as a safety default
   return { label: 'Need matching', cls: 'bg-amber-50 text-amber-700' };
 }
 
@@ -106,7 +98,7 @@ export default function JournalScreen({ session }) {
   const [shareRow, setShareRow] = useState(null);
   // Inline-expansion: one row open at a time. Click to toggle.
   const [expandedTradeId, setExpandedTradeId] = useState(null);
-  // Bulk selection — only applies to unmatched/ambiguous trades (the "Needs review" bucket).
+  // Bulk selection — only applies to needs_review trades.
   // Stored as a Set of trade IDs for O(1) toggle/check.
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkSaving, setBulkSaving] = useState(false);
@@ -191,9 +183,9 @@ export default function JournalScreen({ session }) {
   };
   const clearSelection = () => setSelectedIds(new Set());
 
-  // Bulk "Mark off-plan": applies to all selected ambiguous/auto trades.
-  // Sets matching_status='off_plan' and planned_trade_id=null so they move
-  // out of the Needs review bucket into Off-plan.
+  // Bulk "Mark off-plan": applies to all selected needs_review trades.
+  // Sets matching_status='off_plan' + user_reviewed=true so the decision
+  // survives subsequent rebuilds.
   const handleBulkMarkOffPlan = async () => {
     if (selectedIds.size === 0 || bulkSaving) return;
     const ids = [...selectedIds];
@@ -204,7 +196,7 @@ export default function JournalScreen({ session }) {
     setBulkSaving(true);
     const { data: updatedRows, error } = await supabase
       .from('logical_trades')
-      .update({ matching_status: 'off_plan', planned_trade_id: null })
+      .update({ matching_status: 'off_plan', planned_trade_id: null, user_reviewed: true })
       .in('id', ids)
       .eq('user_id', userId)
       .select();
@@ -257,21 +249,19 @@ export default function JournalScreen({ session }) {
       case 'Losses':
         list = trades.filter(t => (t.total_realized_pnl || 0) <= 0); break;
       case 'Need matching':
-        list = trades.filter(t => t.matching_status === 'ambiguous' || t.matching_status === 'auto' || t.matching_status === 'unmatched'); break;
+        list = trades.filter(t => t.matching_status === 'needs_review'); break;
       case 'Planned':
-        list = trades.filter(t => t.matching_status === 'matched' || (t.matching_status === 'manual' && t.planned_trade_id)); break;
+        list = trades.filter(t => t.matching_status === 'matched'); break;
       case 'Off-plan':
-        list = trades.filter(t => t.matching_status === 'off_plan' || (t.matching_status === 'manual' && !t.planned_trade_id)); break;
+        list = trades.filter(t => t.matching_status === 'off_plan'); break;
       case 'Not journalled':
         list = trades.filter(t => !t.review_notes); break;
       case 'Fully done':
-        // Resolved (matched / off_plan / legacy manual) AND has review notes.
-        // The happy-path terminus of the review pipeline.
-        list = trades.filter(t => !!t.review_notes && (
-          t.matching_status === 'matched' ||
-          t.matching_status === 'off_plan' ||
-          t.matching_status === 'manual'
-        )); break;
+        // Resolved (matched or off_plan) AND has review notes. The happy-path
+        // terminus of the review pipeline.
+        list = trades.filter(t => !!t.review_notes &&
+          (t.matching_status === 'matched' || t.matching_status === 'off_plan')
+        ); break;
       case 'All':
       default:
         list = trades;
@@ -340,10 +330,7 @@ export default function JournalScreen({ session }) {
         // Cards reflect the journal workflow: how many trades, how far along on
         // matching, how far along on journalling. Each card's click takes you
         // to the "gap" — the trades still needing that step.
-        const matchedCount = closedTrades.filter(t =>
-          t.matching_status === 'matched' ||
-          (t.matching_status === 'manual' && t.planned_trade_id)
-        ).length;
+        const matchedCount = closedTrades.filter(t => t.matching_status === 'matched').length;
         const journalledCount = closedTrades.filter(t => t.review_notes).length;
         const total = closedTrades.length;
         return (
@@ -568,7 +555,7 @@ export default function JournalScreen({ session }) {
                 const rowCurrency = trade.currency || baseCurrency;
                 const plan = plansMap[trade.planned_trade_id];
                 const rMultiple = isOpen ? null : calcR(trade, plan);
-                const matchStatus = trade.matching_status || 'auto';
+                const matchStatus = trade.matching_status;
                 const dateDisplay = fmtDate(isOpen ? trade.opened_at : trade.closed_at);
                 // Prefer the stored score; fall back to live compute if plan is loaded
                 const adherence = isOpen
@@ -578,7 +565,7 @@ export default function JournalScreen({ session }) {
                       : (matchStatus === 'matched' && plan ? computeAdherenceScore(plan, trade) : null));
 
                 const isExpanded = expandedTradeId === trade.id;
-                const isBulkEligible = matchStatus === 'unmatched' || matchStatus === 'ambiguous' || matchStatus === 'auto';
+                const isBulkEligible = matchStatus === 'needs_review';
                 const isChecked = selectedIds.has(trade.id);
                 return (
                   <React.Fragment key={trade.id}>
