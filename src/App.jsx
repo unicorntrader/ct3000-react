@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabaseClient'
 import { PrivacyProvider } from './lib/PrivacyContext'
 import { BaseCurrencyProvider } from './lib/BaseCurrencyContext'
+import ErrorBoundary from './components/ErrorBoundary'
 import AuthScreen from './components/AuthScreen'
 import PaywallScreen from './screens/PaywallScreen'
 import Header from './components/Header'
@@ -134,7 +135,7 @@ export default function App() {
   }, [])
 
   const fetchSubscription = useCallback(async (userId) => {
-    console.log('[app] fetchSubscription for userId:', userId)
+    // console.log('[app] fetchSubscription for userId:', userId)
     const { data, error } = await supabase
       .from('user_subscriptions')
       .select('*')
@@ -145,7 +146,7 @@ export default function App() {
       setSubscription(null)
       return null
     }
-    console.log('[app] subscription row:', data)
+    // console.log('[app] subscription row:', data)
     setSubscription(data ?? null)
     return data
   }, [])
@@ -153,7 +154,7 @@ export default function App() {
   // Auth state
   useEffect(() => {
     const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_event, session) => {
-      console.log('[app] auth event:', _event, '| userId:', session?.user?.id ?? 'none', '| anon:', session?.user?.is_anonymous ?? false)
+      // console.log('[app] auth event:', _event, '| userId:', session?.user?.id ?? 'none', '| anon:', session?.user?.is_anonymous ?? false)
       setSession(session)
       if (session?.user?.id) {
         if (session.user.is_anonymous) {
@@ -186,7 +187,7 @@ export default function App() {
   useEffect(() => {
     if (!CHECKOUT_SUCCESS || !pollingUserId) return
 
-    console.log('[app] ?checkout=success detected — starting subscription poll')
+    // console.log('[app] ?checkout=success detected — starting subscription poll')
     setPolling(true)
     window.history.replaceState({}, '', window.location.pathname)
 
@@ -195,7 +196,7 @@ export default function App() {
 
     const interval = setInterval(async () => {
       attempts++
-      console.log('[app] poll attempt', attempts)
+      // console.log('[app] poll attempt', attempts)
       const { data, error } = await supabase
         .from('user_subscriptions')
         .select('*')
@@ -205,7 +206,7 @@ export default function App() {
       if (error) {
         console.error('[app] poll error:', error.message)
       } else if (data && isActive(data)) {
-        console.log('[app] subscription active — stopping poll, status:', data.subscription_status)
+        // console.log('[app] subscription active — stopping poll, status:', data.subscription_status)
         setSubscription(data)
         setPolling(false)
         clearInterval(interval)
@@ -213,7 +214,7 @@ export default function App() {
       }
 
       if (attempts >= MAX_ATTEMPTS) {
-        console.warn('[app] poll timed out after', MAX_ATTEMPTS, 'attempts')
+        // console.warn('[app] poll timed out after', MAX_ATTEMPTS, 'attempts')
         setSubscription(data ?? null)
         setPolling(false)
         setPollTimedOut(true)
@@ -250,26 +251,30 @@ export default function App() {
   if (session.user.is_anonymous) {
     if (!anonReady) return <LoadingScreen message="Setting up your demo…" />
     return (
-      <PrivacyProvider>
-        <BaseCurrencyProvider userId={session.user.id}>
-          <AppShell session={session} subscription={null} onSubscriptionRefresh={() => {}} isAnonymous />
-        </BaseCurrencyProvider>
-      </PrivacyProvider>
+      <ErrorBoundary>
+        <PrivacyProvider>
+          <BaseCurrencyProvider userId={session.user.id}>
+            <AppShell session={session} subscription={null} onSubscriptionRefresh={() => {}} isAnonymous />
+          </BaseCurrencyProvider>
+        </PrivacyProvider>
+      </ErrorBoundary>
     )
   }
 
   // Active or trialing subscription
   if (isActive(subscription)) {
     return (
-      <PrivacyProvider>
-        <BaseCurrencyProvider userId={session.user.id}>
-          <AppShell
-            session={session}
-            subscription={subscription}
-            onSubscriptionRefresh={() => fetchSubscription(session.user.id)}
-          />
-        </BaseCurrencyProvider>
-      </PrivacyProvider>
+      <ErrorBoundary>
+        <PrivacyProvider>
+          <BaseCurrencyProvider userId={session.user.id}>
+            <AppShell
+              session={session}
+              subscription={subscription}
+              onSubscriptionRefresh={() => fetchSubscription(session.user.id)}
+            />
+          </BaseCurrencyProvider>
+        </PrivacyProvider>
+      </ErrorBoundary>
     )
   }
 

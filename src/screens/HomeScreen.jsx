@@ -84,14 +84,15 @@ export default function HomeScreen({ session }) {
       label: "Today's P&L",
       value: todayTrades.length > 0 ? fmtPnl(todayPnl, baseCurrency) : '—',
       maskValue: todayTrades.length > 0,
-      sub: todayTrades.length > 0 ? `${todayTrades.length} trade${todayTrades.length !== 1 ? 's' : ''}` : 'No trades today',
+      sub: todayTrades.length > 0 ? `${todayTrades.length} trade${todayTrades.length !== 1 ? 's' : ''} — tap to view` : 'No trades today',
       color: todayPnl >= 0 ? 'text-green-600' : 'text-red-500',
+      onClick: () => navigate('/daily'),
     },
     {
       label: 'Open positions',
       value: String(positions.length),
       maskValue: false,
-      sub: positions.length > 0 ? fmtPnl(totalUnrealized) + ' unrealized' : 'No open positions',
+      sub: positions.length > 0 ? fmtPnl(totalUnrealized, baseCurrency) + ' unrealized' : 'No open positions',
       maskSub: positions.length > 0,
       color: 'text-blue-600',
     },
@@ -101,6 +102,7 @@ export default function HomeScreen({ session }) {
       maskValue: false,
       sub: plans.length > 0 ? 'Ready to execute' : 'No plans yet',
       color: 'text-gray-900',
+      onClick: () => navigate('/plans'),
     },
     {
       label: 'Win rate (30d)',
@@ -108,6 +110,7 @@ export default function HomeScreen({ session }) {
       maskValue: false,
       sub: closedLast30.length > 0 ? `${wins}W · ${losses}L` : 'No closed trades',
       color: winRate != null && winRate >= 50 ? 'text-green-600' : 'text-red-500',
+      onClick: () => navigate('/performance'),
     },
   ];
 
@@ -213,7 +216,13 @@ export default function HomeScreen({ session }) {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {statCards.map(card => (
-          <div key={card.label} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <div
+            key={card.label}
+            onClick={card.onClick || undefined}
+            className={`bg-white rounded-xl p-4 shadow-sm border border-gray-100 ${
+              card.onClick ? 'cursor-pointer hover:border-blue-200 hover:shadow-md transition-all' : ''
+            }`}
+          >
             <p className="text-xs font-medium text-gray-400 mb-1">{card.label}</p>
             <p className={`text-2xl font-semibold ${card.color}`}>
               {card.maskValue ? <PrivacyValue value={card.value} /> : card.value}

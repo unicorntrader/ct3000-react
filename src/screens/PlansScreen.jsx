@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPrice, fmtPnl, fmtDateLong } from '../lib/formatters';
 import PrivacyValue from '../components/PrivacyValue';
@@ -12,6 +12,8 @@ const statusStyles = {
 export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey }) {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [dirFilter, setDirFilter] = useState('All');
 
   const userId = session?.user?.id;
   useEffect(() => {
@@ -27,6 +29,15 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
     };
     load();
   }, [userId, refreshKey]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toUpperCase();
+    return plans.filter(p => {
+      if (q && !(p.symbol || '').toUpperCase().includes(q)) return false;
+      if (dirFilter !== 'All' && (p.direction || '').toUpperCase() !== dirFilter) return false;
+      return true;
+    });
+  }, [plans, search, dirFilter]);
 
   const computeRR = (plan) => {
     const { planned_entry_price: entry, planned_target_price: target, planned_stop_loss: stop } = plan;
@@ -75,7 +86,7 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold text-gray-900">Plans</h2>
         <button
           onClick={onNewPlan}
@@ -88,6 +99,35 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
         </button>
       </div>
 
+      {/* Search + filter */}
+      {plans.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-5">
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by symbol…"
+            className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 w-48"
+          />
+          {['All', 'LONG', 'SHORT'].map(d => (
+            <button
+              key={d}
+              onClick={() => setDirFilter(d)}
+              className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
+                dirFilter === d
+                  ? 'bg-blue-600 text-white border-transparent'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {d === 'All' ? 'All' : d === 'LONG' ? 'Long' : 'Short'}
+            </button>
+          ))}
+          {(search || dirFilter !== 'All') && (
+            <span className="text-xs text-gray-400">{filtered.length} of {plans.length}</span>
+          )}
+        </div>
+      )}
+
       {plans.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-16 text-center">
           <p className="text-sm font-medium text-gray-500 mb-1">No plans yet</p>
@@ -95,7 +135,12 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
         </div>
       ) : (
         <div className="space-y-4">
-          {plans.map((plan) => {
+          {filtered.length === 0 && plans.length > 0 ? (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-12 text-center">
+              <p className="text-sm text-gray-500">No plans match your search</p>
+            </div>
+          ) : null}
+          {filtered.map((plan) => {
             const dir = (plan.direction || '').toLowerCase();
             const status = (plan.status || 'planned').toLowerCase();
             const rr = computeRR(plan);

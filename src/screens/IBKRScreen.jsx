@@ -134,8 +134,9 @@ export default function IBKRScreen({ session }) {
       });
 
       const rawText = await res.text();
-      console.log('[sync] HTTP status:', res.status);
-      console.log('[sync] Response body:', rawText);
+      // Debug logs removed for production — uncomment if troubleshooting sync
+      // console.log('[sync] HTTP status:', res.status);
+      // console.log('[sync] Response body:', rawText);
 
       let result;
       try { result = JSON.parse(rawText); }
