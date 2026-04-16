@@ -66,9 +66,9 @@ IBKR Flex XML
 ### Popups / drawers
 | Component | Type | Esc | Enter |
 |---|---|---|---|
-| `TradeJournalDrawer` | Bottom drawer — trade detail, plan vs actual, adherence, notes | ✅ | — |
+| `TradeInlineDetail` | Inline row expansion in Smart Journal — trade detail, plan vs actual, adherence, notes, reset match | ✅ | ✅ (Cmd+Enter save, Esc close) |
 | `PlanSheet` | Bottom drawer — create/edit plan | ✅ | — |
-| `ReviewSheet` | Bottom drawer — end-of-day review wizard | ❌ | — |
+| `ReviewScreen` | Full-page `/review` route — multi-step wizard to resolve unmatched/ambiguous trades | ✅ | ✅ (Enter match, N no plan, Esc back) |
 | `ShareModal` | Center modal — share card for X/Twitter | ✅ | ✅ (fires share) |
 | `Sidebar` | Right drawer — mobile nav | ❌ | — |
 | `WelcomeModal` | Center modal — one-time welcome | ❌ | — |

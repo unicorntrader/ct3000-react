@@ -40,7 +40,7 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 **Key functions:**
 - `isActive(sub)` — checks if a subscription is `'active'` or in valid `'trialing'` state
 - `LoadingScreen({ message })` — spinner + optional message
-- `AppShell({ session, subscription, onSubscriptionRefresh, isAnonymous })` — renders `Header`, `Sidebar`, banners, global sheets (`PlanSheet`, `ReviewSheet`), and the `<Routes>` tree
+- `AppShell({ session, subscription, onSubscriptionRefresh, isAnonymous })` — renders `Header`, `Sidebar`, banners, global sheet (`PlanSheet`), and the `<Routes>` tree (including `/review` route for trade resolution)
 - `seedForAnon(session)` — POSTs to `/api/seed-demo` for anonymous users on first sign-in
 - `fetchSubscription(userId)` — pulls `user_subscriptions` row
 - Default `App` — wraps auth state machine and polling after Stripe checkout
