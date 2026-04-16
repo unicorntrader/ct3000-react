@@ -9,11 +9,35 @@ React + Supabase trading journal for IBKR traders. Trades are synced via IBKR Fl
 IBKR Flex XML → `api/sync.js` → `trades` table → `logicalTradeBuilder.js` → `logical_trades` table → screens
 
 ### Tables (Supabase)
+Core trading data:
 - `trades` — raw IBKR executions; includes `fx_rate_to_base`, `currency`
-- `logical_trades` — FIFO-matched positions built from raw trades; includes `fx_rate_to_base`, `total_realized_pnl`
-- `planned_trades` — user trade plans; canonical price columns are `planned_entry_price`, `planned_stop_loss`, `planned_target_price`, `planned_quantity`
+- `logical_trades` — FIFO-matched positions built from raw trades; includes `fx_rate_to_base`, `total_realized_pnl`, `matching_status`, `planned_trade_id`
+- `logical_trade_executions` — join table linking `trades` rows to their `logical_trades` parent (execution_type, quantity_applied) — FIFO provenance
 - `open_positions` — current open positions from IBKR
+- `securities` — instrument metadata cache: `conid`, `symbol`, `multiplier`, `currency`, `underlying_*`
+
+Plans & matching:
+- `planned_trades` — user trade plans; canonical price columns are `planned_entry_price`, `planned_stop_loss`, `planned_target_price`, `planned_quantity`
+- `planned_trade_executions` — links a `logical_trade` to the `planned_trade` it matched; carries `matching_confidence` + `matched_by` (required)
+- `playbooks` — reusable trade setups/strategies referenced by `planned_trades.playbook_id`
+- `missed_trades` — trades the user wanted but didn't take (noted_entry_price, noted_at, thesis)
+
+Journaling & review:
+- `daily_notes` — per-day notes on `DailyViewScreen` (unique per user+date_key)
+- `weekly_reviews` — weekly retrospective (worked / didnt_work / recurring / action), unique per user+week_key
+
+User & account:
 - `user_ibkr_credentials` — IBKR token, account_id, last_sync_at, `base_currency`
+- `user_subscriptions` — Stripe state: `stripe_customer_id`, `subscription_status`, `trial_ends_at`, `is_comped`, `has_seen_welcome`, `ibkr_connected`, `demo_seeded`
+- `anonymous_sessions` — 48h ephemeral pre-signup sessions; converts to real user on signup
+- `invited_users` — beta invite tokens (email, token, redeemed_at, redeemed_by)
+
+Ops / admin:
+- `admin_actions` — admin moderation audit log (action_type, target_user_id, expires_at)
+- `app_settings` — global key/value store
+- `ghost_webhook_events` — inbound webhook events from Ghost CMS (membership sync)
+
+Baseline DDL lives in `supabase/migrations/00000000000000_baseline_schema.sql` (reference-only snapshot; incremental changes go in dated migrations alongside it).
 
 ## Shared helpers — `src/lib/formatters.js`
 All formatting and P&L helpers live here. Import from this file; do not define local copies.
