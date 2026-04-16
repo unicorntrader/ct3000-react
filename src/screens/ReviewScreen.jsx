@@ -13,13 +13,36 @@ function TradeCard({ trade }) {
   // Single-trade view: show in the trade's native currency, not base.
   const pnl = trade.total_realized_pnl || 0;
   const currency = trade.currency || 'USD';
-  const isPositive = pnl >= 0;
+  const isClosed = trade.status === 'closed';
+  const isWin = pnl > 0;
+  const closingQty = trade.total_closing_quantity || trade.total_opening_quantity || 0;
+  // Derive exit price from entry + realized P&L (same math the drawer uses)
+  let exit = null;
+  if (isClosed && trade.avg_entry_price != null && closingQty > 0) {
+    exit = trade.direction === 'LONG'
+      ? trade.avg_entry_price + (pnl / closingQty)
+      : trade.avg_entry_price - (pnl / closingQty);
+  }
+  const dateIso = isClosed ? trade.closed_at : trade.opened_at;
+
   return (
     <div className="bg-gray-50 rounded-xl p-5 mb-6 border border-gray-100">
-      <div className="flex justify-between items-start mb-3">
-        <div>
+      <div className="flex justify-between items-start mb-4">
+        <div className="flex items-center flex-wrap gap-2">
           <span className="text-lg font-semibold text-gray-900">{trade.symbol}</span>
-          <span className={`ml-2 text-xs font-medium px-2 py-0.5 rounded-full ${
+          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+            trade.direction === 'LONG' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'
+          }`}>
+            {trade.direction}
+          </span>
+          {isClosed && (
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+              isWin ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'
+            }`}>
+              {isWin ? 'win' : 'loss'}
+            </span>
+          )}
+          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
             trade.matching_status === 'ambiguous'
               ? 'bg-purple-50 text-purple-700'
               : 'bg-amber-50 text-amber-700'
@@ -27,20 +50,33 @@ function TradeCard({ trade }) {
             {trade.matching_status === 'ambiguous' ? 'Ambiguous' : 'Unmatched'}
           </span>
         </div>
-        <span className={`text-base font-semibold ${isPositive ? 'text-green-600' : 'text-red-500'}`}>
-          {fmtPnl(pnl, currency)}
-        </span>
+        {dateIso && <span className="text-xs text-gray-400 shrink-0">{fmtDate(dateIso)}</span>}
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        {trade.avg_entry_price != null && (
-          <div className="text-center"><p className="text-xs text-gray-400">Entry</p><p className="text-sm font-medium mt-0.5">{fmtPrice(trade.avg_entry_price, currency)}</p></div>
-        )}
-        {trade.total_opening_quantity && (
-          <div className="text-center"><p className="text-xs text-gray-400">Qty</p><p className="text-sm font-medium mt-0.5">{trade.total_opening_quantity}</p></div>
-        )}
-        {trade.direction && (
-          <div className="text-center"><p className="text-xs text-gray-400">Dir</p><p className="text-sm font-medium mt-0.5">{trade.direction}</p></div>
-        )}
+      <div className="grid grid-cols-4 gap-2">
+        <div className="bg-white rounded-lg px-2 py-2 text-center border border-gray-100">
+          <p className="text-[10px] text-gray-400 leading-none mb-1">Entry</p>
+          <p className="text-sm font-semibold text-gray-900">
+            {trade.avg_entry_price != null ? fmtPrice(trade.avg_entry_price, currency) : '—'}
+          </p>
+        </div>
+        <div className="bg-white rounded-lg px-2 py-2 text-center border border-gray-100">
+          <p className="text-[10px] text-gray-400 leading-none mb-1">Exit</p>
+          <p className="text-sm font-semibold text-gray-900">
+            {exit != null ? fmtPrice(exit, currency) : '—'}
+          </p>
+        </div>
+        <div className="bg-white rounded-lg px-2 py-2 text-center border border-gray-100">
+          <p className="text-[10px] text-gray-400 leading-none mb-1">Qty</p>
+          <p className="text-sm font-semibold text-gray-900">
+            {trade.total_opening_quantity ?? '—'}
+          </p>
+        </div>
+        <div className="bg-white rounded-lg px-2 py-2 text-center border border-gray-100">
+          <p className="text-[10px] text-gray-400 leading-none mb-1">P&amp;L</p>
+          <p className={`text-sm font-semibold ${isClosed ? (isWin ? 'text-green-600' : 'text-red-500') : 'text-gray-400'}`}>
+            {isClosed ? fmtPnl(pnl, currency) : '—'}
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -85,7 +121,7 @@ export default function ReviewScreen({ session }) {
     if (tradeList.length > 0) {
       const { data: allPlans } = await supabase
         .from('planned_trades')
-        .select('id, symbol, direction, asset_category, planned_entry_price, created_at, thesis')
+        .select('id, symbol, direction, asset_category, planned_entry_price, planned_target_price, planned_stop_loss, planned_quantity, thesis, currency, created_at')
         .eq('user_id', session.user.id);
 
       const plans = allPlans || [];
@@ -244,38 +280,104 @@ export default function ReviewScreen({ session }) {
             <p className="text-sm text-gray-400 mb-4">No matching plan found for this trade.</p>
           ) : (
             <>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-                {candidates.length > 1 ? 'Multiple plans matched — choose one:' : 'Suggested plan:'}
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+                {candidates.length > 1
+                  ? `${candidates.length} plans matched — pick the one you intended:`
+                  : 'Suggested plan:'}
               </p>
-              <div className="space-y-2 mb-4">
-                {candidates.map(plan => (
-                  <label
-                    key={plan.id}
-                    className={`radio-label flex items-start space-x-3 p-3 rounded-xl border cursor-pointer transition-colors ${
-                      selected === plan.id ? 'selected-blue border-blue-300' : 'border-gray-200'
-                    }`}
-                    onClick={() => setSelected(plan.id)}
-                  >
-                    <input
-                      type="radio"
-                      name={`rs-${step}`}
-                      value={plan.id}
-                      checked={selected === plan.id}
-                      onChange={() => setSelected(plan.id)}
-                      className="mt-0.5 flex-shrink-0"
-                    />
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
-                        {plan.symbol} — {(plan.direction || '').toUpperCase()}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {fmtDate(plan.created_at)}
-                        {plan.planned_entry_price != null && ` · Entry ${fmtPrice(plan.planned_entry_price, current?.currency)}`}
-                        {plan.thesis && ` · ${plan.thesis.slice(0, 40)}`}
-                      </p>
-                    </div>
-                  </label>
-                ))}
+              <div className="space-y-2 mb-5">
+                {candidates.map(plan => {
+                  const isSelected = selected === plan.id;
+                  const planCurrency = plan.currency || current?.currency || 'USD';
+                  const actualEntry = current?.avg_entry_price;
+                  const actualQty = current?.total_opening_quantity;
+                  const entryDelta = (plan.planned_entry_price != null && actualEntry != null)
+                    ? ((actualEntry - plan.planned_entry_price) / plan.planned_entry_price) * 100
+                    : null;
+                  const qtyDelta = (plan.planned_quantity != null && actualQty != null && plan.planned_quantity > 0)
+                    ? ((actualQty - plan.planned_quantity) / plan.planned_quantity) * 100
+                    : null;
+                  const entryOk = entryDelta != null && Math.abs(entryDelta) <= 2.5;
+                  const qtyOk = qtyDelta != null && Math.abs(qtyDelta) === 0;
+                  const entryWarn = entryDelta != null && Math.abs(entryDelta) > 5;
+                  const qtyWarn = qtyDelta != null && Math.abs(qtyDelta) > 25;
+                  const deltaClass = (entryWarn || qtyWarn)
+                    ? 'text-red-500'
+                    : (entryOk && qtyOk)
+                    ? 'text-green-600 font-medium'
+                    : 'text-amber-600';
+                  const fmtPct = (n) => `${n > 0 ? '+' : ''}${n.toFixed(n === 0 ? 0 : 1)}%`;
+                  return (
+                    <label
+                      key={plan.id}
+                      className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-colors ${
+                        isSelected
+                          ? 'border-blue-300 bg-blue-50 shadow-sm'
+                          : 'border-gray-200 hover:border-blue-200 hover:bg-blue-50/30'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name={`rs-${step}`}
+                        value={plan.id}
+                        checked={isSelected}
+                        onChange={() => setSelected(plan.id)}
+                        className="mt-0.5 flex-shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="grid grid-cols-4 gap-2 mb-2">
+                          <div className={`rounded-lg px-2 py-1.5 text-center ${isSelected ? 'bg-white border border-blue-100' : 'bg-gray-50'}`}>
+                            <p className="text-[10px] text-gray-400 leading-none mb-0.5">Entry</p>
+                            <p className="text-xs font-medium text-gray-900">
+                              {plan.planned_entry_price != null ? fmtPrice(plan.planned_entry_price, planCurrency) : '—'}
+                            </p>
+                          </div>
+                          <div className={`rounded-lg px-2 py-1.5 text-center ${isSelected ? 'bg-white border border-blue-100' : 'bg-gray-50'}`}>
+                            <p className="text-[10px] text-gray-400 leading-none mb-0.5">Target</p>
+                            <p className="text-xs font-medium text-green-600">
+                              {plan.planned_target_price != null ? fmtPrice(plan.planned_target_price, planCurrency) : '—'}
+                            </p>
+                          </div>
+                          <div className={`rounded-lg px-2 py-1.5 text-center ${isSelected ? 'bg-white border border-blue-100' : 'bg-gray-50'}`}>
+                            <p className="text-[10px] text-gray-400 leading-none mb-0.5">Stop</p>
+                            <p className="text-xs font-medium text-red-500">
+                              {plan.planned_stop_loss != null ? fmtPrice(plan.planned_stop_loss, planCurrency) : '—'}
+                            </p>
+                          </div>
+                          <div className={`rounded-lg px-2 py-1.5 text-center ${isSelected ? 'bg-white border border-blue-100' : 'bg-gray-50'}`}>
+                            <p className="text-[10px] text-gray-400 leading-none mb-0.5">Qty</p>
+                            <p className="text-xs font-medium text-gray-900">
+                              {plan.planned_quantity ?? '—'}
+                            </p>
+                          </div>
+                        </div>
+                        {plan.thesis && (
+                          <p className="text-[11px] text-gray-500 italic mb-1.5 line-clamp-2">
+                            {plan.thesis}
+                          </p>
+                        )}
+                        <div className="flex items-baseline justify-between gap-2">
+                          <p className="text-[11px] text-gray-400 truncate">
+                            Actual:{' '}
+                            <span className="text-gray-700 font-medium">
+                              {actualEntry != null ? fmtPrice(actualEntry, current?.currency || 'USD') : '—'}
+                              {actualQty != null && ` · ${actualQty} sh`}
+                            </span>
+                            {(entryDelta != null || qtyDelta != null) && (
+                              <span className={deltaClass}>
+                                {' · '}
+                                {entryDelta != null && `entry ${fmtPct(entryDelta)}`}
+                                {entryDelta != null && qtyDelta != null && ', '}
+                                {qtyDelta != null && `qty ${qtyDelta === 0 ? '±0%' : fmtPct(qtyDelta)}`}
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[10px] text-gray-400 shrink-0">Created {fmtDate(plan.created_at)}</p>
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
             </>
           )}
