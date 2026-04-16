@@ -41,7 +41,9 @@ function AdherencePill({ score }) {
 //   Off-plan       — matching_status = 'off_plan' (0 candidates, auto-detected)
 //                    OR legacy manual+!hasPlan (user confirmed "no plan" in review)
 //   Not journalled — no review_notes
-const FILTERS = ['All', 'Wins', 'Losses', 'Need matching', 'Planned', 'Off-plan', 'Not journalled'];
+//   Fully done     — resolved (matched/off_plan/manual) AND has review_notes.
+//                    Matches the "Fully done" card on HomeScreen pipeline.
+const FILTERS = ['All', 'Wins', 'Losses', 'Need matching', 'Planned', 'Off-plan', 'Not journalled', 'Fully done'];
 
 const DATE_RANGES = [
   { key: 'all', label: 'All time' },
@@ -262,6 +264,14 @@ export default function JournalScreen({ session }) {
         list = trades.filter(t => t.matching_status === 'off_plan' || (t.matching_status === 'manual' && !t.planned_trade_id)); break;
       case 'Not journalled':
         list = trades.filter(t => !t.review_notes); break;
+      case 'Fully done':
+        // Resolved (matched / off_plan / legacy manual) AND has review notes.
+        // The happy-path terminus of the review pipeline.
+        list = trades.filter(t => !!t.review_notes && (
+          t.matching_status === 'matched' ||
+          t.matching_status === 'off_plan' ||
+          t.matching_status === 'manual'
+        )); break;
       case 'All':
       default:
         list = trades;

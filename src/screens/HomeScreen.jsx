@@ -80,14 +80,17 @@ export default function HomeScreen({ session }) {
   //
   // matching_status values and their pipeline bucket:
   //   'auto'      → Need matching (builder default, plan matching hasn't run or failed)
-  //   'unmatched' → Need matching (0 plans found)
   //   'ambiguous' → Need matching (2+ plans found, user must pick)
+  //   'unmatched' → Need matching (legacy; pre-backfill — 0 plans found)
   //   'matched'   → Need notes (if no review_notes) or Fully done (if has notes)
+  //   'off_plan'  → Need notes (if no review_notes) or Fully done (if has notes)
   //   'manual'    → Need notes (if no review_notes) or Fully done (if has notes)
   const isUnresolved = (t) =>
     t.matching_status === 'unmatched' || t.matching_status === 'ambiguous' || t.matching_status === 'auto';
   const isResolved = (t) =>
-    t.matching_status === 'matched' || t.matching_status === 'manual';
+    t.matching_status === 'matched' ||
+    t.matching_status === 'off_plan' ||
+    t.matching_status === 'manual';
 
   const pipelineNeedMatching = pipelineTrades.filter(isUnresolved).length;
   const pipelineNeedNotes = pipelineTrades.filter(t => isResolved(t) && !t.review_notes).length;
@@ -219,7 +222,7 @@ export default function HomeScreen({ session }) {
 
             {/* 3. Fully done */}
             <button
-              onClick={() => navigate('/journal')}
+              onClick={() => navigate('/journal', { state: { activeFilter: 'Fully done' } })}
               className="text-left rounded-xl border border-green-200 bg-green-50 p-4 hover:bg-green-100 transition-colors cursor-pointer"
             >
               <p className="text-2xl font-semibold text-green-700 mb-0.5">{pipelineFullyDone}</p>
