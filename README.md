@@ -35,11 +35,14 @@ IBKR Flex XML
 |---|---|
 | `trades` | Raw IBKR executions. Includes `fx_rate_to_base`, `currency`. |
 | `logical_trades` | FIFO-matched positions. Includes `fx_rate_to_base`, `total_realized_pnl`, `adherence_score`, `review_notes`, `matching_status`, `planned_trade_id`. |
-| `planned_trades` | User trade plans. Canonical columns: `planned_entry_price`, `planned_stop_loss`, `planned_target_price`, `planned_quantity`, `thesis`, `strategy` (NOT NULL), `asset_category`. |
-| `open_positions` | Current open positions from IBKR. |
+| `planned_trades` | User trade plans. Canonical columns: `planned_entry_price`, `planned_stop_loss`, `planned_target_price`, `planned_quantity`, `thesis`, `strategy` (NOT NULL), `asset_category`, `currency` (populated from securities lookup). |
+| `open_positions` | Current open positions from IBKR. Includes `fx_rate_to_base` (added April 15) for correct base-currency aggregation. |
 | `user_ibkr_credentials` | IBKR token, account_id, `last_sync_at`, `base_currency`. |
 | `user_subscriptions` | Stripe subscription state + flags (`has_seen_welcome`, `demo_seeded`, `ibkr_connected`). |
-| `weekly_reviews` *(proposed)* | Qualitative weekly review notes. Not yet built. |
+| `securities` | Instrument reference data — `symbol`, `currency`, `asset_category`, `description`, `conid`, `multiplier`. Populated by IBKR sync (or ct3000-admin). Read by `PlanSheet` for ticker autocomplete + auto-fill. |
+| `daily_notes` | End-of-day journal notes per (user, date_key). Read/written by DailyViewScreen. |
+| `weekly_reviews` | Qualitative weekly review notes (worked / didn't_work / recurring / action) per (user, week_key). Read/written by PerformanceScreen weekly reflection section. |
+| `invited_users` | Invite tokens for comped signups. Created by ct3000-admin, redeemed by `api/redeem-invite.js`. Locked down (no user-facing RLS policies). |
 
 ### Core libraries
 | File | What it does |
@@ -53,25 +56,31 @@ IBKR Flex XML
 ### Screens
 | Screen | What it shows |
 |---|---|
-| `HomeScreen` | Today's P&L, open positions, active plans, 30-day win rate, review reminder. |
-| `PlansScreen` | All planned trades — create / edit / delete. |
-| `DailyViewScreen` | Day-by-day list of executions grouped by order. |
-| `JournalScreen` (Smart Journal) | Full list of logical trades with filters (symbol / direction / asset / date range) and per-trade drawer. Shows adherence column per trade. |
-| `PerformanceScreen` | KPIs, cumulative P&L curve, top 20 symbols (clickable → Journal with symbol + period pre-filled), direction/asset breakdowns. |
-| `IBKRScreen` | Connect / disconnect IBKR, trigger sync. |
+| `HomeScreen` | 4 clickable stat cards (Today's P&L → `/daily`, Open positions → scroll to positions, Active plans → `/plans`, Win rate (30d) → `/performance`) + **Trade review pipeline** (3 buckets: Need matching → `/review`, Need notes → `/journal` filtered, Fully done → `/journal`) + open positions list (sortable) + active plans preview. Pipeline counts are all-time (not windowed). |
+| `PlansScreen` | All planned trades with symbol search + direction filter (All/Long/Short). Create / edit / delete via `PlanSheet`. |
+| `DailyViewScreen` | Day-by-day list of executions grouped by order. Default window: last 30 days with "Load older" button. Server-side date scoping on both logical_trades and raw trades. |
+| `JournalScreen` (Smart Journal) | Closed trades only (open positions belong on Home). 7 filter tabs: `All · Wins · Losses · Need matching · Planned · Off-plan · Not journalled`. Smart filter bar: symbol autocomplete, direction, asset, date range (pushed into Supabase query). Inline row expansion via `TradeInlineDetail` (click a row → expands in place). Bulk mark-off-plan via checkboxes on unmatched/ambiguous rows. 3 clickable stat cards that set filters. Responsive column hiding (4 cols on phones, 7 on tablets, 11 on desktop). |
+| `PerformanceScreen` | 5 KPI cards (Net P&L, Win rate, Avg W/L, Expectancy, Avg adherence). Auto callouts (6 deterministic rules — standout symbol, worst symbol, weakest pillar, worst day, off-plan signal, strong overall). Cumulative P&L chart. **Adherence breakdown** panel (4 horizontal bars: entry/target/stop/size). By-symbol table (top 20, clickable rows carry period into Journal). By direction / asset class / day-of-week / hour-of-day breakdowns. **Weekly reflection** textarea (4 prompts, saved per ISO week). |
+| `ReviewScreen` | Full-page `/review` route — multi-step wizard to resolve unmatched/ambiguous trades. Candidate plans shown per trade (matching symbol + direction + asset). Keyboard: Enter = match, N = no plan, Esc = back. |
+| `IBKRScreen` | Connect / disconnect IBKR, trigger sync. Sync success banner notes Flex Query latency (10–30 min for new fills). |
 | `SettingsScreen` | Sign out, subscription. |
 | `PaywallScreen` | Stripe checkout entrypoint. |
-| `AuthScreen` | Email/password + anonymous demo. |
+| `AuthScreen` | Email/password + anonymous demo + invite redemption (detects `?invite=<token>`). |
 
 ### Popups / drawers
 | Component | Type | Esc | Enter |
 |---|---|---|---|
-| `TradeInlineDetail` | Inline row expansion in Smart Journal — trade detail, plan vs actual, adherence, notes, reset match | ✅ | ✅ (Cmd+Enter save, Esc close) |
-| `PlanSheet` | Bottom drawer — create/edit plan | ✅ | — |
-| `ReviewScreen` | Full-page `/review` route — multi-step wizard to resolve unmatched/ambiguous trades | ✅ | ✅ (Enter match, N no plan, Esc back) |
+| `TradeInlineDetail` | Inline row expansion in Smart Journal — trade detail, plan vs actual, adherence, notes, reset match | ✅ | ✅ (Cmd+Enter save) |
+| `PlanSheet` | Bottom drawer — create/edit plan. Ticker field has securities autocomplete + instrument info card (symbol · type · description · currency). | ✅ | ✅ (Enter save) |
+| `ReviewScreen` | Full-page `/review` route — multi-step wizard to resolve unmatched/ambiguous trades | ✅ | ✅ (Enter match, N no plan) |
 | `ShareModal` | Center modal — share card for X/Twitter | ✅ | ✅ (fires share) |
-| `Sidebar` | Right drawer — mobile nav | ❌ | — |
-| `WelcomeModal` | Center modal — one-time welcome | ❌ | — |
+| `Sidebar` | Right drawer — mobile nav | ✅ | — |
+| `WelcomeModal` | Center modal — one-time welcome | ✅ | ✅ (Connect IBKR) |
+
+### Error handling
+
+- `ErrorBoundary` wraps `AppShell` — catches uncaught render errors and shows a "Refresh page" fallback instead of a white screen.
+- All client `.update()` / `.insert()` / `.upsert()` calls check `error` and surface failures via `alert()` or a toast-like inline state.
 
 ### Routing
 `react-router-dom 7`. Routes declared in `src/App.jsx`. Cross-screen state passing uses `navigate(path, { state: {...} })` and `useLocation()`. Currently used for Performance → Journal symbol+period handoff.
@@ -84,10 +93,20 @@ IBKR Flex XML
 - **`select('*')` is safe; explicit column lists will 400 if a column doesn't exist.** When in doubt, use `*`.
 - **Silent errors:** always check the `error` field. `PGRST116` (no rows) is expected for new users.
 - **Format functions:** null fallback is always `—`, never `N/A`.
+- **`fmtPnl` and `fmtPrice` REQUIRE a currency argument** — no default. A missing currency renders `¤` (the generic currency sign) so the bug is immediately visible. Rule:
+  - **Single trade** → `trade.currency` (native)
+  - **Aggregate** → `baseCurrency` from `useBaseCurrency()` context
+  - **Plan** → `plan.currency || baseCurrency` (falls back until backfilled)
+- **P&L conversion:** always go through `pnlBase(t)` from `src/lib/formatters.js` for aggregates. Never use `trade.total_realized_pnl` raw in an aggregate. For single-trade display, use native P&L directly.
+- **Base currency source of truth:** `useBaseCurrency()` from `src/lib/BaseCurrencyContext`. Do NOT fetch `base_currency` per-screen — it's already fetched once at the app shell level.
+- **Smart Journal filter state:** lives client-side in SJ except date range, which is pushed into the Supabase query (server-side scoping). When adding filters, decide: can the DB do it (push to query) or does autocomplete need the full result set (client)?
+- **`rebuild.js` does delete + insert** — any new user-data column on `logical_trades` must be added to the `preservedByKey` logic in rebuild.js (currently preserves `review_notes` and `matching_status='manual'` + `planned_trade_id`). Otherwise the column gets wiped on every sync.
 - **No dynamic `await import()`** — static imports only, to avoid webpack chunk hash issues on deploy.
-- **P&L conversion:** always go through `pnlBase(t)` from `src/lib/formatters.js`. Never use `trade.total_realized_pnl` raw. Multi-currency traders break silently if you skip this.
 - **Canonical column names:** `planned_entry_price`, `planned_stop_loss`, `planned_target_price`, `planned_quantity`. Old aliases (`entry_price`, `stop_price`, `target_price`, `shares`, `quantity`) will not work.
+- **Canonical plan prose field:** `thesis`. The column `notes` does NOT exist on `planned_trades` (this bug has been caught three times — grep any new `.select()` list before committing).
 - **Direction values are uppercase:** `LONG` / `SHORT`. Use those exact strings in filters and comparisons.
+- **`matching_status` vocabulary:** `auto` (builder default, unresolved), `unmatched` (zero candidate plans), `ambiguous` (multiple candidates), `matched` (linked to a plan), `manual` (user reviewed — resolved with or without a plan). For pipeline/filter purposes, treat `auto` the same as `unmatched` ("Need matching").
+- **Two copies of adherence + builder** in `src/lib/` (ES module) and `api/lib/` (CJS). Change both when touching the algorithm.
 
 ---
 
@@ -355,6 +374,86 @@ Safe `.select('*')` queries exist in `App.jsx`, `PlansScreen.jsx`, `HomeScreen.j
 - **The `/signup` route is explicit but does nothing when logged in** — just redirects to `/`. The invite flow works because when logged OUT, `App.jsx` returns `<AuthScreen />` directly before routes are evaluated, and AuthScreen reads `?invite=` from `window.location.search`.
 
 **Estimated completion:** ~88–90%. Beta-ready for invited users. Remaining: weekly reflection textarea, by-day/by-hour slices, auto-generated callouts (all post-beta).
+
+---
+
+### April 16, 2026 — Performance Review depth + pre-beta polish
+
+Long session. Shipped the full Performance Review feature set (matching the trader's weekly review template → 14 of 15 questions now answerable), the biggest currency-discipline refactor yet, and a mobile polish sweep based on real-device testing.
+
+**Performance Review — completed the roadmap:**
+- **Day-of-week + hour-of-day breakdown panels** — same bar-row pattern as by-direction/by-asset. Directly answers the trader template's "was there a particular day/time that you did/didn't trade well?" question. Sorted chronologically. (`d19482ad`)
+- **Auto-generated callouts** — 6 deterministic rules that fire when data is skewed enough: standout symbol (≥80% WR, ≥3 trades), worst symbol, weakest adherence pillar (<70), worst day-of-week, off-plan trading signal (≥30% off-plan), strong overall (≥60% WR + net positive). Rendered as green/amber/blue cards between KPIs and the cumulative chart. Each rule returns null below its threshold so quiet periods show no callouts. (`d19482ad`)
+- **Weekly reflection textarea** — 4 prompted fields (worked / didn't_work / recurring / action) saved per ISO week to a new `weekly_reviews` table. Upsert on (user_id, week_key). 3-second green "Saved" state. Loads existing notes on mount. Migration: `20260416_create_weekly_reviews.sql`. (`d19482ad`)
+
+**Currency discipline — no more silent `$` defaults:**
+- **Removed defaults from `fmtPnl` and `fmtPrice`.** `currencySymbol` now returns `¤` (generic currency sign) when currency is falsy — any forgotten-arg call renders `¤1,234.56`, immediately visible. Previously they silently defaulted to USD, which is why multi-currency bugs kept resurfacing on every new surface. (`6a5a8e02`)
+- **Fixed 9 call sites** that were missing currency arg: PlansScreen (risk/reward + 3 prices), HomeScreen (3 plan prices), ReviewScreen (candidate entry price), PlanSheet (per-trade historical P&L). (`6a5a8e02`)
+- **Added CHF/CAD/AUD/HKD/SGD** to `currencySymbol` mapping.
+
+**Securities lookup + plan currency — solved "what currency is this plan in?":**
+- **PlanSheet ticker autocomplete** — as user types (debounced 300ms, min 2 chars), queries `securities` table for matching instruments, shows dropdown with symbol/asset_category/currency/description. Clicking auto-fills symbol + asset_category + currency. (`e93581a8`)
+- **Instrument info card** — blue confirmation card below ticker showing "AAPL · STK · APPLE INC · USD" after selection. (`e93581a8`)
+- **New `currency` column on `planned_trades`** (migration `20260416_add_currency_to_planned_trades.sql`). Written from securities lookup at save time. (`e93581a8`)
+- **`api/rebuild.js` backfill** — when matching a trade to a plan, if `plan.currency` is null but `trade.currency` exists, backfills it. So old plans get their currency the moment the first trade matches. (`e93581a8`)
+- **All plan display surfaces** (PlansScreen, HomeScreen plan cards, ReviewScreen candidates, PlanSheet calcs) now use `plan.currency || baseCurrency` — a GBP plan for CKN correctly shows £ instead of €.
+
+**Pre-beta polish (`45890fa0`):**
+- **HomeScreen stat cards clickable:** Today's P&L → `/daily`, Active plans → `/plans`, Win rate → `/performance`. Hover border+shadow affordance.
+- **Console log cleanup** — 7 log statements in App.jsx, 2 in IBKRScreen commented out. No more "prototype feel" in DevTools.
+- **ErrorBoundary** — new `src/components/ErrorBoundary.jsx` wrapping both anon and active-subscription branches in App.jsx. Uncaught errors show "Something went wrong / Refresh page" instead of white-screening.
+- **PlansScreen search + direction filter** — text input + All/Long/Short pills. Shows "3 of 12" when filtered. Unusable-at-scale problem solved.
+
+**Mobile UX fixes from iPhone testing (`3c5a9dd9`):**
+- Removed duplicate privacy toggle from MobileNav (kept only in Header)
+- Plans filter pills no longer wrap (flex-nowrap + narrower search input)
+- DailyView: "Clear" button for active filters, renamed sort to "Newest/Oldest first", dropped Indicator + Exec ID columns from execution detail (debug-level)
+- Smart Journal: removed `AssetBadge` entirely — redundant with formatted symbols ("NVDA 170P" already says OPT, "USD.JPY" already says FX). Symbol column capped at max-w-[10rem] truncate. Table wrapper switched to `overflow-x-auto`.
+
+**Performance scale — server-side date filtering (`08346456`):**
+- Both Smart Journal and DailyView previously fetched ENTIRE trade history, filtered client-side. Scalable failure at 2000+ trades.
+- **Smart Journal:** date range filter now pushed into Supabase query via `.gte/.lte` on `closed_at`. Symbol/direction/asset stay client-side (autocomplete needs the result set).
+- **DailyView:** default window last 30 days (logical_trades + raw trades + daily_notes all scoped). "Load older trades" button extends window by 30 days per click. Uses IBKR's `YYYYMMDD` string comparison on `date_time` for raw trades.
+
+**All stat cards clickable across the app (`3f9b4fc0`):**
+- Home Open Positions → scroll to positions section
+- Journal Closed trades → filter All, Win rate → filter Wins, Journalled → filter Not journalled
+- Performance Avg adherence → scroll to breakdown panel
+- Pipeline block's "Need notes" and "Fully done" both go to `/journal` per design
+
+**Pipeline + filter rename (`ac0e9232`):**
+- **Bug fix:** `matching_status='auto'` (builder default) was invisible to the pipeline — trades with that status counted in no bucket. The "Need matching" card could show 0 while unresolved trades existed. Fixed by adding `'auto'` to `isUnresolved` check across pipeline + SJ filter + plan pill + bulk eligibility.
+- **Removed 30-day window on pipeline** — now all-time. A user who hasn't logged in for 5 days sees ALL pending trades, not just recent. Separate lightweight query (only `id, matching_status, planned_trade_id, review_notes`).
+- **Filter rename for consistency:** "Needs review" → "**Need matching**" (matches Home pipeline language), "Matched" → "**Planned**" (pairs naturally with "Off-plan"). Unified everywhere: FILTERS array, switch cases, `planPillFor` helper, bulk eligibility.
+
+**Stale doc fixes (`9956a964`):**
+- README: `TradeJournalDrawer` → `TradeInlineDetail`, `ReviewSheet` → `ReviewScreen` in the Popups/drawers table.
+- WORKFLOW.md: AppShell description no longer mentions ReviewSheet as a global sheet.
+
+**Bugs found but not yet fixed:**
+- *(none critical)* — post-session audit found zero ship-blockers.
+- **⚠️ Design gap — plan currency vs risk aggregation** — when Performance Review eventually adds "total risk this week" analytics, it'll need to convert each trade's native risk to base. The math is: `nativeRisk × trade.fx_rate_to_base`. All the data is there (plan.currency for native, trade.fx_rate_to_base for conversion), computation not yet built. Logged for post-beta.
+- **⚠️ UX nudge idea logged** — "daily nudge glow" on Today's P&L card when user first opens the app each day. Pulsing animation to guide them into DailyView. Not built yet. Also: "guided journaling" flow with spotlight/glow on first unjournalled trade when triggered from pipeline's "Need notes" button — previewed via ASCII mockups, not yet built.
+- **⚠️ Fully done pipeline card** — design question raised: is it a vanity metric? No action implied. Consider dropping.
+
+**Design / direction decisions:**
+- **Four-screen mental model:** Home = current state ("what am I holding"), DailyView = today's executions ("what happened today"), Smart Journal = closed-trade review ("how did I do on that trade"), Performance = aggregates ("how am I doing overall"). Zero overlap. Open positions removed from SJ entirely — they belong on Home.
+- **`fmtPnl` / `fmtPrice` currency is REQUIRED.** Default removed. `¤` render makes missing-arg bugs visible instantly.
+- **Plan currency pipeline:** user types symbol → securities lookup → currency stored on plan → all displays use `plan.currency`. New instruments (not in securities) render `¤` until the first trade backfills via rebuild.js.
+- **Pipeline scope is all-time, not windowed.** KPI stats still use 30d window. Two separate queries (non-overlapping).
+- **SJ server-side filtering** — date range is a database query, not a client filter. Symbol/direction/asset stay client-side until we add a server-side autocomplete source.
+- **Filter language unified:** same three states everywhere — Need matching / Planned / Off-plan. The Home pipeline, SJ tabs, and plan pills all speak the same vocabulary.
+
+**Dev notes for future me:**
+- **Currency is required.** If you write `fmtPnl(x)` without a second arg, the UI shows `¤`. Don't assume a default.
+- **Missing plan.currency is OK** — the `plan.currency || baseCurrency` fallback holds until rebuild.js backfills on the next sync/match. New plans on new instruments show ¤ briefly until first trade.
+- **Pipeline query is separate and lightweight** — `logical_trades` with only `id, matching_status, planned_trade_id, review_notes`. Don't add fields; keep it cheap. KPI stats have their own 30d query.
+- **`'auto'` status is an invisible trap** — it's the builder's initial value before plan matching runs. It has no UI meaning. If a trade lands with `'auto'` in prod, either rebuild hasn't run yet or it errored out. Treat as "Need matching" everywhere.
+- **Securities lookup is a read-only dependency** — PlanSheet queries it but doesn't populate it. Population is ct3000-admin or IBKR sync (trades coming in). If `securities` is empty on a fresh project, the autocomplete won't find anything until a sync happens.
+- **Performance screen has 9 useMemo chains** — fine at 500 trades, untested at 2000+. If it gets sluggish, the fix is either memoization of `computeAdherenceBreakdown` per trade or moving to a server-side rollup.
+- **DailyView "Load older" extends `dvWindow` by 30** — not by an absolute date. So clicking 3 times gives you 120 days total. If user wants year-to-date, that's 12 clicks. Consider adding preset buttons.
+
+**Estimated completion:** ~92%. Performance Review is feature-complete against the template. Currency discipline is systemic (not per-surface). Pipeline logic is correct across all 8 stress-test scenarios. Remaining items are polish (daily nudge glow, guided journaling flow) and one design question (Fully done card).
 
 ---
 
