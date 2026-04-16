@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
+import { currencySymbol } from '../lib/formatters';
 
 export default function Sidebar({ isOpen, onClose, onSignOut, session }) {
   const navigate = useNavigate();
   const [accountId, setAccountId] = useState(null);
   const [ibkrConnected, setIbkrConnected] = useState(false);
+  const [baseCurrency, setBaseCurrency] = useState(null);
 
   const email = session?.user?.email || '';
   const name = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -14,7 +16,7 @@ export default function Sidebar({ isOpen, onClose, onSignOut, session }) {
     if (!session?.user?.id) return;
     supabase
       .from('user_ibkr_credentials')
-      .select('account_id, token_masked')
+      .select('account_id, token_masked, base_currency')
       .eq('user_id', session.user.id)
       .single()
       .then(({ data, error }) => {
@@ -24,6 +26,7 @@ export default function Sidebar({ isOpen, onClose, onSignOut, session }) {
         }
         if (data?.token_masked) setIbkrConnected(true);
         if (data?.account_id) setAccountId(data.account_id);
+        if (data?.base_currency) setBaseCurrency(data.base_currency);
       });
   }, [session]);
 
@@ -101,6 +104,14 @@ export default function Sidebar({ isOpen, onClose, onSignOut, session }) {
               <div className="px-4 py-3 flex items-center justify-between">
                 <p className="text-sm font-medium text-gray-900">Account ID</p>
                 <p className="text-sm text-gray-400 font-mono">{accountId || '—'}</p>
+              </div>
+              <div className="px-4 py-3 flex items-center justify-between">
+                <p className="text-sm font-medium text-gray-900">Base currency</p>
+                <p className="text-sm text-gray-400 font-mono">
+                  {baseCurrency
+                    ? `${baseCurrency} (${currencySymbol(baseCurrency)})`
+                    : '—'}
+                </p>
               </div>
               <div className="px-4 py-3 flex items-center justify-between">
                 <p className="text-sm font-medium text-gray-900">Email</p>
