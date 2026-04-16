@@ -8,26 +8,6 @@ import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
 import TradeInlineDetail from '../components/TradeInlineDetail';
 
-// Small asset-class badge shown next to the symbol for non-stock trades.
-// STK is the default "assumed" case so we don't clutter every row with it.
-const ASSET_BADGE_STYLES = {
-  OPT:  'bg-purple-50 text-purple-600',
-  FX:   'bg-amber-50 text-amber-700',
-  CASH: 'bg-amber-50 text-amber-700',
-  FUT:  'bg-indigo-50 text-indigo-600',
-  CFD:  'bg-teal-50 text-teal-700',
-  BOND: 'bg-slate-100 text-slate-600',
-};
-function AssetBadge({ category }) {
-  if (!category || category === 'STK') return null;
-  const cls = ASSET_BADGE_STYLES[category] || 'bg-gray-100 text-gray-500';
-  return (
-    <span className={`ml-1.5 px-1.5 py-0.5 text-[10px] font-semibold rounded ${cls}`}>
-      {category}
-    </span>
-  );
-}
-
 // Adherence pill — same color thresholds as the drawer.
 // Both branches use identical padding so the row height doesn't jitter
 // when filters switch the mix of trades with/without a score.
@@ -492,7 +472,7 @@ export default function JournalScreen({ session }) {
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
           {/* Sticky bulk-action bar — appears whenever at least one row is selected */}
           {selectedIds.size > 0 && (
             <div className="flex items-center justify-between px-6 py-3 bg-blue-50 border-b border-blue-100">
@@ -589,9 +569,8 @@ export default function JournalScreen({ session }) {
                           {dateDisplay}
                         </span>
                       </td>
-                      <td className="px-4 sm:px-6 py-4 text-sm font-semibold text-gray-900 whitespace-nowrap">
+                      <td className="px-4 sm:px-6 py-4 text-sm font-semibold text-gray-900 whitespace-nowrap max-w-[10rem] truncate" title={trade.symbol}>
                         {fmtSymbol(trade)}
-                        <AssetBadge category={trade.asset_category} />
                       </td>
                       <td className="hidden sm:table-cell px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
                       <td className={`px-4 sm:px-6 py-4 text-sm font-semibold whitespace-nowrap ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>

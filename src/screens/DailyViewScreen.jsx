@@ -127,32 +127,29 @@ function ExecSubTable({ execs }) {
           <table className="w-full">
             <thead>
               <tr>
-                {['Time', 'Exec Price', 'Qty', 'Type', 'Indicator', 'Commission', 'Exec ID'].map(h => (
-                  <th key={h} className="pb-1.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wide pr-4">{h}</th>
+                {['Time', 'Price', 'Qty', 'Type', 'Commission'].map(h => (
+                  <th key={h} className="pb-1.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wide pr-3">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {execs.map((ex, i) => {
                 const iso = ex._iso;
-                const time = iso ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
+                const time = iso ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—';
                 const commission = parseFloat(ex.ib_commission);
-                const execIdShort = ex.ib_exec_id ? '…' + ex.ib_exec_id.slice(-10) : '—';
                 return (
                   <tr key={i} className="border-t border-gray-100 first:border-0">
-                    <td className="py-1.5 pr-4 text-xs text-gray-600">{time}</td>
-                    <td className="py-1.5 pr-4 text-xs text-gray-800 font-medium">{fmtPrice(parseFloat(ex.trade_price), ex.currency)}</td>
-                    <td className="py-1.5 pr-4 text-xs text-gray-600"><PrivacyValue value={Math.abs(parseFloat(ex.quantity) || 0)} /></td>
-                    <td className="py-1.5 pr-4">
+                    <td className="py-1.5 pr-3 text-xs text-gray-600">{time}</td>
+                    <td className="py-1.5 pr-3 text-xs text-gray-800 font-medium">{fmtPrice(parseFloat(ex.trade_price), ex.currency)}</td>
+                    <td className="py-1.5 pr-3 text-xs text-gray-600"><PrivacyValue value={Math.abs(parseFloat(ex.quantity) || 0)} /></td>
+                    <td className="py-1.5 pr-3">
                       <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${ex.buy_sell === 'BUY' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
                         {ex.buy_sell}
                       </span>
                     </td>
-                    <td className="py-1.5 pr-4 text-xs text-gray-500">{ex.open_close_indicator || '—'}</td>
-                    <td className="py-1.5 pr-4 text-xs text-gray-500">
+                    <td className="py-1.5 text-xs text-gray-500">
                       <PrivacyValue value={!isNaN(commission) ? fmtPnl(commission, ex.currency, 0) : '—'} />
                     </td>
-                    <td className="py-1.5 text-xs text-gray-400 font-mono">{execIdShort}</td>
                   </tr>
                 );
               })}
@@ -669,7 +666,6 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
               <option key={d} value={d}>{new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</option>
             ))}
           </select>
-          <div />
           <button
             onClick={() => setSortAsc(v => !v)}
             className="flex items-center justify-center space-x-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 bg-gray-50 hover:bg-gray-100"
@@ -677,8 +673,16 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
             <svg className={`w-4 h-4 transition-transform ${sortAsc ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
-            <span>{sortAsc ? 'Ascending' : 'Descending'}</span>
+            <span>{sortAsc ? 'Oldest first' : 'Newest first'}</span>
           </button>
+          {(search || dateFilter !== 'all') && (
+            <button
+              onClick={() => { setSearch(''); setDateFilter('all'); }}
+              className="text-xs font-medium text-gray-500 hover:text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-50"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 

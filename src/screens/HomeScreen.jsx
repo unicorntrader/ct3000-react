@@ -22,24 +22,35 @@ export default function HomeScreen({ session }) {
   const [positions, setPositions] = useState([]);
   const [plans, setPlans] = useState([]);
   const [logicalTrades, setLogicalTrades] = useState([]);
+  const [pipelineTrades, setPipelineTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [posSort, setPosSort] = useState('size'); // 'size' | 'date'
 
   useEffect(() => {
     if (!userId) return;
     const load = async () => {
-      const [posRes, plansRes, tradesRes] = await Promise.all([
+      const [posRes, plansRes, tradesRes, pipelineRes] = await Promise.all([
         supabase.from('open_positions').select('*').eq('user_id', userId),
         supabase.from('planned_trades').select('*').eq('user_id', userId),
+        // 30-day window for KPI stats (today's P&L, win rate)
         supabase
           .from('logical_trades')
           .select('status, total_realized_pnl, fx_rate_to_base, closed_at, matching_status, direction, currency')
           .eq('user_id', userId)
           .gte('closed_at', thirtyDaysAgo()),
+        // ALL-TIME pipeline counts — lightweight (only the fields we need for
+        // bucket computation). No date filter: a user who hasn't logged in for
+        // 5 days should see ALL pending trades, not just last 30 days.
+        supabase
+          .from('logical_trades')
+          .select('id, matching_status, planned_trade_id, review_notes')
+          .eq('user_id', userId)
+          .eq('status', 'closed'),
       ]);
       setPositions(posRes.data || []);
       setPlans(plansRes.data || []);
       setLogicalTrades(tradesRes.data || []);
+      setPipelineTrades(pipelineRes.data || []);
       setLoading(false);
     };
     load();
@@ -64,17 +75,15 @@ export default function HomeScreen({ session }) {
   const losses = closedLast30.filter(t => (t.total_realized_pnl || 0) <= 0).length;
   const winRate = closedLast30.length > 0 ? Math.round((wins / closedLast30.length) * 100) : null;
 
-  // Trade review pipeline — three sequential buckets across the last 30d of closed trades:
-  //   1. Need matching — not yet resolved to a plan (unmatched or ambiguous)
-  //   2. Need notes    — resolved (matched or off-plan) but no journal entry yet
-  //   3. Fully done    — resolved AND journalled
-  const pipelineNeedMatching = closedLast30.filter(
+  // Trade review pipeline — all-time counts (not windowed).
+  // A user who hasn't logged in for 5 days should see ALL pending trades.
+  const pipelineNeedMatching = pipelineTrades.filter(
     t => t.matching_status === 'unmatched' || t.matching_status === 'ambiguous'
   ).length;
-  const pipelineNeedNotes = closedLast30.filter(
+  const pipelineNeedNotes = pipelineTrades.filter(
     t => (t.matching_status === 'matched' || t.matching_status === 'manual') && !t.review_notes
   ).length;
-  const pipelineFullyDone = closedLast30.filter(
+  const pipelineFullyDone = pipelineTrades.filter(
     t => (t.matching_status === 'matched' || t.matching_status === 'manual') && t.review_notes
   ).length;
   const pipelineTotal = pipelineNeedMatching + pipelineNeedNotes + pipelineFullyDone;
@@ -154,7 +163,7 @@ export default function HomeScreen({ session }) {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-sm font-semibold text-gray-700">Trade review pipeline</h3>
-              <p className="text-xs text-gray-400 mt-0.5">Last 30 days · {pipelineTotal} closed trade{pipelineTotal !== 1 ? 's' : ''}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{pipelineTotal} closed trade{pipelineTotal !== 1 ? 's' : ''}</p>
             </div>
           </div>
 

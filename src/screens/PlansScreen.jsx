@@ -106,13 +106,13 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
 
       {/* Search + filter */}
       {plans.length > 0 && (
-        <div className="flex flex-wrap items-center gap-3 mb-5">
+        <div className="flex items-center gap-2 mb-5 overflow-x-auto">
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search by symbol…"
-            className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 w-48"
+            placeholder="Search symbol…"
+            className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 w-36 shrink-0"
           />
           {['All', 'LONG', 'SHORT'].map(d => (
             <button
