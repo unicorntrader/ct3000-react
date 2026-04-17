@@ -24,7 +24,8 @@ export default function HomeScreen({ session }) {
   const [logicalTrades, setLogicalTrades] = useState([]);
   const [pipelineTrades, setPipelineTrades] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [posSort, setPosSort] = useState('size'); // 'size' | 'date'
+  // Open positions are sorted by unrealized P&L magnitude (biggest movers first)
+  // -- removed the Size / Date sort pills; at-a-glance P&L is the thing worth scanning.
 
   useEffect(() => {
     if (!userId) return;
@@ -166,8 +167,8 @@ export default function HomeScreen({ session }) {
         <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-5 mb-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-semibold text-gray-700">Trade review pipeline</h3>
-              <p className="text-xs text-gray-400 mt-0.5">{pipelineTotal} closed trade{pipelineTotal !== 1 ? 's' : ''}</p>
+              <h3 className="text-base font-semibold text-gray-900">Trade review pipeline</h3>
+              <p className="text-sm text-gray-600 mt-0.5">{pipelineTotal} closed trade{pipelineTotal !== 1 ? 's' : ''}</p>
             </div>
           </div>
 
@@ -182,13 +183,13 @@ export default function HomeScreen({ session }) {
                   : 'border-gray-100 bg-gray-50 cursor-default opacity-60'
               }`}
             >
-              <p className={`text-2xl font-semibold mb-0.5 ${pipelineNeedMatching > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
+              <p className={`text-2xl font-semibold mb-0.5 ${pipelineNeedMatching > 0 ? 'text-amber-700' : 'text-gray-500'}`}>
                 {pipelineNeedMatching}
               </p>
-              <p className={`text-xs font-semibold ${pipelineNeedMatching > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
+              <p className={`text-sm font-semibold ${pipelineNeedMatching > 0 ? 'text-amber-700' : 'text-gray-500'}`}>
                 Need matching
               </p>
-              <p className={`text-[11px] mt-1 ${pipelineNeedMatching > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+              <p className={`text-xs mt-1 ${pipelineNeedMatching > 0 ? 'text-amber-700' : 'text-gray-500'}`}>
                 {pipelineNeedMatching > 0 ? 'Link to a plan →' : 'All matched'}
               </p>
             </button>
@@ -203,13 +204,13 @@ export default function HomeScreen({ session }) {
                   : 'border-gray-100 bg-gray-50 cursor-default opacity-60'
               }`}
             >
-              <p className={`text-2xl font-semibold mb-0.5 ${pipelineNeedNotes > 0 ? 'text-blue-700' : 'text-gray-400'}`}>
+              <p className={`text-2xl font-semibold mb-0.5 ${pipelineNeedNotes > 0 ? 'text-blue-700' : 'text-gray-500'}`}>
                 {pipelineNeedNotes}
               </p>
-              <p className={`text-xs font-semibold ${pipelineNeedNotes > 0 ? 'text-blue-700' : 'text-gray-400'}`}>
+              <p className={`text-sm font-semibold ${pipelineNeedNotes > 0 ? 'text-blue-700' : 'text-gray-500'}`}>
                 Need notes
               </p>
-              <p className={`text-[11px] mt-1 ${pipelineNeedNotes > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+              <p className={`text-xs mt-1 ${pipelineNeedNotes > 0 ? 'text-blue-700' : 'text-gray-500'}`}>
                 {pipelineNeedNotes > 0 ? 'Journal →' : 'All journalled'}
               </p>
             </button>
@@ -220,8 +221,8 @@ export default function HomeScreen({ session }) {
               className="text-left rounded-xl border border-green-200 bg-green-50 p-4 hover:bg-green-100 transition-colors cursor-pointer"
             >
               <p className="text-2xl font-semibold text-green-700 mb-0.5">{pipelineFullyDone}</p>
-              <p className="text-xs font-semibold text-green-700">Fully done</p>
-              <p className="text-[11px] text-green-600 mt-1">View all →</p>
+              <p className="text-sm font-semibold text-green-700">Fully done</p>
+              <p className="text-xs text-green-700 mt-1">View all →</p>
             </button>
           </div>
         </div>
@@ -236,11 +237,11 @@ export default function HomeScreen({ session }) {
               card.onClick ? 'cursor-pointer hover:border-blue-200 hover:shadow-md transition-all' : ''
             }`}
           >
-            <p className="text-xs font-medium text-gray-400 mb-1">{card.label}</p>
+            <p className="text-sm font-medium text-gray-600 mb-1">{card.label}</p>
             <p className={`text-2xl font-semibold ${card.color}`}>
               {card.maskValue ? <PrivacyValue value={card.value} /> : card.value}
             </p>
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-gray-600 mt-1">
               {card.maskSub ? <PrivacyValue value={card.sub} /> : card.sub}
             </p>
           </div>
@@ -250,71 +251,51 @@ export default function HomeScreen({ session }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div id="open-positions">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-700">Open positions</h3>
-            {positions.length > 0 && (
-              <div className="flex items-center space-x-2">
-                <span className="text-xs text-gray-400">Sort:</span>
-                <button
-                  onClick={() => setPosSort('size')}
-                  className={`text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${
-                    posSort === 'size' ? 'bg-blue-600 text-white border-transparent' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                  }`}
-                >
-                  Size
-                </button>
-                <button
-                  onClick={() => setPosSort('date')}
-                  className={`text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${
-                    posSort === 'date' ? 'bg-blue-600 text-white border-transparent' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                  }`}
-                >
-                  Date
-                </button>
-              </div>
-            )}
+            <h3 className="text-base font-semibold text-gray-900">Open positions</h3>
           </div>
           {positions.length === 0 ? (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-8 text-center">
-              <p className="text-sm text-gray-400">No open positions</p>
+              <p className="text-sm text-gray-500">No open positions</p>
             </div>
           ) : (() => {
-            const sorted = [...positions].sort((a, b) => {
-              if (posSort === 'size') {
-                const sizeA = Math.abs(a.market_value ?? (a.position * a.avg_cost) ?? 0);
-                const sizeB = Math.abs(b.market_value ?? (b.position * b.avg_cost) ?? 0);
-                return sizeB - sizeA;
-              }
-              // date: most recent updated_at first
-              return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
-            });
+            const sorted = [...positions].sort((a, b) =>
+              Math.abs(b.unrealized_pnl || 0) - Math.abs(a.unrealized_pnl || 0)
+            );
             const visible = sorted.slice(0, PAGE_SIZE);
             const overflow = positions.length > PAGE_SIZE;
             return (
               <>
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-50">
-                  {visible.map(pos => {
-                    const isLong = (pos.position || 0) >= 0;
-                    const qty = Math.abs(pos.position || 0);
-                    const pnl = pos.unrealized_pnl || 0;
-                    return (
-                      <div key={pos.id || pos.symbol} className="flex items-center justify-between px-5 py-3">
-                        <div>
-                          <p className="font-semibold text-gray-900">{pos.symbol}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            {isLong ? 'Long' : 'Short'} &middot; <PrivacyValue value={qty} /> {pos.asset_category === 'STK' ? 'shares' : pos.asset_category === 'OPT' ? 'contracts' : 'units'}
-                          </p>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+                  {/* Column header so the right-hand number is clearly labeled */}
+                  <div className="flex items-center justify-between px-5 py-2 border-b border-gray-100 bg-gray-50 rounded-t-xl">
+                    <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Position</p>
+                    <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Unrealized P&amp;L</p>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {visible.map(pos => {
+                      const isLong = (pos.position || 0) >= 0;
+                      const qty = Math.abs(pos.position || 0);
+                      const pnl = pos.unrealized_pnl || 0;
+                      return (
+                        <div key={pos.id || pos.symbol} className="flex items-center justify-between px-5 py-3">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">{pos.symbol}</p>
+                            <p className="text-xs text-gray-600 mt-0.5">
+                              {isLong ? 'Long' : 'Short'} &middot; <PrivacyValue value={qty} /> {pos.asset_category === 'STK' ? 'shares' : pos.asset_category === 'OPT' ? 'contracts' : 'units'}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className={`text-sm font-semibold ${pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                              <PrivacyValue value={fmtPnl(pnl, pos.currency)} />
+                            </p>
+                            <p className="text-xs text-gray-600 mt-0.5">
+                              avg cost {fmtPrice(pos.avg_cost, pos.currency)}
+                            </p>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <p className={`font-semibold ${pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                            <PrivacyValue value={fmtPnl(pnl, pos.currency)} />
-                          </p>
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            avg {fmtPrice(pos.avg_cost, pos.currency)}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
                 {overflow && (
                   <button
@@ -331,12 +312,12 @@ export default function HomeScreen({ session }) {
 
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-700">Active plans</h3>
-            <button onClick={() => navigate('/plans')} className="text-xs text-blue-600 font-medium hover:underline">View all &rarr;</button>
+            <h3 className="text-base font-semibold text-gray-900">Active plans</h3>
+            <button onClick={() => navigate('/plans')} className="text-sm text-blue-600 font-medium hover:underline">View all &rarr;</button>
           </div>
           {plans.length === 0 ? (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-8 text-center">
-              <p className="text-sm text-gray-400">No active plans</p>
+              <p className="text-sm text-gray-500">No active plans</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -345,8 +326,8 @@ export default function HomeScreen({ session }) {
                 return (
                   <div key={plan.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="font-semibold text-gray-900">{plan.symbol}</span>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                      <span className="text-sm font-semibold text-gray-900">{plan.symbol}</span>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
                         dir === 'long' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
                       }`}>
                         {dir.toUpperCase()}
@@ -354,20 +335,20 @@ export default function HomeScreen({ session }) {
                     </div>
                     <div className="grid grid-cols-3 gap-2 mb-2">
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
-                        <p className="text-xs text-gray-400 mb-0.5">Entry</p>
-                        <p className="text-sm font-medium">{fmtPrice(plan.planned_entry_price, plan.currency || baseCurrency)}</p>
+                        <p className="text-xs font-medium text-gray-600 mb-0.5">Entry</p>
+                        <p className="text-sm font-semibold text-gray-900">{fmtPrice(plan.planned_entry_price, plan.currency || baseCurrency)}</p>
                       </div>
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
-                        <p className="text-xs text-gray-400 mb-0.5">Target</p>
-                        <p className="text-sm font-medium text-green-600">{fmtPrice(plan.planned_target_price, plan.currency || baseCurrency)}</p>
+                        <p className="text-xs font-medium text-gray-600 mb-0.5">Target</p>
+                        <p className="text-sm font-semibold text-green-600">{fmtPrice(plan.planned_target_price, plan.currency || baseCurrency)}</p>
                       </div>
                       <div className="text-center bg-gray-50 rounded-lg py-1.5">
-                        <p className="text-xs text-gray-400 mb-0.5">Stop</p>
-                        <p className="text-sm font-medium text-red-500">{fmtPrice(plan.planned_stop_loss, plan.currency || baseCurrency)}</p>
+                        <p className="text-xs font-medium text-gray-600 mb-0.5">Stop</p>
+                        <p className="text-sm font-semibold text-red-500">{fmtPrice(plan.planned_stop_loss, plan.currency || baseCurrency)}</p>
                       </div>
                     </div>
                     {plan.thesis && (
-                      <p className="text-xs text-gray-500 italic">{plan.thesis}</p>
+                      <p className="text-sm text-gray-600 italic">{plan.thesis}</p>
                     )}
                   </div>
                 );
