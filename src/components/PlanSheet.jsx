@@ -278,6 +278,20 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSymbol, secSuggestions]);
 
+  // Whenever a security gets picked (via dropdown click OR exact-match
+  // auto-pick), add it to the Recent set so subsequent searches this
+  // session show it with the badge and ranking boost — no sheet reopen needed.
+  useEffect(() => {
+    if (!selectedSecurity?.symbol) return;
+    const sym = selectedSecurity.symbol.toUpperCase();
+    setUserSymbols(prev => {
+      if (prev.has(sym)) return prev;
+      const next = new Set(prev);
+      next.add(sym);
+      return next;
+    });
+  }, [selectedSecurity?.symbol]);
+
   // Fetch historical closed trades for this ticker
   useEffect(() => {
     const uid = session?.user?.id;
