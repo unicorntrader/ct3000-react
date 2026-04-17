@@ -26,13 +26,28 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Extract a human-readable error from an IBKR Flex failure payload.
+// IBKR returns <Status>Fail</Status> + <ErrorCode> + <ErrorMessage> on errors.
+function extractIBKRError(xml) {
+  const status = xml.match(/<Status>([^<]+)<\/Status>/)?.[1] || 'unknown';
+  const errorCode = xml.match(/<ErrorCode>([^<]+)<\/ErrorCode>/)?.[1];
+  const errorMessage = xml.match(/<ErrorMessage>([^<]+)<\/ErrorMessage>/)?.[1];
+  const parts = [`IBKR returned status=${status}`];
+  if (errorCode) parts.push(`[${errorCode}]`);
+  if (errorMessage) parts.push(errorMessage);
+  return parts.join(' ');
+}
+
 async function sendRequest(token, queryId) {
   const url = `${SEND_URL}?t=${token}&q=${queryId}&v=3`;
   const xml = await httpsGet(url);
+  const status = xml.match(/<Status>([^<]+)<\/Status>/)?.[1];
+  if (status && status !== 'Success') {
+    throw new Error(extractIBKRError(xml));
+  }
   const refMatch = xml.match(/<ReferenceCode>(\d+)<\/ReferenceCode>/);
-  const statusMatch = xml.match(/<Status>([^<]+)<\/Status>/);
   if (!refMatch) {
-    throw new Error(`SendRequest failed. Status: ${statusMatch?.[1] || 'unknown'}. Response: ${xml.substring(0, 300)}`);
+    throw new Error(`IBKR sendRequest returned no ReferenceCode. Status=${status || 'unknown'}. Response snippet: ${xml.substring(0, 300)}`);
   }
   return refMatch[1];
 }
@@ -51,6 +66,12 @@ async function getStatement(refCode, token, maxRetries = 10, waitMs = 3000) {
         return xml;
       }
 
+      // Non-success response with Warn status = still processing; keep polling.
+      // Any other status (Fail, etc.) is terminal -- surface it immediately.
+      if (status && status !== 'Warn') {
+        throw new Error(extractIBKRError(xml));
+      }
+
       console.log(`Attempt ${i + 1}: Status=${status}, waiting...`);
       await sleep(waitMs);
       continue;
@@ -63,12 +84,30 @@ async function getStatement(refCode, token, maxRetries = 10, waitMs = 3000) {
     throw new Error(`Unexpected response on attempt ${i + 1}: ${xml.substring(0, 300)}`);
   }
 
-  throw new Error('Timed out waiting for IBKR statement after ' + maxRetries + ' attempts');
+  throw new Error(`Timed out waiting for IBKR statement after ${maxRetries} attempts (${(maxRetries * waitMs) / 1000}s)`);
 }
 
 function parseBaseCurrency(xml) {
   const m = xml.match(/<AccountInformation[^>]+currency="([^"]+)"/);
   return m ? m[1] : null;
+}
+
+// IBKR emits trade timestamps in a compact "YYYYMMDD;HHMMSS" format.
+// Convert to 19-char ISO "YYYY-MM-DDTHH:MM:SS" here at parse time so:
+//   - downstream code (builders, UI) deals in one format, not two
+//   - trades.date_time is ready to be migrated from varchar(20) to timestamptz
+//     without breaking old rows
+// 19 chars fits the current varchar(20) column; the USING clause on the
+// migration will coerce any historical rows still in IBKR compact format.
+function ibkrDateToIso(dt) {
+  if (!dt) return null;
+  const [date, time] = dt.split(';');
+  if (!date || date.length < 8) return null;
+  const d = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
+  const t = (time && time.length >= 6)
+    ? `${time.slice(0, 2)}:${time.slice(2, 4)}:${time.slice(4, 6)}`
+    : '00:00:00';
+  return `${d}T${t}`;
 }
 
 function parseTrades(xml) {
@@ -92,7 +131,7 @@ function parseTrades(xml) {
       openCloseIndicator:   get('openCloseIndicator'),
       quantity:             get('quantity'),
       tradePrice:           get('tradePrice'),
-      dateTime:             get('dateTime'),
+      dateTime:             ibkrDateToIso(get('dateTime')),
       netCash:              get('netCash'),
       fifoPnlRealized:      get('fifoPnlRealized'),
       ibCommission:         get('ibCommission'),

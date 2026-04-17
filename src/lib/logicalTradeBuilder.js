@@ -14,10 +14,16 @@ export function buildLogicalTrades(rawTrades, userId) {
   const filtered = rawTrades.filter(t => t.asset_category !== 'CASH');
 
   // Step 1 — Sort by date_time ASC
+  // trades.date_time transition: sync.js now parses IBKR's "YYYYMMDD;HHMMSS"
+  // to ISO at sync time. New rows are ISO, historical rows may still be IBKR
+  // compact. Try ISO parse first, fall back to the IBKR format. Once the
+  // trades.date_time -> timestamptz migration runs, only ISO remains and
+  // the fallback can be removed.
   const sorted = [...filtered].sort((a, b) => {
     const toMs = (dt) => {
       if (!dt) return 0;
-      // Format: "20260408;100300"
+      const asDate = new Date(dt);
+      if (!isNaN(asDate.getTime())) return asDate.getTime();
       const [date, time] = dt.split(';');
       const d = date ? `${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}` : '1970-01-01';
       const t = time ? `${time.slice(0,2)}:${time.slice(2,4)}:${time.slice(4,6)}` : '00:00:00';
@@ -51,8 +57,19 @@ export function buildLogicalTrades(rawTrades, userId) {
     return openPositions.get(symbol);
   };
 
+  // Accept both IBKR compact ("YYYYMMDD;HHMMSS") and ISO-shaped inputs.
+  // Returns ISO 8601 with trailing Z. Historical trades.date_time rows may
+  // still be in IBKR format until the trades.date_time -> timestamptz
+  // migration runs; new rows from sync.js are already ISO.
   const parseDateTime = (dt) => {
     if (!dt) return null;
+    // Already ISO (starts "YYYY-MM-DD" with a dash)? pass through.
+    if (dt.length >= 10 && dt[4] === '-') {
+      // Normalize: drop any trailing offset/Z, add 'Z' so callers have one format.
+      const core = dt.slice(0, 19);
+      return `${core}Z`;
+    }
+    // IBKR compact "YYYYMMDD;HHMMSS"
     const [date, time] = dt.split(';');
     if (!date) return null;
     const d = `${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}`;
