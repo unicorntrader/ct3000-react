@@ -681,6 +681,11 @@ export default function JournalScreen({ session }) {
                 const pnl = isOpen ? null : (trade.total_realized_pnl || 0);
                 const isWin = (pnl || 0) > 0;
                 const rowCurrency = trade.currency || baseCurrency;
+                // P&L % of cost basis. Same math for LONG and SHORT since
+                // total_realized_pnl already carries the sign.
+                const qty = trade.total_closing_quantity || trade.total_opening_quantity || 0;
+                const costBasis = (parseFloat(trade.avg_entry_price) || 0) * qty;
+                const pnlPct = (!isOpen && costBasis > 0) ? (pnl / costBasis) * 100 : null;
                 const plan = plansMap[trade.planned_trade_id];
                 const rMultiple = isOpen ? null : calcR(trade, plan);
                 const matchStatus = trade.matching_status;
@@ -730,7 +735,13 @@ export default function JournalScreen({ session }) {
                       </td>
                       <td className="hidden sm:table-cell px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
                       <td className={`px-4 sm:px-6 py-4 text-sm font-semibold whitespace-nowrap ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>
-                        {isOpen ? '—' : <PrivacyValue value={fmtPnl(pnl, rowCurrency)} />}
+                        {isOpen ? '—' : (
+                          <PrivacyValue value={
+                            pnlPct != null
+                              ? `${fmtPnl(pnl, rowCurrency)} / ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%`
+                              : fmtPnl(pnl, rowCurrency)
+                          } />
+                        )}
                       </td>
                       <td className="hidden md:table-cell px-6 py-4 text-sm text-gray-600">{rMultiple ?? '—'}</td>
                       <td className="hidden md:table-cell px-6 py-4">
