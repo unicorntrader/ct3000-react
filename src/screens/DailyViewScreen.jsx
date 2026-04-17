@@ -30,13 +30,25 @@ const fmtDateLabel = (dateKey) => {
 };
 
 // Convert IBKR "20260408;100300" → ISO "2026-04-08T10:03:00Z"
-const parseIBKRDate = (dt) => {
+// Parse a trade timestamp to a millisecond epoch. Accepts:
+//   - timestamptz from Supabase: "2026-04-15 10:57:13+00" (post-migration)
+//   - IBKR compact: "20260417;103045" (historical rows before the migration)
+// Returning ms (not an ISO string) means downstream comparisons with
+// logical_trade.opened_at/closed_at can use new Date(x).getTime() on the
+// logical side too -- no format-mismatch bugs from lexicographic string
+// compares between "X.000Z" and "X+00:00".
+const parseTradeTime = (dt) => {
   if (!dt) return null;
+  if (dt.length >= 10 && dt[4] === '-') {
+    const ms = new Date(dt).getTime();
+    return isNaN(ms) ? null : ms;
+  }
   const [date, time] = dt.split(';');
-  if (!date) return null;
-  const d = `${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}`;
-  const t = time ? `${time.slice(0,2)}:${time.slice(2,4)}:${time.slice(4,6)}` : '00:00:00';
-  return `${d}T${t}Z`;
+  if (!date || date.length < 8) return null;
+  const d = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
+  const t = time ? `${time.slice(0, 2)}:${time.slice(2, 4)}:${time.slice(4, 6)}` : '00:00:00';
+  const ms = new Date(`${d}T${t}Z`).getTime();
+  return isNaN(ms) ? null : ms;
 };
 
 const calcDuration = (openedAt, closedAt) => {
@@ -53,20 +65,20 @@ const calcDuration = (openedAt, closedAt) => {
 const buildExitInfo = (logicalTrades, rawTrades) => {
   const closing = rawTrades
     .filter(t => (t.open_close_indicator || '').includes('C'))
-    .map(t => ({ ...t, _iso: parseIBKRDate(t.date_time) }))
-    .filter(t => t._iso);
+    .map(t => ({ ...t, _ms: parseTradeTime(t.date_time) }))
+    .filter(t => t._ms != null);
 
   const exitMap = {};
   for (const lt of logicalTrades) {
     if (lt.status !== 'closed') continue;
     const opp = lt.direction === 'LONG' ? 'SELL' : 'BUY';
-    const start = lt.opened_at || '';
-    const end   = lt.closed_at || '';
+    const startMs = lt.opened_at ? new Date(lt.opened_at).getTime() : 0;
+    const endMs   = lt.closed_at ? new Date(lt.closed_at).getTime() : Infinity;
     const matches = closing.filter(t =>
       t.symbol === lt.symbol &&
       t.buy_sell === opp &&
-      t._iso >= start &&
-      t._iso <= end
+      t._ms >= startMs &&
+      t._ms <= endMs
     );
     if (matches.length === 0) continue;
     const totalQty = matches.reduce((s, t) => s + Math.abs(parseFloat(t.quantity) || 0), 0);
@@ -138,8 +150,9 @@ function ExecSubTable({ execs }) {
             </thead>
             <tbody>
               {execs.map((ex, i) => {
-                const iso = ex._iso;
-                const time = iso ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—';
+                const time = ex._ms != null
+                  ? new Date(ex._ms).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                  : '—';
                 const commission = parseFloat(ex.ib_commission);
                 return (
                   <tr key={i} className="border-t border-gray-100 first:border-0">
@@ -213,13 +226,13 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
   const getExecs = (row) => {
     const { conid, openedAt, closedAt } = row;
     if (!conid) return [];
-    const start = openedAt || '';
-    const end = closedAt || new Date().toISOString();
+    const startMs = openedAt ? new Date(openedAt).getTime() : 0;
+    const endMs = closedAt ? new Date(closedAt).getTime() : Date.now();
     return rawTradesWithIso.filter(t =>
       t.conid === conid &&
-      t._iso &&
-      t._iso >= start &&
-      t._iso <= end
+      t._ms != null &&
+      t._ms >= startMs &&
+      t._ms <= endMs
     );
   };
 
@@ -515,7 +528,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
 
   // Pre-parse all raw trade timestamps once; passed to DayBlock for exec drill-down
   const rawTradesWithIso = useMemo(() =>
-    rawTrades.map(t => ({ ...t, _iso: parseIBKRDate(t.date_time) })),
+    rawTrades.map(t => ({ ...t, _ms: parseTradeTime(t.date_time) })),
     [rawTrades]
   );
 
