@@ -87,10 +87,15 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
   )
   const currency = trade.currency || 'USD'
 
-  // Derive actual exit price (approx — does not account for commissions)
+  // Prefer the builder-captured exit price (weighted avg of actual closing
+  // fills). Fall back to the legacy P&L-derived value only for rows inserted
+  // before avg_exit_price existed -- after the next rebuild, everything
+  // shows a real number.
   const closingQty = trade.total_closing_quantity || trade.total_opening_quantity || 0
   let actualExit = null
-  if (trade.avg_entry_price != null && closingQty > 0 && trade.total_realized_pnl != null) {
+  if (trade.avg_exit_price != null) {
+    actualExit = parseFloat(trade.avg_exit_price)
+  } else if (trade.avg_entry_price != null && closingQty > 0 && trade.total_realized_pnl != null) {
     actualExit = trade.direction === 'LONG'
       ? trade.avg_entry_price + (trade.total_realized_pnl / closingQty)
       : trade.avg_entry_price - (trade.total_realized_pnl / closingQty)
