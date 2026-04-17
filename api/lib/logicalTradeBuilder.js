@@ -227,26 +227,71 @@ function buildLogicalTrades(rawTrades, userId) {
         };
         logicalTrades.push(orphan);
       } else {
-        const originalClosingQty = closingQty;
         const closingFxRate = weightedAvgFxRate(group);
+        const coverPrice = weightedAvgPrice(group);
+        let attributedPnl = 0;
+
         while (closingQty > 0 && opens.length > 0) {
           const oldest = opens[0];
           const available = oldest.remaining_quantity;
           const used = Math.min(closingQty, available);
-          const pnlPortion = totalPnl * (used / originalClosingQty);
+
+          // Per-lot P&L from actual prices, not a proportional split of
+          // IBKR's aggregate fifo_pnl_realized. Proportional splitting
+          // mangles this lot's number when the close covers multiple lots
+          // (different entry prices) or exceeds our known opens.
+          const entry = oldest.avg_entry_price || 0;
+          const lotPnl = oldest.direction === 'LONG'
+            ? used * (coverPrice - entry)
+            : used * (entry - coverPrice);
 
           oldest.remaining_quantity -= used;
           oldest.total_closing_quantity = (oldest.total_closing_quantity || 0) + used;
-          oldest.total_realized_pnl = (oldest.total_realized_pnl || 0) + pnlPortion;
+          oldest.total_realized_pnl = (oldest.total_realized_pnl || 0) + lotPnl;
           oldest.fx_rate_to_base = closingFxRate;
           oldest.closed_at = parseDateTime(firstTrade.date_time);
           closingQty -= used;
+          attributedPnl += lotPnl;
 
           if (oldest.remaining_quantity <= 0) {
             oldest.status = 'closed';
             oldest.remaining_quantity = 0;
             opens.shift();
           }
+        }
+
+        // FIFO exhausted but close qty remains — create an orphan for the
+        // leftover. Surfaces data-quality issues (opens outside the 30-day
+        // Flex window, IBKR XML artifacts) as a visible row rather than
+        // silently dropping the quantity. The orphan absorbs whatever P&L
+        // IBKR reported that we could not attribute to known lots, so the
+        // sum across all logical_trades matches IBKR exactly.
+        if (closingQty > 0) {
+          const excessDirection = firstTrade.buy_sell === 'SELL' ? 'LONG' : 'SHORT';
+          const excessPnl = totalPnl - attributedPnl;
+          logicalTrades.push({
+            user_id: userId,
+            account_id: accountId,
+            symbol,
+            conid,
+            asset_category: assetCategory,
+            currency,
+            opening_ib_order_id: firstTrade.ib_order_id,
+            direction: excessDirection,
+            opened_at: parseDateTime(firstTrade.date_time),
+            closed_at: parseDateTime(firstTrade.date_time),
+            status: 'closed',
+            total_opening_quantity: closingQty,
+            total_closing_quantity: closingQty,
+            remaining_quantity: 0,
+            avg_entry_price: coverPrice,
+            total_realized_pnl: excessPnl,
+            fx_rate_to_base: closingFxRate,
+            is_reversal: false,
+            matching_status: 'needs_review',
+            planned_trade_id: null,
+            source_notes: 'Close exceeded known opens — possible sync-window gap or data issue',
+          });
         }
       }
     }
