@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtDate, fmtSymbol } from '../lib/formatters';
@@ -7,6 +7,17 @@ import { computeAdherenceScore } from '../lib/adherenceScore';
 import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
 import TradeInlineDetail from '../components/TradeInlineDetail';
+import PlaybookSheet from '../components/PlaybookSheet';
+
+// Smart Journal sections. Each is a different reflection surface:
+//   taken     — review closed trades (plan adherence, notes, wins/losses)
+//   missed    — log / reflect on setups you saw but did not take (coming soon)
+//   playbooks — define and manage reusable setup patterns
+const SECTIONS = [
+  { key: 'taken',     label: 'Taken' },
+  { key: 'missed',    label: 'Missed' },
+  { key: 'playbooks', label: 'Playbooks' },
+];
 
 // Adherence pill — same color thresholds as the drawer.
 // Both branches use identical padding so the row height doesn't jitter
@@ -95,6 +106,16 @@ export default function JournalScreen({ session }) {
   const [plansMap, setPlansMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
+
+  // Top-level section (Taken / Missed / Playbooks). Initialized from
+  // location.state so HomeScreen can deep-link (e.g. pipeline card → Missed).
+  const [activeSection, setActiveSection] = useState(() => location.state?.activeSection || 'taken');
+
+  // Playbooks section state
+  const [playbooks, setPlaybooks] = useState([]);
+  const [playbooksLoading, setPlaybooksLoading] = useState(false);
+  const [playbookSheetOpen, setPlaybookSheetOpen] = useState(false);
+  const [editingPlaybook, setEditingPlaybook] = useState(null);
   const [shareRow, setShareRow] = useState(null);
   // Inline-expansion: one row open at a time. Click to toggle.
   const [expandedTradeId, setExpandedTradeId] = useState(null);
@@ -119,15 +140,36 @@ export default function JournalScreen({ session }) {
   useEffect(() => {
     const s = location.state;
     if (!s) return;
-    const hasFilter = s.symbolFilter || s.dateRange || s.customFrom || s.customTo || s.activeFilter;
+    const hasFilter = s.symbolFilter || s.dateRange || s.customFrom || s.customTo || s.activeFilter || s.activeSection;
     if (!hasFilter) return;
     if (s.symbolFilter != null) setSymbolQuery(s.symbolFilter);
     if (s.dateRange != null) setDateRange(s.dateRange);
     if (s.customFrom != null) setCustomFrom(s.customFrom);
     if (s.customTo != null) setCustomTo(s.customTo);
     if (s.activeFilter != null) setActiveFilter(s.activeFilter);
+    if (s.activeSection != null) setActiveSection(s.activeSection);
     navigate(location.pathname, { replace: true, state: {} });
   }, [location.state, location.pathname, navigate]);
+
+  // Load playbooks when the section is opened (cached across toggles)
+  const loadPlaybooks = useCallback(async () => {
+    if (!userId) return;
+    setPlaybooksLoading(true);
+    const { data, error } = await supabase
+      .from('playbooks')
+      .select('id, name, description, created_at, updated_at')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+    if (error) {
+      console.error('[journal] load playbooks failed:', error.message);
+    }
+    setPlaybooks(data || []);
+    setPlaybooksLoading(false);
+  }, [userId]);
+
+  useEffect(() => {
+    if (activeSection === 'playbooks') loadPlaybooks();
+  }, [activeSection, loadPlaybooks]);
 
   // Server-side date scoping — push the date range into the Supabase query
   // so we don't fetch the user's entire trade history on every load.
@@ -292,39 +334,125 @@ export default function JournalScreen({ session }) {
 
   const closedTrades = trades.filter(t => t.status === 'closed');
 
-  if (loading) {
-    return (
-      <div className="animate-pulse">
-        <div className="flex items-center justify-between mb-6">
-          <div className="h-7 bg-gray-200 rounded w-32" />
-        </div>
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100">
-              <div className="h-3 bg-gray-200 rounded w-20 mx-auto mb-3" />
-              <div className="h-7 bg-gray-200 rounded w-12 mx-auto" />
-            </div>
-          ))}
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="flex items-center space-x-4 px-5 py-4 border-b border-gray-50 last:border-0">
-              <div className="h-4 bg-gray-200 rounded w-20" />
-              <div className="h-4 bg-gray-200 rounded w-16" />
-              <div className="h-4 bg-gray-200 rounded w-12" />
-              <div className="h-4 bg-gray-200 rounded w-16 ml-auto" />
-            </div>
-          ))}
-        </div>
+  const takenLoadingSkeleton = (
+    <div className="animate-pulse">
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100">
+            <div className="h-3 bg-gray-200 rounded w-20 mx-auto mb-3" />
+            <div className="h-7 bg-gray-200 rounded w-12 mx-auto" />
+          </div>
+        ))}
       </div>
-    );
-  }
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="flex items-center space-x-4 px-5 py-4 border-b border-gray-50 last:border-0">
+            <div className="h-4 bg-gray-200 rounded w-20" />
+            <div className="h-4 bg-gray-200 rounded w-16" />
+            <div className="h-4 bg-gray-200 rounded w-12" />
+            <div className="h-4 bg-gray-200 rounded w-16 ml-auto" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold text-gray-900">Smart Journal</h2>
       </div>
+
+      {/* Section toggle: Taken / Missed / Playbooks */}
+      <div className="inline-flex items-center bg-white border border-gray-200 rounded-xl p-1 mb-6">
+        {SECTIONS.map(s => (
+          <button
+            key={s.key}
+            onClick={() => setActiveSection(s.key)}
+            className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+              activeSection === s.key
+                ? 'bg-blue-600 text-white'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* MISSED — placeholder until the MissedTradeSheet ships */}
+      {activeSection === 'missed' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-10 text-center">
+          <p className="text-sm font-semibold text-gray-700 mb-1">Missed trades coming next</p>
+          <p className="text-xs text-gray-400 max-w-sm mx-auto">
+            Log setups you spotted but didn&apos;t take. Tag them to a playbook to see what the missed ones
+            would have done — and whether you tend to pass on winners.
+          </p>
+        </div>
+      )}
+
+      {/* PLAYBOOKS — CRUD */}
+      {activeSection === 'playbooks' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-gray-500">
+              {playbooks.length === 0 ? 'No playbooks yet.' : `${playbooks.length} playbook${playbooks.length !== 1 ? 's' : ''}`}
+            </p>
+            <button
+              onClick={() => { setEditingPlaybook(null); setPlaybookSheetOpen(true); }}
+              className="bg-blue-600 text-white font-medium text-sm px-4 py-2 rounded-lg hover:bg-blue-700"
+            >
+              + New playbook
+            </button>
+          </div>
+
+          {playbooksLoading ? (
+            <div className="animate-pulse space-y-3">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                  <div className="h-4 bg-gray-200 rounded w-40 mb-2" />
+                  <div className="h-3 bg-gray-100 rounded w-full" />
+                </div>
+              ))}
+            </div>
+          ) : playbooks.length === 0 ? (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-10 text-center">
+              <p className="text-sm font-semibold text-gray-700 mb-1">Define your first setup</p>
+              <p className="text-xs text-gray-400 max-w-md mx-auto mb-4">
+                A playbook is a named, reusable pattern you want to track — e.g. &quot;MA30 Retracement Long&quot;.
+                Tag plans and missed trades to a playbook and watch the stats accumulate over time.
+              </p>
+              <button
+                onClick={() => { setEditingPlaybook(null); setPlaybookSheetOpen(true); }}
+                className="bg-blue-600 text-white font-medium text-sm px-4 py-2 rounded-lg hover:bg-blue-700"
+              >
+                + New playbook
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {playbooks.map(pb => (
+                <button
+                  key={pb.id}
+                  onClick={() => { setEditingPlaybook(pb); setPlaybookSheetOpen(true); }}
+                  className="block w-full text-left bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-blue-200 hover:shadow-md transition-all"
+                >
+                  <p className="text-sm font-semibold text-gray-900">{pb.name}</p>
+                  {pb.description && (
+                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">{pb.description}</p>
+                  )}
+                  <p className="text-[11px] text-gray-400 mt-2">
+                    Updated {fmtDate(pb.updated_at)}
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAKEN — the original Smart Journal content */}
+      {activeSection === 'taken' && (loading ? takenLoadingSkeleton : (<>
 
       {(() => {
         // Cards reflect the journal workflow: how many trades, how far along on
@@ -678,6 +806,7 @@ export default function JournalScreen({ session }) {
           </table>
         </div>
       )}
+      </>))}
 
       {shareRow && (() => {
         const plan = plansMap[shareRow.planned_trade_id];
@@ -700,6 +829,14 @@ export default function JournalScreen({ session }) {
           />
         );
       })()}
+
+      <PlaybookSheet
+        isOpen={playbookSheetOpen}
+        onClose={() => { setPlaybookSheetOpen(false); setEditingPlaybook(null); }}
+        session={session}
+        playbook={editingPlaybook}
+        onSaved={loadPlaybooks}
+      />
     </div>
   );
 }
