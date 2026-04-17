@@ -140,7 +140,7 @@ Current state. ✅ = fixed, ⚠️ = open, 🔴 = critical.
 |---|---|---|
 | M1 | P&L conversion inconsistent across screens: HomeScreen + ReviewSheet use raw, Journal + Performance use `pnlBase()` | multiple |
 | M2 | Direction case inconsistent in UI: HomeScreen lowercases (`long`/`short`), Journal renders as-is (`LONG`/`SHORT`) | `HomeScreen.jsx`, `JournalScreen.jsx` |
-| M3 | `logical_trades.opened_at` / `closed_at` are `varchar(20)`, not `timestamptz`. Awkward for date math; forces string slicing. | DB schema |
+| M3 | ~~`logical_trades.opened_at` / `closed_at` are `varchar(20)`~~ — migrated to `timestamptz` on 2026-04-17. `trades.date_time` is still `varchar(20)` pending a coordinated code+migration ship. | DB schema |
 | M4 | `baseCurrency` fetched independently by `DailyView`, `Performance`, `Journal` on every mount — 3 redundant queries | 3 screens — candidate for a context provider |
 | M5 | No Esc handler on `Sidebar`, `ReviewSheet`, `WelcomeModal` | 3 components |
 | M6 | No schema source of truth checked in. Migrations in `supabase/migrations/` only contain RLS + cleanups; `planned_trades` and `logical_trades` were created via Supabase UI and drift with the code. | `supabase/migrations/` |
@@ -230,7 +230,7 @@ Safe `.select('*')` queries exist in `App.jsx`, `PlansScreen.jsx`, `HomeScreen.j
 **Dev notes for future me:**
 - When adding a new column that gets queried, search for `.select('...')` calls with explicit column lists and update them — that's how H1 slipped through.
 - When inserting into `planned_trades`, remember `strategy` is NOT NULL.
-- `logical_trades.opened_at` / `closed_at` are varchar(20) — format as `YYYY-MM-DDTHH:MM:SS` (19 chars).
+- `logical_trades.opened_at` / `closed_at` are `timestamptz` (as of 2026-04-17). Any ISO 8601 string is accepted; `.toISOString()` works. `trades.date_time` is still `varchar(20)` in IBKR compact format (`YYYYMMDD;HHMMSS`) — do not change without also updating `api/sync.js`.
 - When writing a seed SQL script, check `information_schema.columns` first; don't trust `api/seed-demo.js` as a schema reference (it's stale).
 
 **Estimated completion:** ~75% to usable prototype.
