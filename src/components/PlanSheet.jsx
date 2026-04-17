@@ -156,20 +156,37 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
     return () => clearTimeout(id);
   }, [symbol]);
 
-  // Search securities table for autocomplete
+  // Search securities table for autocomplete. Matches:
+  //   - symbol prefix ("NVD" -> NVDA, NVDM, ...)
+  //   - company_name substring ("Apple" -> AAPL, "Tesla" -> TSLA)
+  // Prefix matches on symbol are ranked first.
   useEffect(() => {
     if (!debouncedSymbol || debouncedSymbol.length < 2) {
       setSecSuggestions([]);
       return;
     }
+    const q = debouncedSymbol;
     supabase
       .from('securities')
-      .select('conid, symbol, asset_category, description, currency')
-      .ilike('symbol', `${debouncedSymbol}%`)
-      .limit(8)
+      .select('conid, symbol, asset_category, description, currency, company_name')
+      .or(`symbol.ilike.${q}%,company_name.ilike.%${q}%`)
+      .limit(12)
       .then(({ data }) => {
-        setSecSuggestions(data || []);
-        if (data?.length > 0) setSecSuggestOpen(true);
+        const rows = data || [];
+        // Client-side rank: exact symbol match > symbol prefix > company name hit
+        const ranked = rows.slice().sort((a, b) => {
+          const score = (s) => {
+            const sym = (s.symbol || '').toUpperCase();
+            const name = (s.company_name || '').toUpperCase();
+            if (sym === q) return 0;
+            if (sym.startsWith(q)) return 1;
+            if (name.includes(q)) return 2;
+            return 3;
+          };
+          return score(a) - score(b);
+        });
+        setSecSuggestions(ranked);
+        if (ranked.length > 0) setSecSuggestOpen(true);
       });
   }, [debouncedSymbol]);
 
@@ -350,13 +367,18 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                           onMouseDown={e => { e.preventDefault(); handleSelectSecurity(sec); }}
                           className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 border-b border-gray-50 last:border-0"
                         >
-                          <span className="text-sm font-semibold text-gray-900">{sec.symbol}</span>
-                          <span className="ml-2 text-xs text-gray-400">{sec.asset_category}</span>
-                          {sec.currency && (
-                            <span className="ml-1.5 text-xs text-gray-400">{sec.currency}</span>
-                          )}
-                          {sec.description && (
-                            <p className="text-xs text-gray-400 truncate">{sec.description}</p>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-sm font-semibold text-gray-900">{sec.symbol}</span>
+                            <span className="text-xs text-gray-400">{sec.asset_category}</span>
+                            {sec.currency && (
+                              <span className="text-xs text-gray-400">{sec.currency}</span>
+                            )}
+                            {sec.company_name && (
+                              <span className="text-xs text-gray-700 truncate">{sec.company_name}</span>
+                            )}
+                          </div>
+                          {sec.description && sec.description !== sec.company_name && (
+                            <p className="text-xs text-gray-400 truncate mt-0.5">{sec.description}</p>
                           )}
                         </button>
                       ))}
