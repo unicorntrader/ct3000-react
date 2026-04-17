@@ -48,6 +48,11 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   const [selectedSecurity, setSelectedSecurity] = useState(null);
   const [planCurrency, setPlanCurrency] = useState(null);
 
+  // Tickers the user has touched before (past trades + past/current plans).
+  // Fetched once on open; used to boost those tickers to the top of search
+  // results so "A" surfaces the user's AAPL before random AA* tickers.
+  const [userSymbols, setUserSymbols] = useState(() => new Set());
+
   // Match protection — count how many trades reference this plan
   // Edit warns the user, delete is blocked, until matches are reset
   const [matchedCount, setMatchedCount] = useState(0);
@@ -71,6 +76,23 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
       .eq('user_id', session.user.id)
       .single()
       .then(({ data }) => { if (data?.base_currency) setBaseCurrency(data.base_currency); });
+  }, [isOpen, session?.user?.id]);
+
+  // Fetch the user's relevant ticker set (past trades + past/current plans)
+  // so we can rank those to the top in autocomplete. Cheap: indexed by
+  // user_id on both tables. Runs once per sheet open.
+  useEffect(() => {
+    if (!isOpen || !session?.user?.id) return;
+    const uid = session.user.id;
+    Promise.all([
+      supabase.from('logical_trades').select('symbol').eq('user_id', uid),
+      supabase.from('planned_trades').select('symbol').eq('user_id', uid),
+    ]).then(([lt, pt]) => {
+      const set = new Set();
+      for (const r of (lt.data || [])) if (r.symbol) set.add(r.symbol.toUpperCase());
+      for (const r of (pt.data || [])) if (r.symbol) set.add(r.symbol.toUpperCase());
+      setUserSymbols(set);
+    });
   }, [isOpen, session?.user?.id]);
 
   // Populate form when sheet opens
@@ -157,38 +179,69 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   }, [symbol]);
 
   // Search securities table for autocomplete. Matches:
-  //   - symbol prefix ("NVD" -> NVDA, NVDM, ...)
+  //   - symbol prefix ("N" -> NVDA, "NV" -> NVDA, NVDM, ...)
   //   - company_name substring ("Apple" -> AAPL, "Tesla" -> TSLA)
-  // Prefix matches on symbol are ranked first.
+  //
+  // Ranking (best to worst):
+  //   1. User-relevant + exact symbol match
+  //   2. User-relevant + symbol prefix
+  //   3. User-relevant + company_name hit
+  //   4. Other + exact symbol match
+  //   5. Other + symbol prefix
+  //   6. Other + company_name hit
   useEffect(() => {
-    if (!debouncedSymbol || debouncedSymbol.length < 2) {
+    if (!debouncedSymbol) {
       setSecSuggestions([]);
       return;
     }
     const q = debouncedSymbol;
-    supabase
-      .from('securities')
-      .select('conid, symbol, asset_category, description, currency, company_name')
-      .or(`symbol.ilike.${q}%,company_name.ilike.%${q}%`)
-      .limit(12)
-      .then(({ data }) => {
-        const rows = data || [];
-        // Client-side rank: exact symbol match > symbol prefix > company name hit
-        const ranked = rows.slice().sort((a, b) => {
-          const score = (s) => {
-            const sym = (s.symbol || '').toUpperCase();
-            const name = (s.company_name || '').toUpperCase();
-            if (sym === q) return 0;
-            if (sym.startsWith(q)) return 1;
-            if (name.includes(q)) return 2;
-            return 3;
-          };
-          return score(a) - score(b);
-        });
-        setSecSuggestions(ranked);
-        if (ranked.length > 0) setSecSuggestOpen(true);
-      });
-  }, [debouncedSymbol]);
+    const orFilter = `symbol.ilike.${q}%,company_name.ilike.%${q}%`;
+
+    // Two parallel queries so user-relevant matches aren't crowded out of
+    // the LIMIT by alphabetical neighbors in the full table.
+    const userList = Array.from(userSymbols);
+    const userQ = userList.length > 0
+      ? supabase
+          .from('securities')
+          .select('conid, symbol, asset_category, description, currency, company_name')
+          .or(orFilter)
+          .in('symbol', userList)
+          .limit(8)
+      : Promise.resolve({ data: [] });
+
+    Promise.all([
+      userQ,
+      supabase
+        .from('securities')
+        .select('conid, symbol, asset_category, description, currency, company_name')
+        .or(orFilter)
+        .limit(12),
+    ]).then(([userRes, allRes]) => {
+      const userRows = (userRes.data || []).map(r => ({ ...r, _userRelevant: true }));
+      const allRows  = (allRes.data  || []).map(r => ({ ...r, _userRelevant: userSymbols.has((r.symbol || '').toUpperCase()) }));
+      // Dedupe by conid, preferring the user-flagged copy
+      const byConid = new Map();
+      for (const r of [...userRows, ...allRows]) {
+        if (!byConid.has(r.conid)) byConid.set(r.conid, r);
+      }
+      const merged = Array.from(byConid.values());
+
+      const rank = (s) => {
+        const sym = (s.symbol || '').toUpperCase();
+        const name = (s.company_name || '').toUpperCase();
+        const userBonus = s._userRelevant ? 0 : 10;
+        if (sym === q)           return userBonus + 0;
+        if (sym.startsWith(q))   return userBonus + 1;
+        if (name.includes(q))    return userBonus + 2;
+        return userBonus + 3;
+      };
+      merged.sort((a, b) => rank(a) - rank(b));
+
+      const limited = merged.slice(0, 12);
+      setSecSuggestions(limited);
+      if (limited.length > 0) setSecSuggestOpen(true);
+    });
+  }, [debouncedSymbol, userSymbols]);
 
   // When user picks a security from autocomplete (or exact match on debounce)
   const handleSelectSecurity = (sec) => {
@@ -197,6 +250,20 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
     setPlanCurrency(sec.currency || null);
     setSelectedSecurity(sec);
     setSecSuggestOpen(false);
+  };
+
+  // Clear the ticker and every ticker-dependent field — restart the planner
+  // from a blank form without having to close and reopen the sheet. Per user
+  // intent ("restart the trade planner") this wipes entry/target/stop/qty
+  // and thesis too, since those are ticker-specific.
+  const handleClearSymbol = () => {
+    setSymbol(''); setDebouncedSymbol('');
+    setEntry(''); setTarget(''); setStop(''); setQty('');
+    setStrategy(''); setThesis('');
+    setSecSuggestions([]); setSecSuggestOpen(false);
+    setSelectedSecurity(null); setPlanCurrency(null);
+    setHistTrades([]); setHistExpanded(false);
+    setError(null);
   };
 
   // Auto-match on exact symbol (user typed full ticker and tabbed out)
@@ -355,8 +422,20 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                     onChange={ev => { setSymbol(ev.target.value); setSecSuggestOpen(true); }}
                     onFocus={() => { if (secSuggestions.length > 0) setSecSuggestOpen(true); }}
                     onBlur={() => setTimeout(() => setSecSuggestOpen(false), 150)}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 uppercase"
+                    className="w-full border border-gray-200 rounded-xl pl-4 pr-10 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 uppercase"
                   />
+                  {symbol && (
+                    <button
+                      type="button"
+                      onClick={handleClearSymbol}
+                      aria-label="Clear ticker"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
                   {/* Autocomplete dropdown from securities table */}
                   {secSuggestOpen && secSuggestions.length > 0 && (
                     <div className="absolute z-20 mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-100 max-h-56 overflow-y-auto">
@@ -369,6 +448,11 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                         >
                           <div className="flex items-baseline gap-2">
                             <span className="text-sm font-semibold text-gray-900">{sec.symbol}</span>
+                            {sec._userRelevant && (
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                                Recent
+                              </span>
+                            )}
                             <span className="text-xs text-gray-400">{sec.asset_category}</span>
                             {sec.currency && (
                               <span className="text-xs text-gray-400">{sec.currency}</span>
