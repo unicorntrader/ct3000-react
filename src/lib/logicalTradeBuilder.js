@@ -5,8 +5,16 @@
  */
 
 export function buildLogicalTrades(rawTrades, userId) {
+  // Step 0 — Drop rows that are not position-taking trades.
+  // asset_category === 'CASH' is IBKR's marker for pure currency conversion
+  // (e.g. buying JPY with EUR to settle a trade). They have no
+  // open_close_indicator and net_cash = 0; if we let them through, they
+  // land as phantom "open" positions in logical_trades.
+  // FXCFD is kept because that is actual FX speculation with positions.
+  const filtered = rawTrades.filter(t => t.asset_category !== 'CASH');
+
   // Step 1 — Sort by date_time ASC
-  const sorted = [...rawTrades].sort((a, b) => {
+  const sorted = [...filtered].sort((a, b) => {
     const toMs = (dt) => {
       if (!dt) return 0;
       // Format: "20260408;100300"
