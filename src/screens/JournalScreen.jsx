@@ -665,6 +665,7 @@ export default function JournalScreen({ session }) {
                 <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                 <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
                 <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Direction</th>
+                <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
                 <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">P&L</th>
                 <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">R</th>
                 <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Adh</th>
@@ -734,6 +735,9 @@ export default function JournalScreen({ session }) {
                         {fmtSymbol(trade)}
                       </td>
                       <td className="hidden sm:table-cell px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
+                      <td className="hidden sm:table-cell px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
+                        <PrivacyValue value={qty > 0 ? qty.toLocaleString() : '—'} />
+                      </td>
                       <td className={`px-4 sm:px-6 py-4 text-sm font-semibold whitespace-nowrap ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>
                         {isOpen ? '—' : (
                           <PrivacyValue value={
@@ -800,7 +804,7 @@ export default function JournalScreen({ session }) {
                     </tr>
                     {isExpanded && (
                       <tr className="bg-gray-50">
-                        <td colSpan={11} className="p-0">
+                        <td colSpan={12} className="p-0">
                           <TradeInlineDetail
                             trade={trade}
                             plan={plan}
