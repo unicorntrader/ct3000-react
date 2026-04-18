@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CT3000 — trade review chart preview</title>
+  <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f3f4f6;
+      padding: 32px;
+      color: #111827;
+    }
+    .frame {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .symbol {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .side {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #ecfdf5;
+      color: #047857;
+      font-size: 11px;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+    .loss-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #ecfdf5;
+      color: #047857;
+      font-size: 11px;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+    .meta {
+      font-size: 12px;
+      color: #6b7280;
+      margin-bottom: 16px;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stat {
+      background: #f9fafb;
+      border: 1px solid #f3f4f6;
+      border-radius: 12px;
+      padding: 10px 14px;
+    }
+    .stat-label {
+      font-size: 11px;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-bottom: 2px;
+    }
+    .stat-value {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .stat-value.pos { color: #059669; }
+    .chart-wrap {
+      position: relative;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      overflow: hidden;
+      background: white;
+    }
+    #chart { width: 100%; height: 420px; }
+    .chart-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      border-bottom: 1px solid #f3f4f6;
+      background: #f9fafb;
+    }
+    .tf-group { display: flex; gap: 4px; }
+    .tf-btn {
+      background: white;
+      border: 1px solid #e5e7eb;
+      color: #6b7280;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .tf-btn.active {
+      background: #2563eb;
+      border-color: #2563eb;
+      color: white;
+    }
+    .actions { display: flex; gap: 8px; }
+    .action-btn {
+      background: white;
+      border: 1px solid #e5e7eb;
+      color: #374151;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .action-btn:hover { background: #f3f4f6; }
+    .legend {
+      display: flex;
+      gap: 16px;
+      padding: 8px 14px;
+      background: #fafafa;
+      border-top: 1px solid #f3f4f6;
+      font-size: 11px;
+      color: #6b7280;
+      flex-wrap: wrap;
+    }
+    .swatch {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    .swatch.entry { background: #10b981; border-radius: 50%; }
+    .swatch.exit  { background: #ef4444; border-radius: 50%; }
+    .swatch.plan-entry { background: #2563eb; }
+    .swatch.plan-target { background: #059669; }
+    .swatch.plan-stop { background: #dc2626; }
+    .swatch.hold { background: rgba(37, 99, 235, 0.12); border: 1px dashed rgba(37, 99, 235, 0.4); }
+    .watermark {
+      position: absolute;
+      right: 18px;
+      bottom: 52px;
+      opacity: 0.32;
+      pointer-events: none;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: #1e40af;
+      text-shadow: 0 1px 0 rgba(255,255,255,0.8);
+    }
+    .watermark .brand { display: block; line-height: 1; }
+    .watermark .tag { display: block; font-size: 9px; letter-spacing: 0.16em; font-weight: 500; opacity: 0.8; margin-top: 2px; }
+    .preview-tag {
+      display: inline-block;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-left: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="header">
+      <div>
+        <span class="symbol">NVDA</span>
+        <span class="side">LONG</span>
+        <span class="preview-tag">preview · fake data</span>
+      </div>
+      <div style="font-size:12px;color:#6b7280;">Apr 2 → Apr 17 · 100 shares</div>
+    </div>
+    <div class="meta">Reviewing trade · logical_trade_id 317</div>
+
+    <div class="stats">
+      <div class="stat"><div class="stat-label">Entry</div><div class="stat-value">$118.33</div></div>
+      <div class="stat"><div class="stat-label">Exit</div><div class="stat-value">$132.40</div></div>
+      <div class="stat"><div class="stat-label">P&amp;L</div><div class="stat-value pos">+$1,407 / +11.9%</div></div>
+      <div class="stat"><div class="stat-label">R</div><div class="stat-value">+2.0R</div></div>
+    </div>
+
+    <div class="chart-wrap">
+      <div class="chart-toolbar">
+        <div class="tf-group">
+          <button class="tf-btn">5m</button>
+          <button class="tf-btn">15m</button>
+          <button class="tf-btn">1h</button>
+          <button class="tf-btn active">1D</button>
+        </div>
+        <div class="actions">
+          <button class="action-btn">✏️ Annotate</button>
+          <button class="action-btn">📷 Save screenshot</button>
+        </div>
+      </div>
+      <div id="chart"></div>
+      <div class="watermark">
+        <span class="brand">CT3000</span>
+        <span class="tag">PLAN YOUR TRADE · TRADE YOUR PLAN</span>
+      </div>
+      <div class="legend">
+        <span><span class="swatch entry"></span>Entry fill</span>
+        <span><span class="swatch exit"></span>Exit fill</span>
+        <span><span class="swatch plan-entry"></span>Planned entry</span>
+        <span><span class="swatch plan-target"></span>Planned target</span>
+        <span><span class="swatch plan-stop"></span>Planned stop</span>
+        <span><span class="swatch hold"></span>Hold window</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Synthetic OHLC data: a stock trending up over ~40 sessions ──
+    function generateData() {
+      const bars = [];
+      let price = 105;
+      const startTs = Math.floor(new Date('2026-03-01').getTime() / 1000);
+      const day = 24 * 60 * 60;
+      for (let i = 0; i < 40; i++) {
+        const drift = 0.7;                                    // daily upward drift
+        const noise = (Math.sin(i * 0.8) + Math.cos(i * 1.3)) * 0.8;
+        const open = price;
+        const close = price + drift + noise;
+        const high = Math.max(open, close) + Math.abs(Math.sin(i * 2)) * 0.9;
+        const low = Math.min(open, close) - Math.abs(Math.cos(i * 1.7)) * 0.8;
+        bars.push({
+          time: startTs + i * day,
+          open: +open.toFixed(2),
+          high: +high.toFixed(2),
+          low: +low.toFixed(2),
+          close: +close.toFixed(2),
+        });
+        price = close;
+      }
+      return bars;
+    }
+
+    const data = generateData();
+
+    // Entry on bar 16, exit on bar 30 (where price actually printed)
+    const entryBar = data[16];
+    const exitBar  = data[30];
+    const entryPrice = 118.33;
+    const exitPrice = 132.40;
+
+    const chart = LightweightCharts.createChart(document.getElementById('chart'), {
+      height: 420,
+      layout: {
+        background: { type: 'solid', color: 'white' },
+        textColor: '#374151',
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      },
+      grid: {
+        vertLines: { color: '#f3f4f6' },
+        horzLines: { color: '#f3f4f6' },
+      },
+      rightPriceScale: {
+        borderColor: '#e5e7eb',
+        scaleMargins: { top: 0.1, bottom: 0.1 },
+      },
+      timeScale: { borderColor: '#e5e7eb', timeVisible: false },
+      crosshair: { mode: 1 },
+    });
+
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: '#10b981',
+      downColor: '#ef4444',
+      borderUpColor: '#10b981',
+      borderDownColor: '#ef4444',
+      wickUpColor: '#10b981',
+      wickDownColor: '#ef4444',
+    });
+    candleSeries.setData(data);
+
+    // ── Planned levels (horizontal price lines) ──
+    candleSeries.createPriceLine({
+      price: entryPrice,
+      color: '#2563eb',
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: 'Plan entry 118',
+    });
+    candleSeries.createPriceLine({
+      price: 140,
+      color: '#059669',
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: 'Target 140',
+    });
+    candleSeries.createPriceLine({
+      price: 111,
+      color: '#dc2626',
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: 'Stop 111',
+    });
+
+    // ── Entry / Exit markers ──
+    candleSeries.setMarkers([
+      {
+        time: entryBar.time,
+        position: 'belowBar',
+        color: '#10b981',
+        shape: 'arrowUp',
+        text: `BUY ${entryPrice}`,
+        size: 2,
+      },
+      {
+        time: exitBar.time,
+        position: 'aboveBar',
+        color: '#ef4444',
+        shape: 'arrowDown',
+        text: `SELL ${exitPrice}`,
+        size: 2,
+      },
+    ]);
+
+    // ── Shaded hold window (using a second series rendered as area) ──
+    const holdSeries = chart.addAreaSeries({
+      topColor: 'rgba(37, 99, 235, 0.18)',
+      bottomColor: 'rgba(37, 99, 235, 0.02)',
+      lineColor: 'rgba(37, 99, 235, 0.0)',
+      lineWidth: 0,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    // Fill between entryBar.time and exitBar.time, outside that range y=null
+    const holdData = data.map(bar => {
+      if (bar.time >= entryBar.time && bar.time <= exitBar.time) {
+        return { time: bar.time, value: bar.high + 2 };
+      }
+      return { time: bar.time, value: null };
+    });
+    holdSeries.setData(holdData);
+
+    chart.timeScale().fitContent();
+  </script>
+</body>
+</html>
