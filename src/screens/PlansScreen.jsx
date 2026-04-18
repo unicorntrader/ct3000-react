@@ -16,6 +16,10 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
   // best available fallback — at least it shows the user's own symbol, not '$'.
   const baseCurrency = useBaseCurrency();
   const [plans, setPlans] = useState([]);
+  // Map<plan.id, number> — count of logical_trades referencing this plan.
+  // Plans with matchedCount > 0 are locked for edit: the whole card becomes
+  // non-clickable and shows a tooltip explaining why.
+  const [matchedCounts, setMatchedCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dirFilter, setDirFilter] = useState('All');
@@ -24,12 +28,24 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
   useEffect(() => {
     if (!userId) return;
     const load = async () => {
-      const { data } = await supabase
-        .from('planned_trades')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-      setPlans(data || []);
+      const [plansRes, matchedRes] = await Promise.all([
+        supabase
+          .from('planned_trades')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('logical_trades')
+          .select('planned_trade_id')
+          .eq('user_id', userId)
+          .not('planned_trade_id', 'is', null),
+      ]);
+      setPlans(plansRes.data || []);
+      const counts = {};
+      for (const row of (matchedRes.data || [])) {
+        counts[row.planned_trade_id] = (counts[row.planned_trade_id] || 0) + 1;
+      }
+      setMatchedCounts(counts);
       setLoading(false);
     };
     load();
@@ -152,9 +168,23 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
             const risk = computeRisk(plan);
             const reward = computeReward(plan);
             const qty = plan.planned_quantity;
+            const matchedCount = matchedCounts[plan.id] || 0;
+            const locked = matchedCount > 0;
+            const lockedTitle = locked
+              ? `Locked — this plan is matched to ${matchedCount} trade${matchedCount !== 1 ? 's' : ''}. Unlink the trade${matchedCount !== 1 ? 's' : ''} from the Smart Journal before editing.`
+              : undefined;
 
             return (
-              <div key={plan.id} onClick={() => onEditPlan?.(plan)} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 cursor-pointer hover:border-blue-200 hover:shadow-md transition-all">
+              <div
+                key={plan.id}
+                onClick={locked ? undefined : () => onEditPlan?.(plan)}
+                title={lockedTitle}
+                className={`bg-white rounded-xl shadow-sm border border-gray-100 p-5 transition-all ${
+                  locked
+                    ? 'opacity-60 cursor-not-allowed'
+                    : 'cursor-pointer hover:border-blue-200 hover:shadow-md'
+                }`}
+              >
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <div className="flex items-center space-x-3 mb-1">
