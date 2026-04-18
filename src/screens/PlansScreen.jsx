@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPrice, fmtPnl, fmtDate, fmtDateLong } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
@@ -21,6 +22,9 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
   // a "matched with X on Y" line on the card when the user toggles to Matched.
   const [matchedByPlan, setMatchedByPlan] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  // Bump to force the load useEffect to re-run (retry button).
+  const [reloadKey, setReloadKey] = useState(0);
   const [search, setSearch] = useState('');
   const [dirFilter, setDirFilter] = useState('All');
   // Two-state toggle: the Plans screen is primarily the user's "what am I still
@@ -31,31 +35,48 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
   const userId = session?.user?.id;
   useEffect(() => {
     if (!userId) return;
+    setLoading(true);
+    setLoadError(null);
     const load = async () => {
-      const [plansRes, matchedRes] = await Promise.all([
-        supabase
-          .from('planned_trades')
-          .select('*')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('logical_trades')
-          .select('planned_trade_id, symbol, opened_at')
-          .eq('user_id', userId)
-          .not('planned_trade_id', 'is', null)
-          .order('opened_at', { ascending: false }),
-      ]);
-      setPlans(plansRes.data || []);
-      const byPlan = {};
-      for (const row of (matchedRes.data || [])) {
-        if (!byPlan[row.planned_trade_id]) byPlan[row.planned_trade_id] = [];
-        byPlan[row.planned_trade_id].push({ symbol: row.symbol, opened_at: row.opened_at });
+      try {
+        const [plansRes, matchedRes] = await Promise.all([
+          supabase
+            .from('planned_trades')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('logical_trades')
+            .select('planned_trade_id, symbol, opened_at')
+            .eq('user_id', userId)
+            .not('planned_trade_id', 'is', null)
+            .order('opened_at', { ascending: false }),
+        ]);
+        // Supabase returns error as a field on the resolved response — surface
+        // it explicitly so we don't render an empty list on a half-failed load.
+        if (plansRes.error) throw plansRes.error;
+        if (matchedRes.error) throw matchedRes.error;
+        setPlans(plansRes.data || []);
+        const byPlan = {};
+        for (const row of (matchedRes.data || [])) {
+          if (!byPlan[row.planned_trade_id]) byPlan[row.planned_trade_id] = [];
+          byPlan[row.planned_trade_id].push({ symbol: row.symbol, opened_at: row.opened_at });
+        }
+        setMatchedByPlan(byPlan);
+      } catch (err) {
+        console.error('[plans] load failed:', err?.message || err);
+        Sentry.withScope((scope) => {
+          scope.setTag('screen', 'plans');
+          scope.setTag('step', 'load');
+          Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+        });
+        setLoadError(err?.message || 'Could not load plans.');
+      } finally {
+        setLoading(false);
       }
-      setMatchedByPlan(byPlan);
-      setLoading(false);
     };
     load();
-  }, [userId, refreshKey]);
+  }, [userId, refreshKey, reloadKey]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toUpperCase();
@@ -93,6 +114,26 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
     if (entry == null || target == null || qty == null) return null;
     return (target - entry) * qty;
   };
+
+  if (loadError) {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-900">Plans</h2>
+        </div>
+        <div className="bg-red-50 border border-red-100 rounded-xl p-5">
+          <p className="text-sm font-semibold text-red-800 mb-1">Could not load plans</p>
+          <p className="text-sm text-red-600 mb-4">{loadError}</p>
+          <button
+            onClick={() => setReloadKey(k => k + 1)}
+            className="bg-red-600 text-white font-medium text-sm px-4 py-2 rounded-lg hover:bg-red-700"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
