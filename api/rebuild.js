@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { buildLogicalTrades } = require('./lib/logicalTradeBuilder');
 const { computeAdherenceScore } = require('./lib/adherenceScore');
+const { captureServerError } = require('./lib/sentry');
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://ct3000-react.vercel.app';
 
@@ -89,6 +90,7 @@ module.exports = async function handler(req, res) {
 
   const userId = user.id;
 
+  try {
   const { data: allTrades, error: fetchError } = await supabaseAdmin
     .from('trades')
     .select('*')
@@ -96,6 +98,7 @@ module.exports = async function handler(req, res) {
     .order('date_time', { ascending: true });
 
   if (fetchError) {
+    await captureServerError(fetchError, { userId, step: 'fetch-trades', route: 'rebuild' });
     return res.status(500).json({ success: false, error: `Could not fetch trades: ${fetchError.message}` });
   }
 
@@ -189,6 +192,7 @@ module.exports = async function handler(req, res) {
     .eq('user_id', userId);
 
   if (deleteError) {
+    await captureServerError(deleteError, { userId, step: 'delete-old-logical', route: 'rebuild' });
     return res.status(500).json({ success: false, error: `Could not clear old logical trades: ${deleteError.message}` });
   }
 
@@ -197,10 +201,16 @@ module.exports = async function handler(req, res) {
     .insert(logical);
 
   if (insertError) {
+    await captureServerError(insertError, { userId, step: 'insert-new-logical', route: 'rebuild' });
     return res.status(500).json({ success: false, error: insertError.message });
   }
 
   console.log(`[rebuild] userId=${userId} — inserted ${logical.length} logical trades`);
 
   return res.status(200).json({ success: true, count: logical.length, warnings });
+  } catch (err) {
+    console.error('[rebuild] unhandled:', err?.message || err);
+    await captureServerError(err, { userId, step: 'unhandled', route: 'rebuild' });
+    return res.status(500).json({ success: false, error: err?.message || 'Rebuild failed' });
+  }
 };

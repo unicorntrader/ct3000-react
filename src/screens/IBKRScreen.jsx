@@ -1,5 +1,22 @@
 import React, { useState, useEffect } from 'react';
+import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
+
+// Wrap a sync/rebuild step's error with a "which step failed" tag so the
+// Sentry ticket and the UI both say something actionable. Also swallows
+// the "was this a Supabase error object vs a thrown Error" distinction.
+function reportSyncError(step, err) {
+  const message = err?.message || String(err);
+  Sentry.withScope((scope) => {
+    scope.setTag('flow', 'ibkr-sync');
+    scope.setTag('sync_step', step);
+    if (err && typeof err === 'object') {
+      scope.setContext('supabase_error', { code: err.code, details: err.details, hint: err.hint });
+    }
+    Sentry.captureException(err instanceof Error ? err : new Error(`[${step}] ${message}`));
+  });
+  return message;
+}
 
 export default function IBKRScreen({ session }) {
   const [connected, setConnected] = useState(false);
@@ -140,9 +157,15 @@ export default function IBKRScreen({ session }) {
 
       let result;
       try { result = JSON.parse(rawText); }
-      catch { setSyncError(`HTTP ${res.status} — non-JSON response: ${rawText.slice(0, 200)}`); return; }
+      catch {
+        const msg = `HTTP ${res.status} — non-JSON response: ${rawText.slice(0, 200)}`;
+        reportSyncError('flex-fetch', new Error(msg));
+        setSyncError(msg);
+        return;
+      }
 
       if (!result.success) {
+        reportSyncError('flex-fetch', new Error(result.error || `HTTP ${res.status}`));
         setSyncError(`HTTP ${res.status} — ${result.error}`);
         return;
       }
@@ -185,7 +208,8 @@ export default function IBKRScreen({ session }) {
           .upsert(tradesToUpsert, { onConflict: 'user_id,ib_exec_id' });
 
         if (tradesError) {
-          setSyncError(`Trades save failed: ${tradesError.message}`);
+          const msg = reportSyncError('trades-upsert', tradesError);
+          setSyncError(`Trades save failed: ${msg}`);
           return;
         }
       }
@@ -214,7 +238,8 @@ export default function IBKRScreen({ session }) {
           .insert(positionsToInsert);
 
         if (positionsError) {
-          setSyncError(`Positions save failed: ${positionsError.message}`);
+          const msg = reportSyncError('positions-insert', positionsError);
+          setSyncError(`Positions save failed: ${msg}`);
           return;
         }
       }
@@ -233,17 +258,26 @@ export default function IBKRScreen({ session }) {
         .eq('user_id', userId);
 
       if (credUpdateError) {
-        console.error('Failed to update credentials after sync:', credUpdateError.message);
-        setSyncError(`Credentials update failed: ${credUpdateError.message}`);
+        const msg = reportSyncError('credentials-update', credUpdateError);
+        console.error('Failed to update credentials after sync:', msg);
+        setSyncError(`Credentials update failed: ${msg}`);
         return;
       }
 
       setLastSyncAt(now);
 
-      // Step 6 & 7: Build logical trades + run plan matcher
-      const rebuildError = await rebuildLogicalTrades();
-      if (rebuildError) {
-        setSyncError(`Trades synced but logical trade build failed: ${rebuildError}`);
+      // Step 6 & 7: Build logical trades + run plan matcher.
+      // `rebuildLogicalTrades` returns null on success, a string error message
+      // on failure, or `__warn__...` for non-fatal warnings (e.g. trades missing
+      // FX rate). Warnings are surfaced to the user but don't count as failures
+      // and don't go to Sentry — they're expected for new raw data.
+      let rebuildWarning = null;
+      const rebuildResult = await rebuildLogicalTrades();
+      if (rebuildResult?.startsWith('__warn__')) {
+        rebuildWarning = rebuildResult.slice(8);
+      } else if (rebuildResult) {
+        reportSyncError('logical-rebuild', new Error(rebuildResult));
+        setSyncError(`Trades synced but logical trade build failed: ${rebuildResult}`);
         return;
       }
 
@@ -251,9 +285,11 @@ export default function IBKRScreen({ session }) {
         tradeCount: result.trades.length,
         openPositionCount: result.openPositions.length,
         demoCleared: result.demoCleared,
+        ...(rebuildWarning ? { warning: rebuildWarning } : {}),
       });
 
     } catch (err) {
+      reportSyncError('unhandled', err);
       setSyncError(err.message);
     } finally {
       setSyncing(false);
@@ -391,6 +427,11 @@ export default function IBKRScreen({ session }) {
                   <p className="text-xs text-green-600 mt-2 italic">
                     Note: IBKR Flex Queries are batch reports — new executions typically appear 10–30 minutes after the fill, and same-day trades may only settle after 4pm ET. If a recent trade is missing, wait a bit and sync again.
                   </p>
+                  {syncResult.warning && (
+                    <p className="text-xs text-amber-700 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      ⚠ {syncResult.warning}
+                    </p>
+                  )}
                   {syncResult.demoCleared && (
                     <p className="text-xs text-amber-700 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                       Demo data cleared — your real IBKR trades are now loaded.

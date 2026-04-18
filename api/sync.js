@@ -1,5 +1,6 @@
 const https = require('https');
 const { createClient } = require('@supabase/supabase-js');
+const { captureServerError } = require('./lib/sentry');
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://ct3000-react.vercel.app';
 const BASE_URL = 'https://gdcdyn.interactivebrokers.com/Universal/servlet';
@@ -274,6 +275,7 @@ module.exports = async function handler(req, res) {
 
   } catch (err) {
     console.error('[sync] error:', err.message);
+    await captureServerError(err, { userId: user?.id, route: 'sync' });
     return res.status(500).json({ success: false, error: err.message });
   }
 };

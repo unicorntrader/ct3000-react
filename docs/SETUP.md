@@ -195,6 +195,21 @@ After the first deployment, set the environment variables in the Vercel dashboar
 |---|---|
 | `REACT_APP_SUPABASE_URL` | Your Supabase project URL |
 | `REACT_APP_SUPABASE_ANON_KEY` | Your Supabase anon key |
+| `REACT_APP_SENTRY_DSN` | Sentry browser DSN (optional — errors + ErrorBoundary) |
+| `SENTRY_DSN` | Sentry server DSN for `/api/*` functions (optional) |
+
+**Sentry setup:**
+
+The app wires Sentry for both the browser (`@sentry/react`) and the serverless
+functions (`@sentry/node` via `api/lib/sentry.js`). Both are no-ops when their
+respective env vars are absent, so local dev and preview deploys work without
+a Sentry project.
+
+Recommended: create **one Sentry project** (platform: JavaScript → React) and
+use the same DSN for both `REACT_APP_SENTRY_DSN` and `SENTRY_DSN`. Issues are
+tagged with `route=sync|rebuild` and `sync_step=flex-fetch|trades-upsert|…` so
+you can filter server errors from browser errors in the UI. User context
+(Supabase `user_id`, email when non-anonymous) is attached to every event.
 
 See `docs/deployment.md` for full details.
 

@@ -1,7 +1,10 @@
 import React from 'react';
+import * as Sentry from '@sentry/react';
 
 // Catches uncaught JS errors in descendant components and shows a
 // recovery screen instead of white-screening the whole app.
+// Reports the error to Sentry (no-op if REACT_APP_SENTRY_DSN is unset) so we
+// get a ticket for every hard crash a beta user hits.
 
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -15,6 +18,13 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error('[ErrorBoundary]', error, info?.componentStack);
+    Sentry.withScope((scope) => {
+      scope.setTag('boundary', 'app-root');
+      if (info?.componentStack) {
+        scope.setContext('react', { componentStack: info.componentStack });
+      }
+      Sentry.captureException(error);
+    });
   }
 
   render() {

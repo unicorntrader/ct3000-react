@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import * as Sentry from '@sentry/react'
 import { supabase } from './lib/supabaseClient'
 import { PrivacyProvider } from './lib/PrivacyContext'
 import { BaseCurrencyProvider } from './lib/BaseCurrencyContext'
@@ -156,6 +157,17 @@ export default function App() {
     const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_event, session) => {
       // console.log('[app] auth event:', _event, '| userId:', session?.user?.id ?? 'none', '| anon:', session?.user?.is_anonymous ?? false)
       setSession(session)
+      // Tag Sentry events with the Supabase user so errors are attributable.
+      // Email is omitted for anonymous sessions since there isn't one.
+      if (session?.user?.id) {
+        Sentry.setUser({
+          id: session.user.id,
+          ...(session.user.email ? { email: session.user.email } : {}),
+          ...(session.user.is_anonymous ? { anonymous: true } : {}),
+        })
+      } else {
+        Sentry.setUser(null)
+      }
       if (session?.user?.id) {
         if (session.user.is_anonymous) {
           setSubscription(null)
