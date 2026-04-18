@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPrice, fmtPnl, fmtDateLong } from '../lib/formatters';
+import { fmtPrice, fmtPnl, fmtDate, fmtDateLong } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import PrivacyValue from '../components/PrivacyValue';
 
@@ -16,13 +16,17 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
   // best available fallback — at least it shows the user's own symbol, not '$'.
   const baseCurrency = useBaseCurrency();
   const [plans, setPlans] = useState([]);
-  // Map<plan.id, number> — count of logical_trades referencing this plan.
-  // Plans with matchedCount > 0 are locked for edit: the whole card becomes
-  // non-clickable and shows a tooltip explaining why.
-  const [matchedCounts, setMatchedCounts] = useState({});
+  // Map<plan.id, Array<{ symbol, opened_at }>> — trades each plan is matched to.
+  // Used to (1) hide matched plans from the default "Planning" view, (2) show
+  // a "matched with X on Y" line on the card when the user toggles to Matched.
+  const [matchedByPlan, setMatchedByPlan] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dirFilter, setDirFilter] = useState('All');
+  // Two-state toggle: the Plans screen is primarily the user's "what am I still
+  // planning" workspace, so matched plans are hidden by default. Flipping to
+  // 'matched' shows only the matched ones (read-only).
+  const [matchView, setMatchView] = useState('planning');
 
   const userId = session?.user?.id;
   useEffect(() => {
@@ -36,16 +40,18 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
           .order('created_at', { ascending: false }),
         supabase
           .from('logical_trades')
-          .select('planned_trade_id')
+          .select('planned_trade_id, symbol, opened_at')
           .eq('user_id', userId)
-          .not('planned_trade_id', 'is', null),
+          .not('planned_trade_id', 'is', null)
+          .order('opened_at', { ascending: false }),
       ]);
       setPlans(plansRes.data || []);
-      const counts = {};
+      const byPlan = {};
       for (const row of (matchedRes.data || [])) {
-        counts[row.planned_trade_id] = (counts[row.planned_trade_id] || 0) + 1;
+        if (!byPlan[row.planned_trade_id]) byPlan[row.planned_trade_id] = [];
+        byPlan[row.planned_trade_id].push({ symbol: row.symbol, opened_at: row.opened_at });
       }
-      setMatchedCounts(counts);
+      setMatchedByPlan(byPlan);
       setLoading(false);
     };
     load();
@@ -54,11 +60,19 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
   const filtered = useMemo(() => {
     const q = search.trim().toUpperCase();
     return plans.filter(p => {
+      const isMatched = (matchedByPlan[p.id]?.length || 0) > 0;
+      if (matchView === 'planning' && isMatched) return false;
+      if (matchView === 'matched' && !isMatched) return false;
       if (q && !(p.symbol || '').toUpperCase().includes(q)) return false;
       if (dirFilter !== 'All' && (p.direction || '').toUpperCase() !== dirFilter) return false;
       return true;
     });
-  }, [plans, search, dirFilter]);
+  }, [plans, search, dirFilter, matchView, matchedByPlan]);
+
+  const matchedPlanCount = useMemo(
+    () => plans.filter(p => (matchedByPlan[p.id]?.length || 0) > 0).length,
+    [plans, matchedByPlan],
+  );
 
   const computeRR = (plan) => {
     const { planned_entry_price: entry, planned_target_price: target, planned_stop_loss: stop } = plan;
@@ -130,6 +144,17 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
             placeholder="Search symbol…"
             className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 w-36 shrink-0"
           />
+          <button
+            onClick={() => setMatchView(v => v === 'planning' ? 'matched' : 'planning')}
+            className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors shrink-0 ${
+              matchView === 'matched'
+                ? 'bg-gray-800 text-white border-transparent'
+                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+            title={matchView === 'planning' ? 'Show matched plans (read-only)' : 'Back to active planning plans'}
+          >
+            {matchView === 'planning' ? `Matched (${matchedPlanCount})` : 'Planning'}
+          </button>
           {['All', 'LONG', 'SHORT'].map(d => (
             <button
               key={d}
@@ -168,20 +193,16 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
             const risk = computeRisk(plan);
             const reward = computeReward(plan);
             const qty = plan.planned_quantity;
-            const matchedCount = matchedCounts[plan.id] || 0;
-            const locked = matchedCount > 0;
-            const lockedTitle = locked
-              ? `Locked — this plan is matched to ${matchedCount} trade${matchedCount !== 1 ? 's' : ''}. Unlink the trade${matchedCount !== 1 ? 's' : ''} from the Smart Journal before editing.`
-              : undefined;
+            const matchedTrades = matchedByPlan[plan.id] || [];
+            const locked = matchedTrades.length > 0;
 
             return (
               <div
                 key={plan.id}
                 onClick={locked ? undefined : () => onEditPlan?.(plan)}
-                title={lockedTitle}
                 className={`bg-white rounded-xl shadow-sm border border-gray-100 p-5 transition-all ${
                   locked
-                    ? 'opacity-60 cursor-not-allowed'
+                    ? ''
                     : 'cursor-pointer hover:border-blue-200 hover:shadow-md'
                 }`}
               >
@@ -203,6 +224,15 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
                       {qty != null && <> &middot; <PrivacyValue value={qty} /> {plan.asset_category === 'OPT' ? 'contracts' : 'shares'}</>}
                       {rr != null && <> &middot; R:R {rr}</>}
                     </p>
+                    {locked && (
+                      <p className="text-xs text-gray-500 mt-1.5 inline-flex items-center gap-1">
+                        <span aria-hidden>🔒</span>
+                        <span>
+                          Matched with {matchedTrades[0].symbol} from {fmtDate(matchedTrades[0].opened_at)}
+                          {matchedTrades.length > 1 && ` +${matchedTrades.length - 1} more`} — cannot be edited
+                        </span>
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
