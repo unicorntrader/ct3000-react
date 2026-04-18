@@ -13,9 +13,9 @@ const statusStyles = {
 };
 
 export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey }) {
-  // TODO: planned_trades has no 'currency' column. Once added, use plan.currency
-  // for prices/risk/reward instead of baseCurrency. For now baseCurrency is the
-  // best available fallback — at least it shows the user's own symbol, not '$'.
+  // baseCurrency is the fallback when a plan row has no native currency set
+  // (can happen for plans created before a security was looked up and
+  // currency-tagged). Plan cards render as: fmtPrice(..., plan.currency || baseCurrency).
   const baseCurrency = useBaseCurrency();
   const [plans, setPlans] = useState([]);
   // Map<plan.id, Array<{ symbol, opened_at }>> — trades each plan is matched to.
