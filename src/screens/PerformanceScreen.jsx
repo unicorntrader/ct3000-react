@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { pnlBase, fmtPnl, fmtShort } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
@@ -92,15 +92,31 @@ function BarRow({ label, pnl, trades, wins, maxAbsPnl, baseCurrency = 'USD' }) {
 export default function PerformanceScreen({ session }) {
   const userId = session?.user?.id;
   const navigate = useNavigate();
+  const location = useLocation();
   const baseCurrency = useBaseCurrency();
   const [allTrades, setAllTrades] = useState([]);
   const [plansMap, setPlansMap] = useState({});
   const [loading, setLoading] = useState(true);
 
-  // period control
-  const [preset, setPreset] = useState('All');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
+  // period control — initialize from location.state so "Back to Performance"
+  // from Journal can restore the period the user was looking at.
+  const [preset, setPreset] = useState(() => {
+    const s = location.state;
+    if (s && (s.preset !== undefined || s.customFrom || s.customTo)) {
+      return s.preset ?? '';
+    }
+    return 'All';
+  });
+  const [customFrom, setCustomFrom] = useState(() => location.state?.customFrom || '');
+  const [customTo, setCustomTo] = useState(() => location.state?.customTo || '');
+
+  // Clear the restored state so a hard reload doesn't re-apply stale period.
+  useEffect(() => {
+    if (location.state && (location.state.preset !== undefined || location.state.customFrom || location.state.customTo)) {
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // by-symbol sort
   const [sortCol, setSortCol] = useState('pnl');
@@ -728,10 +744,11 @@ export default function PerformanceScreen({ session }) {
                   } else {
                     dateFilter = { dateRange: 'all' };
                   }
+                  const returnState = { preset, customFrom, customTo };
                   return (
                   <tr
                     key={row.symbol}
-                    onClick={() => navigate('/journal', { state: { symbolFilter: row.symbol, ...dateFilter } })}
+                    onClick={() => navigate('/journal', { state: { symbolFilter: row.symbol, ...dateFilter, fromScreen: 'performance', returnState } })}
                     className="hover:bg-blue-50 cursor-pointer transition-colors"
                     title={`View ${row.symbol} trades in Smart Journal`}
                   >

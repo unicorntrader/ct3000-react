@@ -111,6 +111,18 @@ export default function JournalScreen({ session }) {
   // location.state so HomeScreen can deep-link (e.g. pipeline card → Missed).
   const [activeSection, setActiveSection] = useState(() => location.state?.activeSection || 'taken');
 
+  // Breadcrumb for drill-downs from other screens. Captured on mount before
+  // the location.state cleanup below wipes it. If the user arrived from
+  // Performance by clicking a ticker, we show a "← Back to Performance" pill
+  // that returns them to the exact period they were on.
+  const [breadcrumb, setBreadcrumb] = useState(() => {
+    const s = location.state;
+    if (s?.fromScreen === 'performance') {
+      return { fromScreen: 'performance', symbol: s.symbolFilter || '', returnState: s.returnState || {} };
+    }
+    return null;
+  });
+
   // Playbooks section state
   const [playbooks, setPlaybooks] = useState([]);
   const [playbooksLoading, setPlaybooksLoading] = useState(false);
@@ -148,6 +160,9 @@ export default function JournalScreen({ session }) {
     if (s.customTo != null) setCustomTo(s.customTo);
     if (s.activeFilter != null) setActiveFilter(s.activeFilter);
     if (s.activeSection != null) setActiveSection(s.activeSection);
+    if (s.fromScreen === 'performance') {
+      setBreadcrumb({ fromScreen: 'performance', symbol: s.symbolFilter || '', returnState: s.returnState || {} });
+    }
     navigate(location.pathname, { replace: true, state: {} });
   }, [location.state, location.pathname, navigate]);
 
@@ -359,6 +374,22 @@ export default function JournalScreen({ session }) {
 
   return (
     <div>
+      {breadcrumb?.fromScreen === 'performance' && (
+        <button
+          type="button"
+          onClick={() => {
+            navigate('/performance', { state: breadcrumb.returnState || {} });
+          }}
+          className="inline-flex items-center gap-1.5 mb-3 px-3 py-1.5 rounded-lg text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-100 transition-colors"
+          title="Return to Performance with the same period"
+        >
+          <span aria-hidden>←</span>
+          <span>Back to Performance</span>
+          {breadcrumb.symbol && (
+            <span className="text-blue-400 font-normal">· {breadcrumb.symbol}</span>
+          )}
+        </button>
+      )}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold text-gray-900">Smart Journal</h2>
       </div>
