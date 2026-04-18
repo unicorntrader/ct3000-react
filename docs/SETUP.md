@@ -49,8 +49,17 @@ ct3000-react/
 │   │   └── SettingsScreen.jsx   # Account info, base currency, coming-soon features
 │   └── lib/
 │       ├── supabaseClient.js      # Supabase client singleton
-│       ├── logicalTradeBuilder.js # FIFO trade grouping: raw executions → logical trades
-│       └── planMatcher.js         # Match logical trades to plans (symbol + direction + asset)
+│       ├── formatters.js          # Formatting + multi-currency helpers
+│       ├── adherenceScore.js      # Plan-vs-trade adherence calc (mirrored server-side)
+│       ├── BaseCurrencyContext.js # Provides the user's base currency to descendants
+│       └── PrivacyContext.js      # Global toggle for masking dollar amounts
+├── api/
+│   ├── sync.js                    # Vercel serverless: IBKR fetch + XML parse
+│   ├── rebuild.js                 # Vercel serverless: rebuild logical_trades from trades
+│   └── lib/
+│       ├── logicalTradeBuilder.js # FIFO matcher (server-side only; browser never runs FIFO)
+│       ├── adherenceScore.js      # CommonJS mirror of src/lib/adherenceScore.js
+│       └── supabaseAdmin.js       # Service-role Supabase client
 ├── package.json
 ├── tailwind.config.js
 ├── postcss.config.js

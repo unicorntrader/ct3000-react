@@ -21,7 +21,7 @@ IBKR Flex XML
   trades              ← raw IBKR executions (includes fx_rate_to_base, currency)
       │
       ▼
-  src/lib/logicalTradeBuilder.js   ← FIFO matching into logical trades
+  api/lib/logicalTradeBuilder.js   ← FIFO matching into logical trades (server-side, via api/rebuild.js)
       │
       ▼
   logical_trades      ← realised P&L positions, matched to plans
@@ -48,9 +48,8 @@ IBKR Flex XML
 | File | What it does |
 |---|---|
 | `src/lib/formatters.js` | **Single source of truth for formatting and FX.** `pnlBase(t)`, `fmtPnl`, `fmtPrice`, `fmtDate`, `fmtShort`, `currencySymbol`. Import from here — never redefine locally. |
-| `src/lib/logicalTradeBuilder.js` | FIFO matcher: raw trades → logical trades. Runs in `api/sync.js`. |
-| `src/lib/planMatcher.js` | Matches logical trades to user plans by symbol + direction + asset category. |
-| `src/lib/adherenceScore.js` | Computes 0–100 adherence from a (plan, trade) pair. Four sub-scores (entry / target / stop / size) averaged. |
+| `api/lib/logicalTradeBuilder.js` | FIFO matcher: raw trades → logical trades. Server-side only, invoked by `api/rebuild.js`. The browser never runs FIFO. |
+| `src/lib/adherenceScore.js` / `api/lib/adherenceScore.js` | Computes 0–100 adherence from a (plan, trade) pair. Four sub-scores (entry / target / stop / size) averaged. Currently mirrored between browser (screens read it) and server (rebuild reads it) — see `docs/CODE-AUDIT.md` finding #2. |
 | `src/lib/PrivacyContext.js` | Global toggle for masking dollar amounts. |
 
 ### Screens
