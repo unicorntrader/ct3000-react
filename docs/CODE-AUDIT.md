@@ -29,15 +29,11 @@ Two variables, identical filters. `openTrades` is **never referenced** after thi
 
 ## HIGH
 
-### 2. Two copies of `logicalTradeBuilder.js` — guaranteed drift
+### 2. ~~Two copies of `logicalTradeBuilder.js` / `adherenceScore.js` — guaranteed drift~~ ✅ RESOLVED
 
-**Where:** `src/lib/logicalTradeBuilder.js` and `api/lib/logicalTradeBuilder.js` — both exist, both are maintained independently.
-
-One is an ESM version for the React bundle, the other is CommonJS for the Vercel serverless. That's fine as long as they're kept in sync, but there is **no mechanism** forcing them to stay identical. A quick diff will tell you if they've already drifted; either way, the next time someone fixes a bug in one, they'll forget the other.
-
-**User impact:** silent divergence between what the client computes (if it ever does) vs what the server stores. Hard to spot because both "work."
-
-**Fix:** one file, transpiled for the other target — or just make the `api/lib` version the single source of truth and have the server return computed logical trades to the client (we already do this for sync response). Half a day to restructure.
+**Status:** Both cleaned up April 2026.
+- `src/lib/logicalTradeBuilder.js` was dead code (zero importers) — deleted outright. Browser never runs FIFO; all rebuilds happen server-side in `api/lib/logicalTradeBuilder.js` via `api/rebuild.js`.
+- `src/lib/adherenceScore.js` was actively used by three browser files, but only to recompute what `api/rebuild.js` had already written to `logical_trades.adherence_score`. Browser now reads the DB column directly (Journal, TradeInlineDetail, PerformanceScreen); the browser copy was deleted and `api/lib/adherenceScore.js` simplified to a single scalar function. The Performance screen's 4-bar "Adherence breakdown" panel was dropped at the same time — the overall "Avg adherence" KPI card remains.
 
 ---
 

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { fmtPrice, fmtPnl, fmtDateLong, fmtSymbol } from '../lib/formatters'
-import { computeAdherenceScore } from '../lib/adherenceScore'
 
 // Rendered inline underneath a trade row in the Smart Journal table. Same
 // content the old TradeJournalDrawer used to show, but with no overlay, no
@@ -108,7 +107,9 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
     if (risk > 0) rMultiple = (pnl / risk).toFixed(1) + 'R'
   }
 
-  const adherence = isMatchedClosed ? computeAdherenceScore(plan, trade) : null
+  // Read the server-computed adherence_score from the trade row.
+  // api/rebuild.js writes it during rebuild for every matched closed trade.
+  const adherence = isMatchedClosed ? trade.adherence_score : null
   const dateDisplay = fmtDateLong(isOpen_trade ? trade.opened_at : trade.closed_at)
 
   // Plan vs actual rows — only fields present on the plan
@@ -127,10 +128,11 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
   const handleSave = async () => {
     if (saving || !isDirty) return
     setSaving(true)
-    const score = isMatchedClosed ? computeAdherenceScore(plan, trade) : null
+    // Notes are the only thing the user edits here. adherence_score is owned
+    // by api/rebuild.js — we no longer touch it from the client.
     const { data: updated, error } = await supabase
       .from('logical_trades')
-      .update({ review_notes: notes.trim() || null, adherence_score: score })
+      .update({ review_notes: notes.trim() || null })
       .eq('id', trade.id)
       .eq('user_id', trade.user_id)
       .select()

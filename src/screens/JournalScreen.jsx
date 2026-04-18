@@ -4,7 +4,6 @@ import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtDate, fmtSymbol } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
-import { computeAdherenceScore } from '../lib/adherenceScore';
 import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
 import TradeInlineDetail from '../components/TradeInlineDetail';
@@ -760,12 +759,9 @@ export default function JournalScreen({ session }) {
                 const rMultiple = isOpen ? null : calcR(trade, plan);
                 const matchStatus = trade.matching_status;
                 const dateDisplay = fmtDate(isOpen ? trade.opened_at : trade.closed_at);
-                // Prefer the stored score; fall back to live compute if plan is loaded
-                const adherence = isOpen
-                  ? null
-                  : (trade.adherence_score != null
-                      ? trade.adherence_score
-                      : (matchStatus === 'matched' && plan ? computeAdherenceScore(plan, trade) : null));
+                // adherence_score is written by api/rebuild.js for every
+                // matched closed trade. Read it directly — no client recompute.
+                const adherence = isOpen ? null : trade.adherence_score;
 
                 const isExpanded = expandedTradeId === trade.id;
                 const isBulkEligible = matchStatus === 'needs_review';

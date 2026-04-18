@@ -49,7 +49,7 @@ IBKR Flex XML
 |---|---|
 | `src/lib/formatters.js` | **Single source of truth for formatting and FX.** `pnlBase(t)`, `fmtPnl`, `fmtPrice`, `fmtDate`, `fmtShort`, `currencySymbol`. Import from here — never redefine locally. |
 | `api/lib/logicalTradeBuilder.js` | FIFO matcher: raw trades → logical trades. Server-side only, invoked by `api/rebuild.js`. The browser never runs FIFO. |
-| `src/lib/adherenceScore.js` / `api/lib/adherenceScore.js` | Computes 0–100 adherence from a (plan, trade) pair. Four sub-scores (entry / target / stop / size) averaged. Currently mirrored between browser (screens read it) and server (rebuild reads it) — see `docs/CODE-AUDIT.md` finding #2. |
+| `api/lib/adherenceScore.js` | Computes 0–100 adherence from a (plan, trade) pair. Four sub-scores (entry / target / stop / size) averaged into one scalar. Server-side only, called from `api/rebuild.js`. The browser reads `logical_trades.adherence_score` directly — no client-side mirror any more. |
 | `src/lib/PrivacyContext.js` | Global toggle for masking dollar amounts. |
 
 ### Screens

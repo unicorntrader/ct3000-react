@@ -4,7 +4,6 @@ import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { pnlBase, fmtPnl, fmtShort } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
-import { computeAdherenceBreakdown } from '../lib/adherenceScore';
 import PrivacyValue from '../components/PrivacyValue';
 import LoadError from '../components/LoadError';
 import {
@@ -97,7 +96,6 @@ export default function PerformanceScreen({ session }) {
   const location = useLocation();
   const baseCurrency = useBaseCurrency();
   const [allTrades, setAllTrades] = useState([]);
-  const [plansMap, setPlansMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -135,26 +133,20 @@ export default function PerformanceScreen({ session }) {
 
   useEffect(() => {
     if (!userId) return;
-    // Fetch closed trades + plans together so we can compute adherence
-    // breakdown per period on the fly (no reliance on stored adherence_score
-    // which may be stale if plans were edited since last sync).
-    // Using select('*') on logical_trades to keep the adherence calc
-    // flexible — needs avg_entry_price, total_closing_quantity,
-    // total_opening_quantity, planned_trade_id, direction, etc.
+    // Load closed trades for the period + this week's reflection row.
+    // adherence_score is read directly off each logical_trade (written by
+    // api/rebuild.js). We no longer load planned_trades here — with matched
+    // plans locked in the UI, the stored adherence can't go stale.
     setLoading(true);
     setLoadError(null);
     (async () => {
       try {
-        const [tradesRes, plansRes, reviewRes] = await Promise.all([
+        const [tradesRes, reviewRes] = await Promise.all([
           supabase
             .from('logical_trades')
             .select('*')
             .eq('user_id', userId)
             .eq('status', 'closed'),
-          supabase
-            .from('planned_trades')
-            .select('id, planned_entry_price, planned_target_price, planned_stop_loss, planned_quantity')
-            .eq('user_id', userId),
           supabase
             .from('weekly_reviews')
             .select('worked, didnt_work, recurring, action')
@@ -163,14 +155,10 @@ export default function PerformanceScreen({ session }) {
             .maybeSingle(),
         ]);
         if (tradesRes.error) throw tradesRes.error;
-        if (plansRes.error) throw plansRes.error;
         // weekly_reviews.maybeSingle() returns error: null + data: null when no row
         // exists — that's the expected "no weekly review yet" path, not a failure.
         if (reviewRes.error) throw reviewRes.error;
         setAllTrades(tradesRes.data || []);
-        const map = {};
-        for (const p of (plansRes.data || [])) map[p.id] = p;
-        setPlansMap(map);
         if (reviewRes.data) {
           setReflection({
             worked: reviewRes.data.worked || '',
@@ -262,34 +250,29 @@ export default function PerformanceScreen({ session }) {
     return { n, winners: winners.length, losers: losers.length, netPnl, winRate, wlRatio, avgWin, avgLoss, expectancy };
   }, [trades]);
 
-  // ── adherence breakdown across the period ──
-  // For every matched closed trade in the filtered period, compute the
-  // 4-pillar breakdown and average each pillar separately. Null sub-scores
-  // (plan didn't specify that field) are skipped per pillar.
+  // ── avg adherence across the period ──
+  // Reads the stored adherence_score column directly. No client-side recompute.
+  // api/rebuild.js writes adherence_score for every matched closed trade, so
+  // any null value means the trade was open, unmatched, or predates the
+  // computation code path (one manual /api/rebuild fixes it).
   const adherenceStats = useMemo(() => {
-    const sums = { entry: 0, target: 0, stop: 0, size: 0 };
-    const counts = { entry: 0, target: 0, stop: 0, size: 0 };
+    let sum = 0;
+    let scored = 0;
     let matchedCount = 0;
     for (const t of trades) {
-      if (t.matching_status !== 'matched' || !t.planned_trade_id) continue;
-      const plan = plansMap[t.planned_trade_id];
-      if (!plan) continue;
-      const b = computeAdherenceBreakdown(plan, t);
-      if (!b) continue;
+      if (t.matching_status !== 'matched') continue;
       matchedCount++;
-      for (const key of ['entry', 'target', 'stop', 'size']) {
-        if (b[key] != null) { sums[key] += b[key]; counts[key]++; }
+      if (t.adherence_score != null) {
+        sum += t.adherence_score;
+        scored++;
       }
     }
-    if (matchedCount === 0) return null;
-    const avg = (key) => counts[key] > 0 ? Math.round((sums[key] / counts[key]) * 10) / 10 : null;
-    const pillars = { entry: avg('entry'), target: avg('target'), stop: avg('stop'), size: avg('size') };
-    const scored = Object.values(pillars).filter(v => v != null);
-    const overall = scored.length > 0
-      ? Math.round((scored.reduce((a, b) => a + b, 0) / scored.length) * 10) / 10
-      : null;
-    return { ...pillars, overall, matchedCount };
-  }, [trades, plansMap]);
+    if (scored === 0) return null;
+    return {
+      overall: Math.round((sum / scored) * 10) / 10,
+      matchedCount,
+    };
+  }, [trades]);
 
   // ── cumulative curve data ──
   const curveData = useMemo(() => {
@@ -393,23 +376,12 @@ export default function PerformanceScreen({ session }) {
       });
     }
 
-    // Rule 3: Adherence entry vs target comparison (weak pillar)
-    if (adherenceStats) {
-      const pillars = [
-        { key: 'entry', label: 'Entry timing' },
-        { key: 'target', label: 'Target capture' },
-        { key: 'stop', label: 'Stop discipline' },
-        { key: 'size', label: 'Position sizing' },
-      ];
-      const weakest = pillars
-        .filter(p => adherenceStats[p.key] != null)
-        .sort((a, b) => adherenceStats[a.key] - adherenceStats[b.key])[0];
-      if (weakest && adherenceStats[weakest.key] < 70) {
-        results.push({
-          type: 'warning',
-          text: `${weakest.label} is your weakest discipline at ${Math.round(adherenceStats[weakest.key])} — focus here for the biggest improvement.`,
-        });
-      }
+    // Rule 3: Low overall adherence across matched trades
+    if (adherenceStats && adherenceStats.overall < 70) {
+      results.push({
+        type: 'warning',
+        text: `Avg adherence is ${Math.round(adherenceStats.overall)} across ${adherenceStats.matchedCount} matched trade${adherenceStats.matchedCount !== 1 ? 's' : ''} — plans and execution are drifting apart.`,
+      });
     }
 
     // Rule 5: Off-plan trading signal
@@ -520,7 +492,6 @@ export default function PerformanceScreen({ session }) {
           : 'text-red-500')
         : 'text-gray-400',
       maskValue: false,
-      onClick: () => document.getElementById('adherence-breakdown')?.scrollIntoView({ behavior: 'smooth' }),
     },
   ];
 
@@ -667,73 +638,6 @@ export default function PerformanceScreen({ session }) {
               />
             </LineChart>
           </ResponsiveContainer>
-        )}
-      </div>
-
-      {/* ── adherence decomposition ── */}
-      <div id="adherence-breakdown" className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700">Adherence breakdown</h3>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Where is your discipline strongest — and where are you slipping?
-            </p>
-          </div>
-          {adherenceStats && (
-            <div className="text-right">
-              <p className="text-xs text-gray-400">Overall</p>
-              <p className={`text-2xl font-semibold leading-none ${
-                adherenceStats.overall >= 75 ? 'text-green-600'
-                : adherenceStats.overall >= 50 ? 'text-amber-600'
-                : 'text-red-500'
-              }`}>
-                {Math.round(adherenceStats.overall)}
-              </p>
-            </div>
-          )}
-        </div>
-
-        {!adherenceStats ? (
-          <p className="text-sm text-gray-400 text-center py-8">
-            No matched trades in this period — create plans and link them to your trades to see your adherence breakdown.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {[
-              { key: 'entry',  label: 'Entry',    help: 'How close to your planned entry price' },
-              { key: 'target', label: 'Target',   help: 'How much of the planned move you captured' },
-              { key: 'stop',   label: 'Stop',     help: 'Whether stops were respected' },
-              { key: 'size',   label: 'Size',     help: 'How close to your planned quantity' },
-            ].map(({ key, label, help }) => {
-              const score = adherenceStats[key];
-              const scored = score != null;
-              const color = !scored ? 'bg-gray-200'
-                : score >= 75 ? 'bg-green-500'
-                : score >= 50 ? 'bg-amber-500'
-                : 'bg-red-500';
-              const textColor = !scored ? 'text-gray-300'
-                : score >= 75 ? 'text-green-700'
-                : score >= 50 ? 'text-amber-700'
-                : 'text-red-600';
-              return (
-                <div key={key} className="flex items-center gap-3">
-                  <div className="w-20 shrink-0">
-                    <p className="text-xs font-semibold text-gray-700">{label}</p>
-                    <p className="text-[10px] text-gray-400 leading-tight">{help}</p>
-                  </div>
-                  <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${color}`}
-                      style={{ width: scored ? `${score}%` : '0%' }}
-                    />
-                  </div>
-                  <span className={`text-sm font-semibold w-10 text-right shrink-0 ${textColor}`}>
-                    {scored ? Math.round(score) : '—'}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
         )}
       </div>
 
