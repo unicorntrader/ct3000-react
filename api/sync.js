@@ -240,13 +240,25 @@ module.exports = async function handler(req, res) {
     console.log('[sync] XML length:', xml.length);
 
     console.log('[sync] Step 3: Parsing...');
-    const trades = parseTrades(xml);
+    const allTrades = parseTrades(xml);
     const openPositions = parseOpenPositions(xml);
     const baseCurrency = parseBaseCurrency(xml);
 
+    // Safety net: drop executions older than 30 days. Our product contract is
+    // "rolling 30-day sync"; if a user configures their IBKR Flex Query with a
+    // 365-day window we do NOT want to accept all 365 days silently — that
+    // blows up payload sizes (Supabase 1MB body cap, Vercel function memory,
+    // browser JSON transfer) and surprises the user later. Open positions
+    // are NOT filtered: a position opened 6 months ago that's still open is
+    // a current position we need to track.
+    const MAX_AGE_DAYS = 30;
+    const cutoffIso = new Date(Date.now() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const trades = allTrades.filter(t => !t.dateTime || t.dateTime >= cutoffIso);
+    const droppedOlderCount = allTrades.length - trades.length;
+
     const acctInfoSnippet = xml.match(/<AccountInformation[^>]{0,200}/)?.[0] || 'NO <AccountInformation> TAG FOUND';
     console.log('[sync] AccountInformation snippet:', acctInfoSnippet);
-    console.log(`[sync] Parsed ${trades.length} trades, ${openPositions.length} open positions, baseCurrency=${baseCurrency}`);
+    console.log(`[sync] Parsed ${allTrades.length} trades (kept ${trades.length} within ${MAX_AGE_DAYS}d, dropped ${droppedOlderCount}), ${openPositions.length} open positions, baseCurrency=${baseCurrency}`);
 
     // Clear demo data and mark ibkr_connected before returning
     const [ltDel, posDel, planDel, pbDel] = await Promise.all([
@@ -267,6 +279,7 @@ module.exports = async function handler(req, res) {
       success: true,
       tradeCount: trades.length,
       openPositionCount: openPositions.length,
+      droppedOlderCount,
       trades,
       openPositions,
       baseCurrency,
