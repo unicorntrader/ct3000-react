@@ -1,7 +1,22 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { currencySymbol, fmtPrice, fmtPnl, fmtDate, pnlBase } from '../lib/formatters';
 import { usePrivacy } from '../lib/PrivacyContext';
+
+// PlanSheet's background loads (base currency, user symbols, matched count,
+// securities search, historical trades) all run on sheet open. They enrich
+// the UX but the sheet stays usable if any of them fail — so we degrade
+// gracefully (no visible error, no retry UI) and ship the failure to Sentry
+// so we see breakage. The user can close + reopen the sheet to retry.
+function reportPlanSheetLoadError(step, err) {
+  console.error(`[plan-sheet] ${step} failed:`, err?.message || err);
+  Sentry.withScope((scope) => {
+    scope.setTag('component', 'plan-sheet');
+    scope.setTag('step', step);
+    Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+  });
+}
 
 function calcDuration(opened, closed) {
   if (!opened || !closed) return null;
@@ -70,12 +85,19 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   // Fetch base currency when sheet opens
   useEffect(() => {
     if (!isOpen || !session?.user?.id) return;
-    supabase
-      .from('user_ibkr_credentials')
-      .select('base_currency')
-      .eq('user_id', session.user.id)
-      .single()
-      .then(({ data }) => { if (data?.base_currency) setBaseCurrency(data.base_currency); });
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('user_ibkr_credentials')
+          .select('base_currency')
+          .eq('user_id', session.user.id)
+          .single();
+        if (error && error.code !== 'PGRST116') throw error;
+        if (data?.base_currency) setBaseCurrency(data.base_currency);
+      } catch (err) {
+        reportPlanSheetLoadError('load-base-currency', err);
+      }
+    })();
   }, [isOpen, session?.user?.id]);
 
   // Fetch the user's relevant ticker set (past trades + past/current plans)
@@ -84,15 +106,22 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   useEffect(() => {
     if (!isOpen || !session?.user?.id) return;
     const uid = session.user.id;
-    Promise.all([
-      supabase.from('logical_trades').select('symbol').eq('user_id', uid),
-      supabase.from('planned_trades').select('symbol').eq('user_id', uid),
-    ]).then(([lt, pt]) => {
-      const set = new Set();
-      for (const r of (lt.data || [])) if (r.symbol) set.add(r.symbol.toUpperCase());
-      for (const r of (pt.data || [])) if (r.symbol) set.add(r.symbol.toUpperCase());
-      setUserSymbols(set);
-    });
+    (async () => {
+      try {
+        const [lt, pt] = await Promise.all([
+          supabase.from('logical_trades').select('symbol').eq('user_id', uid),
+          supabase.from('planned_trades').select('symbol').eq('user_id', uid),
+        ]);
+        if (lt.error) throw lt.error;
+        if (pt.error) throw pt.error;
+        const set = new Set();
+        for (const r of (lt.data || [])) if (r.symbol) set.add(r.symbol.toUpperCase());
+        for (const r of (pt.data || [])) if (r.symbol) set.add(r.symbol.toUpperCase());
+        setUserSymbols(set);
+      } catch (err) {
+        reportPlanSheetLoadError('load-user-symbols', err);
+      }
+    })();
   }, [isOpen, session?.user?.id]);
 
   // Populate form when sheet opens
@@ -122,19 +151,20 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   // Used to block delete + warn on edit.
   useEffect(() => {
     if (!isOpen || !plan?.id || !session?.user?.id) { setMatchedCount(0); return; }
-    supabase
-      .from('logical_trades')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', session.user.id)
-      .eq('planned_trade_id', plan.id)
-      .then(({ count, error }) => {
-        if (error) {
-          console.error('[plan-sheet] matched count fetch failed:', error.message);
-          setMatchedCount(0);
-          return;
-        }
+    (async () => {
+      try {
+        const { count, error } = await supabase
+          .from('logical_trades')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', session.user.id)
+          .eq('planned_trade_id', plan.id);
+        if (error) throw error;
         setMatchedCount(count || 0);
-      });
+      } catch (err) {
+        reportPlanSheetLoadError('load-matched-count', err);
+        setMatchedCount(0);
+      }
+    })();
   }, [isOpen, plan?.id, session?.user?.id]);
 
   const e = parseFloat(entry) || 0;
@@ -209,38 +239,46 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
           .limit(8)
       : Promise.resolve({ data: [] });
 
-    Promise.all([
-      userQ,
-      supabase
-        .from('securities')
-        .select('conid, symbol, asset_category, description, currency, company_name')
-        .or(orFilter)
-        .limit(12),
-    ]).then(([userRes, allRes]) => {
-      const userRows = (userRes.data || []).map(r => ({ ...r, _userRelevant: true }));
-      const allRows  = (allRes.data  || []).map(r => ({ ...r, _userRelevant: userSymbols.has((r.symbol || '').toUpperCase()) }));
-      // Dedupe by conid, preferring the user-flagged copy
-      const byConid = new Map();
-      for (const r of [...userRows, ...allRows]) {
-        if (!byConid.has(r.conid)) byConid.set(r.conid, r);
+    (async () => {
+      try {
+        const [userRes, allRes] = await Promise.all([
+          userQ,
+          supabase
+            .from('securities')
+            .select('conid, symbol, asset_category, description, currency, company_name')
+            .or(orFilter)
+            .limit(12),
+        ]);
+        if (userRes.error) throw userRes.error;
+        if (allRes.error) throw allRes.error;
+        const userRows = (userRes.data || []).map(r => ({ ...r, _userRelevant: true }));
+        const allRows  = (allRes.data  || []).map(r => ({ ...r, _userRelevant: userSymbols.has((r.symbol || '').toUpperCase()) }));
+        // Dedupe by conid, preferring the user-flagged copy
+        const byConid = new Map();
+        for (const r of [...userRows, ...allRows]) {
+          if (!byConid.has(r.conid)) byConid.set(r.conid, r);
+        }
+        const merged = Array.from(byConid.values());
+
+        const rank = (s) => {
+          const sym = (s.symbol || '').toUpperCase();
+          const name = (s.company_name || '').toUpperCase();
+          const userBonus = s._userRelevant ? 0 : 10;
+          if (sym === q)           return userBonus + 0;
+          if (sym.startsWith(q))   return userBonus + 1;
+          if (name.includes(q))    return userBonus + 2;
+          return userBonus + 3;
+        };
+        merged.sort((a, b) => rank(a) - rank(b));
+
+        const limited = merged.slice(0, 12);
+        setSecSuggestions(limited);
+        if (limited.length > 0) setSecSuggestOpen(true);
+      } catch (err) {
+        reportPlanSheetLoadError('search-securities', err);
+        setSecSuggestions([]);
       }
-      const merged = Array.from(byConid.values());
-
-      const rank = (s) => {
-        const sym = (s.symbol || '').toUpperCase();
-        const name = (s.company_name || '').toUpperCase();
-        const userBonus = s._userRelevant ? 0 : 10;
-        if (sym === q)           return userBonus + 0;
-        if (sym.startsWith(q))   return userBonus + 1;
-        if (name.includes(q))    return userBonus + 2;
-        return userBonus + 3;
-      };
-      merged.sort((a, b) => rank(a) - rank(b));
-
-      const limited = merged.slice(0, 12);
-      setSecSuggestions(limited);
-      if (limited.length > 0) setSecSuggestOpen(true);
-    });
+    })();
   }, [debouncedSymbol, userSymbols]);
 
   // When user picks a security from autocomplete (or exact match on debounce)
@@ -296,21 +334,22 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   useEffect(() => {
     const uid = session?.user?.id;
     if (!debouncedSymbol || !uid) { setHistTrades([]); return; }
-    supabase
-      .from('logical_trades')
-      .select('id, direction, opened_at, closed_at, avg_entry_price, total_closing_quantity, total_opening_quantity, total_realized_pnl, fx_rate_to_base, currency')
-      .eq('user_id', uid)
-      .eq('symbol', debouncedSymbol)
-      .eq('status', 'closed')
-      .order('closed_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (error) {
-          console.error('[plan-sheet] historical trades fetch failed:', error.message);
-          setHistTrades([]);
-          return;
-        }
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('logical_trades')
+          .select('id, direction, opened_at, closed_at, avg_entry_price, total_closing_quantity, total_opening_quantity, total_realized_pnl, fx_rate_to_base, currency')
+          .eq('user_id', uid)
+          .eq('symbol', debouncedSymbol)
+          .eq('status', 'closed')
+          .order('closed_at', { ascending: false });
+        if (error) throw error;
         setHistTrades(data || []);
-      });
+      } catch (err) {
+        reportPlanSheetLoadError('load-historical-trades', err);
+        setHistTrades([]);
+      }
+    })();
   }, [debouncedSymbol, session?.user?.id]);
 
   const handleSave = async () => {

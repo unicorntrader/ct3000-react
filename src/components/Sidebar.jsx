@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { currencySymbol } from '../lib/formatters';
 
@@ -14,20 +15,29 @@ export default function Sidebar({ isOpen, onClose, onSignOut, session }) {
 
   useEffect(() => {
     if (!session?.user?.id) return;
-    supabase
-      .from('user_ibkr_credentials')
-      .select('account_id, token_masked, base_currency')
-      .eq('user_id', session.user.id)
-      .single()
-      .then(({ data, error }) => {
-        if (error && error.code !== 'PGRST116') {
-          console.error('Sidebar: failed to load IBKR credentials:', error.message);
-          return;
-        }
+    // Background load — the sidebar stays usable on failure (Account ID
+    // just shows "—"), so we don't surface a visible error. We DO log to
+    // Sentry so we can see breakage even when the UI degrades silently.
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('user_ibkr_credentials')
+          .select('account_id, token_masked, base_currency')
+          .eq('user_id', session.user.id)
+          .single();
+        if (error && error.code !== 'PGRST116') throw error;
         if (data?.token_masked) setIbkrConnected(true);
         if (data?.account_id) setAccountId(data.account_id);
         if (data?.base_currency) setBaseCurrency(data.base_currency);
-      });
+      } catch (err) {
+        console.error('[sidebar] credentials load failed:', err?.message || err);
+        Sentry.withScope((scope) => {
+          scope.setTag('component', 'sidebar');
+          scope.setTag('step', 'load-credentials');
+          Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+        });
+      }
+    })();
   }, [session]);
 
   // Close on Escape key

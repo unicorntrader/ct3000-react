@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import * as Sentry from '@sentry/react';
 import { supabase } from './supabaseClient';
 
 const BaseCurrencyContext = createContext({ baseCurrency: 'USD', loading: true });
@@ -9,6 +10,10 @@ const BaseCurrencyContext = createContext({ baseCurrency: 'USD', loading: true }
  *
  * Replaces the previous pattern where 5 different screens each ran their own
  * query on mount. Single round-trip, single source of truth.
+ *
+ * Failure handling: silently fall back to USD so the app keeps working, but
+ * send a Sentry event so we can see breakage. Not worth a retry UI here -- the
+ * base currency is background state, not user-facing primary content.
  */
 export function BaseCurrencyProvider({ userId, children }) {
   const [baseCurrency, setBaseCurrency] = useState('USD');
@@ -17,19 +22,29 @@ export function BaseCurrencyProvider({ userId, children }) {
   useEffect(() => {
     if (!userId) { setLoading(false); return; }
     let cancelled = false;
-    supabase
-      .from('user_ibkr_credentials')
-      .select('base_currency')
-      .eq('user_id', userId)
-      .maybeSingle()
-      .then(({ data, error }) => {
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('user_ibkr_credentials')
+          .select('base_currency')
+          .eq('user_id', userId)
+          .maybeSingle();
         if (cancelled) return;
-        if (error && error.code !== 'PGRST116') {
-          console.error('[BaseCurrencyProvider] fetch failed:', error.message);
-        }
+        // PGRST116 = no row (user hasn't connected IBKR yet) — expected.
+        if (error && error.code !== 'PGRST116') throw error;
         if (data?.base_currency) setBaseCurrency(data.base_currency);
-        setLoading(false);
-      });
+      } catch (err) {
+        if (cancelled) return;
+        console.error('[BaseCurrencyProvider] fetch failed:', err?.message || err);
+        Sentry.withScope((scope) => {
+          scope.setTag('context', 'base-currency');
+          scope.setTag('step', 'load');
+          Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+        });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
     return () => { cancelled = true; };
   }, [userId]);
 
