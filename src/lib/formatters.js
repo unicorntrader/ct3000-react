@@ -44,8 +44,8 @@ export const fmtPnl = (n, currency, decimals = 2) => {
   return (n >= 0 ? '+' : '-') + sym + abs;
 };
 
-/** Compact signed P&L for chart axes, e.g. "+$1.2k" */
-export const fmtShort = (n, currency = 'USD') => {
+/** Compact signed P&L for chart axes, e.g. "+€1.2k". Currency is REQUIRED. */
+export const fmtShort = (n, currency) => {
   if (n == null || isNaN(n)) return '—';
   const sym = currencySymbol(currency);
   const abs = Math.abs(n);
