@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { pnlBase, fmtPrice, fmtPnl } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
+import LoadError from '../components/LoadError';
 
 const statusStyles = {
   matched:      'bg-blue-50 text-blue-600',
@@ -464,6 +466,8 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
   const [plannedTradesMap, setPlannedTradesMap] = useState({});
   const [dailyNotes, setDailyNotes] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
   const [sortAsc, setSortAsc] = useState(false);
@@ -474,6 +478,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
   useEffect(() => {
     if (!userId) return;
     setLoading(true);
+    setLoadError(null);
 
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - dvWindow);
@@ -481,40 +486,55 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
     const ibkrDate = isoDate.replace(/-/g, '');           // '20260317'
 
     const load = async () => {
-      const [logicalRes, rawRes, plansRes, notesRes] = await Promise.all([
-        supabase
-          .from('logical_trades')
-          .select('*')
-          .eq('user_id', userId)
-          .gte('opened_at', isoDate)
-          .order('opened_at', { ascending: false }),
-        supabase
-          .from('trades')
-          .select('ib_exec_id, ib_order_id, conid, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, currency')
-          .eq('user_id', userId)
-          .gte('date_time', ibkrDate),
-        supabase
-          .from('planned_trades')
-          .select('id, planned_stop_loss')
-          .eq('user_id', userId),
-        supabase
-          .from('daily_notes')
-          .select('date_key, note')
-          .eq('user_id', userId)
-          .gte('date_key', isoDate),
-      ]);
-      setTrades(logicalRes.data || []);
-      setRawTrades(rawRes.data || []);
-      const map = {};
-      for (const p of (plansRes.data || [])) map[p.id] = p;
-      setPlannedTradesMap(map);
-      const notesMap = {};
-      for (const n of (notesRes.data || [])) notesMap[n.date_key] = n.note;
-      setDailyNotes(notesMap);
-      setLoading(false);
+      try {
+        const [logicalRes, rawRes, plansRes, notesRes] = await Promise.all([
+          supabase
+            .from('logical_trades')
+            .select('*')
+            .eq('user_id', userId)
+            .gte('opened_at', isoDate)
+            .order('opened_at', { ascending: false }),
+          supabase
+            .from('trades')
+            .select('ib_exec_id, ib_order_id, conid, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, currency')
+            .eq('user_id', userId)
+            .gte('date_time', ibkrDate),
+          supabase
+            .from('planned_trades')
+            .select('id, planned_stop_loss')
+            .eq('user_id', userId),
+          supabase
+            .from('daily_notes')
+            .select('date_key, note')
+            .eq('user_id', userId)
+            .gte('date_key', isoDate),
+        ]);
+        if (logicalRes.error) throw logicalRes.error;
+        if (rawRes.error) throw rawRes.error;
+        if (plansRes.error) throw plansRes.error;
+        if (notesRes.error) throw notesRes.error;
+        setTrades(logicalRes.data || []);
+        setRawTrades(rawRes.data || []);
+        const map = {};
+        for (const p of (plansRes.data || [])) map[p.id] = p;
+        setPlannedTradesMap(map);
+        const notesMap = {};
+        for (const n of (notesRes.data || [])) notesMap[n.date_key] = n.note;
+        setDailyNotes(notesMap);
+      } catch (err) {
+        console.error('[daily-view] load failed:', err?.message || err);
+        Sentry.withScope((scope) => {
+          scope.setTag('screen', 'daily-view');
+          scope.setTag('step', 'load');
+          Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+        });
+        setLoadError(err?.message || 'Could not load daily trades.');
+      } finally {
+        setLoading(false);
+      }
     };
     load();
-  }, [userId, refreshKey, dvWindow]);
+  }, [userId, refreshKey, dvWindow, reloadKey]);
 
   const handleResolve = async (tradeId, newStatus) => {
     await supabase
@@ -604,6 +624,15 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
     trades.filter(t => t.matching_status === 'needs_review').length,
     [trades]
   );
+
+  if (loadError) {
+    return (
+      <div>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Daily view</h2>
+        <LoadError title="Could not load daily trades" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (

@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { pnlBase, fmtPnl, fmtShort } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import { computeAdherenceBreakdown } from '../lib/adherenceScore';
 import PrivacyValue from '../components/PrivacyValue';
+import LoadError from '../components/LoadError';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -97,6 +99,8 @@ export default function PerformanceScreen({ session }) {
   const [allTrades, setAllTrades] = useState([]);
   const [plansMap, setPlansMap] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // period control — initialize from location.state so "Back to Performance"
   // from Journal can restore the period the user was looking at.
@@ -137,39 +141,58 @@ export default function PerformanceScreen({ session }) {
     // Using select('*') on logical_trades to keep the adherence calc
     // flexible — needs avg_entry_price, total_closing_quantity,
     // total_opening_quantity, planned_trade_id, direction, etc.
-    Promise.all([
-      supabase
-        .from('logical_trades')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('status', 'closed'),
-      supabase
-        .from('planned_trades')
-        .select('id, planned_entry_price, planned_target_price, planned_stop_loss, planned_quantity')
-        .eq('user_id', userId),
-      supabase
-        .from('weekly_reviews')
-        .select('worked, didnt_work, recurring, action')
-        .eq('user_id', userId)
-        .eq('week_key', weekKey)
-        .maybeSingle(),
-    ]).then(([tradesRes, plansRes, reviewRes]) => {
-      setAllTrades(tradesRes.data || []);
-      const map = {};
-      for (const p of (plansRes.data || [])) map[p.id] = p;
-      setPlansMap(map);
-      if (reviewRes.data) {
-        setReflection({
-          worked: reviewRes.data.worked || '',
-          didnt_work: reviewRes.data.didnt_work || '',
-          recurring: reviewRes.data.recurring || '',
-          action: reviewRes.data.action || '',
+    setLoading(true);
+    setLoadError(null);
+    (async () => {
+      try {
+        const [tradesRes, plansRes, reviewRes] = await Promise.all([
+          supabase
+            .from('logical_trades')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('status', 'closed'),
+          supabase
+            .from('planned_trades')
+            .select('id, planned_entry_price, planned_target_price, planned_stop_loss, planned_quantity')
+            .eq('user_id', userId),
+          supabase
+            .from('weekly_reviews')
+            .select('worked, didnt_work, recurring, action')
+            .eq('user_id', userId)
+            .eq('week_key', weekKey)
+            .maybeSingle(),
+        ]);
+        if (tradesRes.error) throw tradesRes.error;
+        if (plansRes.error) throw plansRes.error;
+        // weekly_reviews.maybeSingle() returns error: null + data: null when no row
+        // exists — that's the expected "no weekly review yet" path, not a failure.
+        if (reviewRes.error) throw reviewRes.error;
+        setAllTrades(tradesRes.data || []);
+        const map = {};
+        for (const p of (plansRes.data || [])) map[p.id] = p;
+        setPlansMap(map);
+        if (reviewRes.data) {
+          setReflection({
+            worked: reviewRes.data.worked || '',
+            didnt_work: reviewRes.data.didnt_work || '',
+            recurring: reviewRes.data.recurring || '',
+            action: reviewRes.data.action || '',
+          });
+        }
+        setReflectionLoaded(true);
+      } catch (err) {
+        console.error('[performance] load failed:', err?.message || err);
+        Sentry.withScope((scope) => {
+          scope.setTag('screen', 'performance');
+          scope.setTag('step', 'load');
+          Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
         });
+        setLoadError(err?.message || 'Could not load performance data.');
+      } finally {
+        setLoading(false);
       }
-      setReflectionLoaded(true);
-      setLoading(false);
-    });
-  }, [userId, weekKey]);
+    })();
+  }, [userId, weekKey, reloadKey]);
 
   const handleSaveReflection = useCallback(async () => {
     if (!userId || reflectionSaving) return;
@@ -417,6 +440,15 @@ export default function PerformanceScreen({ session }) {
   const yMin = Math.min(0, ...allCumVals);
   const yMax = Math.max(0, ...allCumVals);
   const yPad = Math.max((yMax - yMin) * 0.1, 50);
+
+  if (loadError) {
+    return (
+      <div>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Performance</h2>
+        <LoadError title="Could not load performance data" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
