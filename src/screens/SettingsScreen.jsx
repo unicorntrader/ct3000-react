@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
+import LoadError from '../components/LoadError';
 
 function Section({ title, children }) {
   return (
@@ -40,29 +42,47 @@ export default function SettingsScreen({ session }) {
   const [baseCurrency, setBaseCurrency] = useState(null);
   const [accountId, setAccountId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const fetchSettings = () => {
+  useEffect(() => {
     if (!session?.user?.id) return;
     setLoading(true);
-    setFetchError(null);
-    supabase
-      .from('user_ibkr_credentials')
-      .select('base_currency, account_id')
-      .eq('user_id', session.user.id)
-      .single()
-      .then(({ data, error }) => {
-        if (error && error.code !== 'PGRST116') {
-          // PGRST116 = no rows found — that's fine, show defaults
-          setFetchError(error.message);
-        }
+    setLoadError(null);
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('user_ibkr_credentials')
+          .select('base_currency, account_id')
+          .eq('user_id', session.user.id)
+          .single();
+        // PGRST116 = no rows found, expected for users who haven't connected
+        // IBKR yet — not an error, just means defaults apply.
+        if (error && error.code !== 'PGRST116') throw error;
         setBaseCurrency(data?.base_currency || null);
         setAccountId(data?.account_id || null);
+      } catch (err) {
+        console.error('[settings] load failed:', err?.message || err);
+        Sentry.withScope((scope) => {
+          scope.setTag('screen', 'settings');
+          scope.setTag('step', 'load');
+          Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+        });
+        setLoadError(err?.message || 'Could not load settings.');
+      } finally {
         setLoading(false);
-      });
-  };
+      }
+    })();
+  }, [session?.user?.id, reloadKey]);
 
-  useEffect(fetchSettings, [session?.user?.id]);
+  if (loadError) {
+    return (
+      <div>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Settings</h2>
+        <LoadError title="Could not load settings" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -77,18 +97,12 @@ export default function SettingsScreen({ session }) {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-gray-900">Settings</h2>
         <button
-          onClick={fetchSettings}
+          onClick={() => setReloadKey(k => k + 1)}
           className="text-xs text-blue-600 font-medium px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
         >
           Refresh
         </button>
       </div>
-
-      {fetchError && (
-        <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-600">
-          Failed to load settings: {fetchError}
-        </div>
-      )}
 
       {/* ── Account ── */}
       <Section title="Account">

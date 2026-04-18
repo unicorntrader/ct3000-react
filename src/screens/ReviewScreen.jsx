@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtPrice, fmtDate } from '../lib/formatters';
+import LoadError from '../components/LoadError';
 
 // Full-page review workflow — replaces the old ReviewSheet bottom drawer.
 // Wired from HomeScreen + DailyViewScreen review banners via <Link to="/review">
@@ -85,6 +87,8 @@ export default function ReviewScreen({ session }) {
   const [step, setStep] = useState(0);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [saving, setSaving] = useState(false);
 
   const current = trades[step] || null;
@@ -101,49 +105,62 @@ export default function ReviewScreen({ session }) {
   const loadReviewTrades = useCallback(async () => {
     if (!session?.user?.id) return;
     setLoading(true);
+    setLoadError(null);
     setStep(0);
     setSelected(null);
 
-    const { data: reviewTrades } = await supabase
-      .from('logical_trades')
-      .select('*')
-      .eq('user_id', session.user.id)
-      // Only needs_review trades land here (2+ plan candidates — system
-      // can't auto-pick). Zero-candidate trades are auto-flipped to
-      // 'off_plan' in applyPlanMatching and bypass this queue.
-      .eq('matching_status', 'needs_review')
-      .order('opened_at', { ascending: false });
+    try {
+      const reviewRes = await supabase
+        .from('logical_trades')
+        .select('*')
+        .eq('user_id', session.user.id)
+        // Only needs_review trades land here (2+ plan candidates — system
+        // can't auto-pick). Zero-candidate trades are auto-flipped to
+        // 'off_plan' in applyPlanMatching and bypass this queue.
+        .eq('matching_status', 'needs_review')
+        .order('opened_at', { ascending: false });
+      if (reviewRes.error) throw reviewRes.error;
 
-    const tradeList = reviewTrades || [];
-    setTrades(tradeList);
+      const tradeList = reviewRes.data || [];
+      setTrades(tradeList);
 
-    if (tradeList.length > 0) {
-      const { data: allPlans } = await supabase
-        .from('planned_trades')
-        .select('id, symbol, direction, asset_category, planned_entry_price, planned_target_price, planned_stop_loss, planned_quantity, thesis, currency, created_at')
-        .eq('user_id', session.user.id);
+      if (tradeList.length > 0) {
+        const plansRes = await supabase
+          .from('planned_trades')
+          .select('id, symbol, direction, asset_category, planned_entry_price, planned_target_price, planned_stop_loss, planned_quantity, thesis, currency, created_at')
+          .eq('user_id', session.user.id);
+        if (plansRes.error) throw plansRes.error;
 
-      const plans = allPlans || [];
-      const map = {};
-      for (const t of tradeList) {
-        // Only show plans that existed BEFORE the trade was opened. Must match
-        // the server-side filter in api/rebuild.js::applyPlanMatching so that
-        // the UI's candidate list agrees with what rebuild actually matched.
-        map[t.id] = plans.filter(p =>
-          p.symbol?.trim().toUpperCase() === t.symbol?.trim().toUpperCase() &&
-          p.direction?.trim().toUpperCase() === t.direction?.trim().toUpperCase() &&
-          p.asset_category?.trim().toUpperCase() === t.asset_category?.trim().toUpperCase() &&
-          p.created_at && t.opened_at &&
-          new Date(p.created_at).getTime() <= new Date(t.opened_at).getTime()
-        );
+        const plans = plansRes.data || [];
+        const map = {};
+        for (const t of tradeList) {
+          // Only show plans that existed BEFORE the trade was opened. Must match
+          // the server-side filter in api/rebuild.js::applyPlanMatching so that
+          // the UI's candidate list agrees with what rebuild actually matched.
+          map[t.id] = plans.filter(p =>
+            p.symbol?.trim().toUpperCase() === t.symbol?.trim().toUpperCase() &&
+            p.direction?.trim().toUpperCase() === t.direction?.trim().toUpperCase() &&
+            p.asset_category?.trim().toUpperCase() === t.asset_category?.trim().toUpperCase() &&
+            p.created_at && t.opened_at &&
+            new Date(p.created_at).getTime() <= new Date(t.opened_at).getTime()
+          );
+        }
+        setCandidatesMap(map);
       }
-      setCandidatesMap(map);
+    } catch (err) {
+      console.error('[review] load failed:', err?.message || err);
+      Sentry.withScope((scope) => {
+        scope.setTag('screen', 'review');
+        scope.setTag('step', 'load');
+        Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+      });
+      setLoadError(err?.message || 'Could not load trades to review.');
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }, [session]);
 
-  useEffect(() => { loadReviewTrades(); }, [loadReviewTrades]);
+  useEffect(() => { loadReviewTrades(); }, [loadReviewTrades, reloadKey]);
 
   const handleExit = useCallback(() => navigate('/'), [navigate]);
 
@@ -240,7 +257,9 @@ export default function ReviewScreen({ session }) {
           : 'Link each trade to a plan, or mark it as off-plan if no plan applied.'}
       </p>
 
-      {loading ? (
+      {loadError ? (
+        <LoadError title="Could not load trades to review" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />
+      ) : loading ? (
         <div className="flex items-center justify-center py-16">
           <div className="w-6 h-6 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
         </div>

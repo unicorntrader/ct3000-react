@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
+import LoadError from '../components/LoadError';
 
 // Wrap a sync/rebuild step's error with a "which step failed" tag so the
 // Sentry ticket and the UI both say something actionable. Also swallows
@@ -32,30 +33,44 @@ export default function IBKRScreen({ session }) {
   const [syncResult, setSyncResult] = useState(null);
   const [syncError, setSyncError] = useState(null);
   const [saveError, setSaveError] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const userId = session?.user?.id;
   useEffect(() => {
     if (!userId) return;
-    const load = async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('user_ibkr_credentials')
-        .select('token_masked, query_id_masked, last_sync_at')
-        .eq('user_id', userId)
-        .single();
-
-      if (data && !error) {
-        setConnected(true);
-        setMaskedToken(data.token_masked || '');
-        setMaskedQueryId(data.query_id_masked || '');
-        setLastSyncAt(data.last_sync_at);
-      } else {
-        setConnected(false);
+    setLoading(true);
+    setLoadError(null);
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('user_ibkr_credentials')
+          .select('token_masked, query_id_masked, last_sync_at')
+          .eq('user_id', userId)
+          .single();
+        // PGRST116 = no rows = "not connected yet", expected for new users.
+        if (error && error.code !== 'PGRST116') throw error;
+        if (data) {
+          setConnected(true);
+          setMaskedToken(data.token_masked || '');
+          setMaskedQueryId(data.query_id_masked || '');
+          setLastSyncAt(data.last_sync_at);
+        } else {
+          setConnected(false);
+        }
+      } catch (err) {
+        console.error('[ibkr] credentials load failed:', err?.message || err);
+        Sentry.withScope((scope) => {
+          scope.setTag('screen', 'ibkr');
+          scope.setTag('step', 'load-credentials');
+          Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+        });
+        setLoadError(err?.message || 'Could not load IBKR connection.');
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    };
-    load();
-  }, [userId]);
+    })();
+  }, [userId, reloadKey]);
 
   const handleSaveCredentials = async () => {
     if (!token || !queryId) {
@@ -330,6 +345,15 @@ export default function IBKRScreen({ session }) {
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' at ' +
       d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   };
+
+  if (loadError) {
+    return (
+      <div>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Interactive Brokers</h2>
+        <LoadError title="Could not load IBKR connection" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
