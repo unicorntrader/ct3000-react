@@ -284,7 +284,6 @@ export default function IBKRScreen({ session }) {
       setSyncResult({
         tradeCount: result.trades.length,
         openPositionCount: result.openPositions.length,
-        droppedOlderCount: result.droppedOlderCount || 0,
         demoCleared: result.demoCleared,
         ...(rebuildWarning ? { warning: rebuildWarning } : {}),
       });
@@ -425,11 +424,6 @@ export default function IBKRScreen({ session }) {
                   <p className="text-sm font-semibold text-green-800 mb-2">Sync successful</p>
                   <p className="text-sm text-green-700">{syncResult.tradeCount} trades saved to database</p>
                   <p className="text-sm text-green-700">{syncResult.openPositionCount} open positions updated</p>
-                  {syncResult.droppedOlderCount > 0 && (
-                    <p className="text-xs text-amber-700 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                      ⚠ {syncResult.droppedOlderCount} trade{syncResult.droppedOlderCount !== 1 ? 's' : ''} older than 30 days {syncResult.droppedOlderCount !== 1 ? 'were' : 'was'} skipped. CT3000 currently syncs a rolling 30-day window — configure your IBKR Flex Query to 30 days to avoid this warning.
-                    </p>
-                  )}
                   <p className="text-xs text-green-600 mt-2 italic">
                     Note: IBKR Flex Queries are batch reports — new executions typically appear 10–30 minutes after the fill, and same-day trades may only settle after 4pm ET. If a recent trade is missing, wait a bit and sync again.
                   </p>

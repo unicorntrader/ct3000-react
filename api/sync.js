@@ -259,45 +259,36 @@ module.exports = async function handler(req, res) {
 
     console.log('[sync] Step 3: Parsing...');
 
-    // Reject up-front if the user's Flex Query is configured for a window
-    // wider than our 30-day product contract. We read from<FlexStatement>'s
-    // fromDate/toDate header so the user gets an actionable error ("your
-    // query covers 365 days, reconfigure it") instead of a silent filter.
-    // Buffer of 5 days accounts for IBKR's inclusive/exclusive counting —
-    // a correctly-configured "Last 30 Calendar Days" query reports 30-31 days.
-    const MAX_PERIOD_DAYS = 30;
-    const MAX_PERIOD_TOLERANCE = 5;
+    // Our product contract is a rolling 30-day sync. Read fromDate/toDate
+    // from the <FlexStatement> header and reject anything wider. Buffer of
+    // 5 days accounts for IBKR's inclusive/exclusive counting — a correctly
+    // configured "Last 30 Calendar Days" query reports 30-31 days. If the
+    // header is missing we reject too: we'd rather fail loud than ship bad
+    // data on a silently-broken parser.
+    const MAX_PERIOD_DAYS = 35;
     const period = parseFlexPeriod(xml);
-    if (period && period.days > MAX_PERIOD_DAYS + MAX_PERIOD_TOLERANCE) {
+    if (!period) {
+      const msg = 'Could not read the Flex Query window from IBKR\'s response (no fromDate/toDate on the <FlexStatement> header). ' +
+        'This usually means an unexpected XML format — please contact support.';
+      console.log('[sync] rejected: could not parse Flex period from header');
+      return res.status(400).json({ success: false, error: msg });
+    }
+    if (period.days > MAX_PERIOD_DAYS) {
       const msg = `Your IBKR Flex Query covers ${period.days} days (${period.fromDate} → ${period.toDate}). ` +
         `CT3000 syncs a rolling 30-day window. Please reconfigure your Flex Query in IBKR to ` +
         `"Last 30 Calendar Days" (Flex Queries → edit → Period) and sync again.`;
       console.log('[sync] rejected: flex period too long —', period.days, 'days');
       return res.status(400).json({ success: false, error: msg, flexPeriodDays: period.days });
     }
-    if (period) {
-      console.log(`[sync] Flex period: ${period.fromDate} → ${period.toDate} (${period.days} days)`);
-    } else {
-      console.log('[sync] Flex period: could not read fromDate/toDate from header');
-    }
+    console.log(`[sync] Flex period: ${period.fromDate} → ${period.toDate} (${period.days} days)`);
 
-    const allTrades = parseTrades(xml);
+    const trades = parseTrades(xml);
     const openPositions = parseOpenPositions(xml);
     const baseCurrency = parseBaseCurrency(xml);
 
-    // Defense-in-depth: even after the header check above, drop executions
-    // older than 30 days before writing. Protects against edge cases where
-    // the header is missing/malformed but IBKR returned more than we asked
-    // for. Open positions are NOT filtered — a position opened 6 months ago
-    // that's still open is a current position we need to track.
-    const MAX_AGE_DAYS = 30;
-    const cutoffIso = new Date(Date.now() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
-    const trades = allTrades.filter(t => !t.dateTime || t.dateTime >= cutoffIso);
-    const droppedOlderCount = allTrades.length - trades.length;
-
     const acctInfoSnippet = xml.match(/<AccountInformation[^>]{0,200}/)?.[0] || 'NO <AccountInformation> TAG FOUND';
     console.log('[sync] AccountInformation snippet:', acctInfoSnippet);
-    console.log(`[sync] Parsed ${allTrades.length} trades (kept ${trades.length} within ${MAX_AGE_DAYS}d, dropped ${droppedOlderCount}), ${openPositions.length} open positions, baseCurrency=${baseCurrency}`);
+    console.log(`[sync] Parsed ${trades.length} trades, ${openPositions.length} open positions, baseCurrency=${baseCurrency}`);
 
     // Clear demo data and mark ibkr_connected before returning
     const [ltDel, posDel, planDel, pbDel] = await Promise.all([
@@ -318,7 +309,6 @@ module.exports = async function handler(req, res) {
       success: true,
       tradeCount: trades.length,
       openPositionCount: openPositions.length,
-      droppedOlderCount,
       trades,
       openPositions,
       baseCurrency,
