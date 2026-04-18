@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtDate, fmtSymbol } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
@@ -8,6 +9,7 @@ import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
 import TradeInlineDetail from '../components/TradeInlineDetail';
 import PlaybookSheet from '../components/PlaybookSheet';
+import LoadError from '../components/LoadError';
 
 // Smart Journal sections. Each is a different reflection surface:
 //   taken     — review closed trades (plan adherence, notes, wins/losses)
@@ -105,6 +107,8 @@ export default function JournalScreen({ session }) {
   const [trades, setTrades] = useState([]);
   const [plansMap, setPlansMap] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [activeFilter, setActiveFilter] = useState('All');
 
   // Top-level section (Taken / Missed / Playbooks). Initialized from
@@ -126,6 +130,8 @@ export default function JournalScreen({ session }) {
   // Playbooks section state
   const [playbooks, setPlaybooks] = useState([]);
   const [playbooksLoading, setPlaybooksLoading] = useState(false);
+  const [playbooksError, setPlaybooksError] = useState(null);
+  const [playbooksReloadKey, setPlaybooksReloadKey] = useState(0);
   const [playbookSheetOpen, setPlaybookSheetOpen] = useState(false);
   const [editingPlaybook, setEditingPlaybook] = useState(null);
   const [shareRow, setShareRow] = useState(null);
@@ -170,21 +176,31 @@ export default function JournalScreen({ session }) {
   const loadPlaybooks = useCallback(async () => {
     if (!userId) return;
     setPlaybooksLoading(true);
-    const { data, error } = await supabase
-      .from('playbooks')
-      .select('id, name, description, created_at, updated_at')
-      .eq('user_id', userId)
-      .order('updated_at', { ascending: false });
-    if (error) {
-      console.error('[journal] load playbooks failed:', error.message);
+    setPlaybooksError(null);
+    try {
+      const { data, error } = await supabase
+        .from('playbooks')
+        .select('id, name, description, created_at, updated_at')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false });
+      if (error) throw error;
+      setPlaybooks(data || []);
+    } catch (err) {
+      console.error('[journal] load playbooks failed:', err?.message || err);
+      Sentry.withScope((scope) => {
+        scope.setTag('screen', 'journal');
+        scope.setTag('step', 'load-playbooks');
+        Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+      });
+      setPlaybooksError(err?.message || 'Could not load playbooks.');
+    } finally {
+      setPlaybooksLoading(false);
     }
-    setPlaybooks(data || []);
-    setPlaybooksLoading(false);
   }, [userId]);
 
   useEffect(() => {
     if (activeSection === 'playbooks') loadPlaybooks();
-  }, [activeSection, loadPlaybooks]);
+  }, [activeSection, loadPlaybooks, playbooksReloadKey]);
 
   // Server-side date scoping — push the date range into the Supabase query
   // so we don't fetch the user's entire trade history on every load.
@@ -193,6 +209,7 @@ export default function JournalScreen({ session }) {
   useEffect(() => {
     if (!userId) return;
     setLoading(true);
+    setLoadError(null);
 
     // Compute the date boundary from the current dateRange state
     const startDate = dateRange === 'custom' ? (customFrom || null) : rangeStartDate(dateRange);
@@ -209,21 +226,34 @@ export default function JournalScreen({ session }) {
     if (endDate) query = query.lte('closed_at', endDate + 'T23:59:59');
 
     const load = async () => {
-      const [tradesRes, plansRes] = await Promise.all([
-        query,
-        supabase
-          .from('planned_trades')
-          .select('id, symbol, direction, planned_entry_price, planned_stop_loss, planned_target_price, planned_quantity, thesis, currency')
-          .eq('user_id', userId),
-      ]);
-      const map = {};
-      for (const p of (plansRes.data || [])) map[p.id] = p;
-      setPlansMap(map);
-      setTrades(tradesRes.data || []);
-      setLoading(false);
+      try {
+        const [tradesRes, plansRes] = await Promise.all([
+          query,
+          supabase
+            .from('planned_trades')
+            .select('id, symbol, direction, planned_entry_price, planned_stop_loss, planned_target_price, planned_quantity, thesis, currency')
+            .eq('user_id', userId),
+        ]);
+        if (tradesRes.error) throw tradesRes.error;
+        if (plansRes.error) throw plansRes.error;
+        const map = {};
+        for (const p of (plansRes.data || [])) map[p.id] = p;
+        setPlansMap(map);
+        setTrades(tradesRes.data || []);
+      } catch (err) {
+        console.error('[journal] load failed:', err?.message || err);
+        Sentry.withScope((scope) => {
+          scope.setTag('screen', 'journal');
+          scope.setTag('step', 'load-trades');
+          Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+        });
+        setLoadError(err?.message || 'Could not load trades.');
+      } finally {
+        setLoading(false);
+      }
     };
     load();
-  }, [userId, dateRange, customFrom, customTo]);
+  }, [userId, dateRange, customFrom, customTo, reloadKey]);
 
   const handleTradeUpdated = (updatedTrade) => {
     setTrades(prev => prev.map(t => t.id === updatedTrade.id ? updatedTrade : t));
@@ -394,6 +424,12 @@ export default function JournalScreen({ session }) {
         <h2 className="text-xl font-semibold text-gray-900">Smart Journal</h2>
       </div>
 
+      {loadError && (
+        <div className="mb-4">
+          <LoadError title="Could not load trades" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />
+        </div>
+      )}
+
       {/* Section toggle: Taken / Missed / Playbooks */}
       <div className="inline-flex items-center bg-white border border-gray-200 rounded-xl p-1 mb-6">
         {SECTIONS.map(s => (
@@ -437,7 +473,9 @@ export default function JournalScreen({ session }) {
             </button>
           </div>
 
-          {playbooksLoading ? (
+          {playbooksError ? (
+            <LoadError title="Could not load playbooks" message={playbooksError} onRetry={() => setPlaybooksReloadKey(k => k + 1)} />
+          ) : playbooksLoading ? (
             <div className="animate-pulse space-y-3">
               {[...Array(3)].map((_, i) => (
                 <div key={i} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">

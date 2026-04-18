@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtPrice, pnlBase } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import PrivacyValue from '../components/PrivacyValue';
+import LoadError from '../components/LoadError';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -24,38 +26,57 @@ export default function HomeScreen({ session }) {
   const [logicalTrades, setLogicalTrades] = useState([]);
   const [pipelineTrades, setPipelineTrades] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   // Open positions sort: by unrealized P&L magnitude (biggest movers first).
   // Previously had Size / Date sort pills; removed per UX feedback.
 
   useEffect(() => {
     if (!userId) return;
+    setLoading(true);
+    setLoadError(null);
     const load = async () => {
-      const [posRes, plansRes, tradesRes, pipelineRes] = await Promise.all([
-        supabase.from('open_positions').select('*').eq('user_id', userId),
-        supabase.from('planned_trades').select('*').eq('user_id', userId),
-        // 30-day window for KPI stats (today's P&L, win rate)
-        supabase
-          .from('logical_trades')
-          .select('status, total_realized_pnl, fx_rate_to_base, closed_at, matching_status, direction, currency')
-          .eq('user_id', userId)
-          .gte('closed_at', thirtyDaysAgo()),
-        // ALL-TIME pipeline counts — lightweight (only the fields we need for
-        // bucket computation). No date filter: a user who hasn't logged in for
-        // 5 days should see ALL pending trades, not just last 30 days.
-        supabase
-          .from('logical_trades')
-          .select('id, matching_status, planned_trade_id, review_notes')
-          .eq('user_id', userId)
-          .eq('status', 'closed'),
-      ]);
-      setPositions(posRes.data || []);
-      setPlans(plansRes.data || []);
-      setLogicalTrades(tradesRes.data || []);
-      setPipelineTrades(pipelineRes.data || []);
-      setLoading(false);
+      try {
+        const [posRes, plansRes, tradesRes, pipelineRes] = await Promise.all([
+          supabase.from('open_positions').select('*').eq('user_id', userId),
+          supabase.from('planned_trades').select('*').eq('user_id', userId),
+          // 30-day window for KPI stats (today's P&L, win rate)
+          supabase
+            .from('logical_trades')
+            .select('status, total_realized_pnl, fx_rate_to_base, closed_at, matching_status, direction, currency')
+            .eq('user_id', userId)
+            .gte('closed_at', thirtyDaysAgo()),
+          // ALL-TIME pipeline counts — lightweight (only the fields we need for
+          // bucket computation). No date filter: a user who hasn't logged in for
+          // 5 days should see ALL pending trades, not just last 30 days.
+          supabase
+            .from('logical_trades')
+            .select('id, matching_status, planned_trade_id, review_notes')
+            .eq('user_id', userId)
+            .eq('status', 'closed'),
+        ]);
+        if (posRes.error) throw posRes.error;
+        if (plansRes.error) throw plansRes.error;
+        if (tradesRes.error) throw tradesRes.error;
+        if (pipelineRes.error) throw pipelineRes.error;
+        setPositions(posRes.data || []);
+        setPlans(plansRes.data || []);
+        setLogicalTrades(tradesRes.data || []);
+        setPipelineTrades(pipelineRes.data || []);
+      } catch (err) {
+        console.error('[home] load failed:', err?.message || err);
+        Sentry.withScope((scope) => {
+          scope.setTag('screen', 'home');
+          scope.setTag('step', 'load');
+          Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+        });
+        setLoadError(err?.message || 'Could not load.');
+      } finally {
+        setLoading(false);
+      }
     };
     load();
-  }, [userId]);
+  }, [userId, reloadKey]);
 
   // Derived stats
   const today = todayStr();
@@ -127,6 +148,15 @@ export default function HomeScreen({ session }) {
       onClick: () => navigate('/performance'),
     },
   ];
+
+  if (loadError) {
+    return (
+      <div>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Home</h2>
+        <LoadError title="Could not load your dashboard" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
