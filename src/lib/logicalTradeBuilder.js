@@ -126,11 +126,14 @@ export function buildLogicalTrades(rawTrades, userId) {
     const hasCO = indicators.some(i => i === 'C;O');
 
     if (hasCO) {
-      // Split C;O — process close portion first, then open portion
+      // IBKR C;O ("close then open") reversal: one execution that closes the
+      // existing position AND opens the opposite one in a single fill. We
+      // model it as two steps — FIFO-close the existing position using
+      // `closeTrades`, then create a new logical trade for the opposite-side
+      // opening using the same `group` (no qty split; the full quantity both
+      // closes and opens).
       const closeTrades = group.filter(t => (t.open_close_indicator || '') === 'C;O');
-      const openTrades = group.filter(t => (t.open_close_indicator || '') === 'C;O'); // same trades, different qty split
 
-      // For simplicity: treat C;O as fully closing then fully opening
       // Close side
       const opens = getOpenForSymbol(symbol);
       if (opens.length > 0) {
