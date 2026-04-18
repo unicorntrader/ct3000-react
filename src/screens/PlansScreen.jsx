@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import { fmtPrice, fmtPnl, fmtDate, fmtDateLong } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import PrivacyValue from '../components/PrivacyValue';
+import LoadError from '../components/LoadError';
 
 const statusStyles = {
   planned: 'bg-blue-50 text-blue-600',
@@ -121,16 +122,7 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-gray-900">Plans</h2>
         </div>
-        <div className="bg-red-50 border border-red-100 rounded-xl p-5">
-          <p className="text-sm font-semibold text-red-800 mb-1">Could not load plans</p>
-          <p className="text-sm text-red-600 mb-4">{loadError}</p>
-          <button
-            onClick={() => setReloadKey(k => k + 1)}
-            className="bg-red-600 text-white font-medium text-sm px-4 py-2 rounded-lg hover:bg-red-700"
-          >
-            Try again
-          </button>
-        </div>
+        <LoadError title="Could not load plans" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />
       </div>
     );
   }

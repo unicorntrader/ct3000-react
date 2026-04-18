@@ -75,3 +75,46 @@ Always use the canonical DB column names. Do not use old aliases.
 - Silent errors: always check the `error` field from Supabase responses; `PGRST116` (no rows) is expected for new users
 - Format functions: null fallback is always `—`, never `N/A` or `null`
 - Do not add dynamic `await import()` — use static imports to avoid webpack chunk hash issues on deploy
+
+## Data-loading pattern (required)
+Every `useEffect` that loads data from Supabase MUST use the standard load pattern so
+failures never result in a hanging spinner or silently empty screen. The components
+directory exports `<LoadError>` for the error UI.
+
+```js
+import * as Sentry from '@sentry/react';
+import LoadError from '../components/LoadError';
+
+const [loading, setLoading]   = useState(true);
+const [loadError, setLoadError] = useState(null);
+const [reloadKey, setReloadKey] = useState(0);
+
+useEffect(() => {
+  if (!userId) return;
+  setLoading(true);
+  setLoadError(null);
+  (async () => {
+    try {
+      const res = await supabase.from('...').select('*').eq('user_id', userId);
+      if (res.error) throw res.error;    // Supabase returns errors as a field, not rejection
+      setData(res.data || []);
+    } catch (err) {
+      console.error('[screen-name] load failed:', err?.message || err);
+      Sentry.withScope((scope) => {
+        scope.setTag('screen', 'screen-name');
+        scope.setTag('step', 'load');
+        Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+      });
+      setLoadError(err?.message || 'Could not load.');
+    } finally {
+      setLoading(false);
+    }
+  })();
+}, [userId, reloadKey]);
+
+if (loadError) return <LoadError title="Could not load X" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />;
+if (loading)   return <SkeletonOrSpinner />;
+```
+
+This applies to ALL screens AND sub-modules (Playbooks, Missed Trades, etc.). Any new
+data-loading surface that doesn't follow this pattern is a bug.
