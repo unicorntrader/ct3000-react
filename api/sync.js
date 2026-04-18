@@ -93,6 +93,24 @@ function parseBaseCurrency(xml) {
   return m ? m[1] : null;
 }
 
+// Read the Flex Query's configured window from the <FlexStatement> header.
+// IBKR emits e.g. <FlexStatement accountId="..." fromDate="20260318" toDate="20260418" ...>
+// Returns { fromDate, toDate, days } or null if the attributes aren't present.
+// Used to reject queries wider than our product contract (30 days) up front
+// with a clear error, instead of silently filtering trades after the fact.
+function parseFlexPeriod(xml) {
+  const stmt = xml.match(/<FlexStatement\s[^>]+>/);
+  if (!stmt) return null;
+  const header = stmt[0];
+  const from = header.match(/fromDate="(\d{8})"/)?.[1];
+  const to = header.match(/toDate="(\d{8})"/)?.[1];
+  if (!from || !to) return null;
+  const isoFrom = `${from.slice(0,4)}-${from.slice(4,6)}-${from.slice(6,8)}`;
+  const isoTo = `${to.slice(0,4)}-${to.slice(4,6)}-${to.slice(6,8)}`;
+  const days = Math.round((new Date(isoTo).getTime() - new Date(isoFrom).getTime()) / (24 * 60 * 60 * 1000));
+  return { fromDate: isoFrom, toDate: isoTo, days };
+}
+
 // IBKR emits trade timestamps in a compact "YYYYMMDD;HHMMSS" format.
 // Convert to 19-char ISO "YYYY-MM-DDTHH:MM:SS" here at parse time so:
 //   - downstream code (builders, UI) deals in one format, not two
@@ -240,17 +258,38 @@ module.exports = async function handler(req, res) {
     console.log('[sync] XML length:', xml.length);
 
     console.log('[sync] Step 3: Parsing...');
+
+    // Reject up-front if the user's Flex Query is configured for a window
+    // wider than our 30-day product contract. We read from<FlexStatement>'s
+    // fromDate/toDate header so the user gets an actionable error ("your
+    // query covers 365 days, reconfigure it") instead of a silent filter.
+    // Buffer of 5 days accounts for IBKR's inclusive/exclusive counting —
+    // a correctly-configured "Last 30 Calendar Days" query reports 30-31 days.
+    const MAX_PERIOD_DAYS = 30;
+    const MAX_PERIOD_TOLERANCE = 5;
+    const period = parseFlexPeriod(xml);
+    if (period && period.days > MAX_PERIOD_DAYS + MAX_PERIOD_TOLERANCE) {
+      const msg = `Your IBKR Flex Query covers ${period.days} days (${period.fromDate} → ${period.toDate}). ` +
+        `CT3000 syncs a rolling 30-day window. Please reconfigure your Flex Query in IBKR to ` +
+        `"Last 30 Calendar Days" (Flex Queries → edit → Period) and sync again.`;
+      console.log('[sync] rejected: flex period too long —', period.days, 'days');
+      return res.status(400).json({ success: false, error: msg, flexPeriodDays: period.days });
+    }
+    if (period) {
+      console.log(`[sync] Flex period: ${period.fromDate} → ${period.toDate} (${period.days} days)`);
+    } else {
+      console.log('[sync] Flex period: could not read fromDate/toDate from header');
+    }
+
     const allTrades = parseTrades(xml);
     const openPositions = parseOpenPositions(xml);
     const baseCurrency = parseBaseCurrency(xml);
 
-    // Safety net: drop executions older than 30 days. Our product contract is
-    // "rolling 30-day sync"; if a user configures their IBKR Flex Query with a
-    // 365-day window we do NOT want to accept all 365 days silently — that
-    // blows up payload sizes (Supabase 1MB body cap, Vercel function memory,
-    // browser JSON transfer) and surprises the user later. Open positions
-    // are NOT filtered: a position opened 6 months ago that's still open is
-    // a current position we need to track.
+    // Defense-in-depth: even after the header check above, drop executions
+    // older than 30 days before writing. Protects against edge cases where
+    // the header is missing/malformed but IBKR returned more than we asked
+    // for. Open positions are NOT filtered — a position opened 6 months ago
+    // that's still open is a current position we need to track.
     const MAX_AGE_DAYS = 30;
     const cutoffIso = new Date(Date.now() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
     const trades = allTrades.filter(t => !t.dateTime || t.dateTime >= cutoffIso);
