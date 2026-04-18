@@ -126,10 +126,15 @@ export default function ReviewScreen({ session }) {
       const plans = allPlans || [];
       const map = {};
       for (const t of tradeList) {
+        // Only show plans that existed BEFORE the trade was opened. Must match
+        // the server-side filter in api/rebuild.js::applyPlanMatching so that
+        // the UI's candidate list agrees with what rebuild actually matched.
         map[t.id] = plans.filter(p =>
           p.symbol?.trim().toUpperCase() === t.symbol?.trim().toUpperCase() &&
           p.direction?.trim().toUpperCase() === t.direction?.trim().toUpperCase() &&
-          p.asset_category?.trim().toUpperCase() === t.asset_category?.trim().toUpperCase()
+          p.asset_category?.trim().toUpperCase() === t.asset_category?.trim().toUpperCase() &&
+          p.created_at && t.opened_at &&
+          new Date(p.created_at).getTime() <= new Date(t.opened_at).getTime()
         );
       }
       setCandidatesMap(map);

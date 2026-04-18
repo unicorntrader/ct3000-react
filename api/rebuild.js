@@ -40,10 +40,16 @@ function applyPlanMatching(logicalTrades, plannedTrades) {
       continue;
     }
 
+    // A plan can only match a trade that was opened AFTER the plan existed.
+    // Plans are forward-looking — a plan created today cannot have "planned"
+    // a trade taken yesterday. Without this check a user who logs a plan
+    // retroactively would see it incorrectly bind to older trades.
     const matches = plannedTrades.filter(pt =>
       pt.symbol?.trim().toUpperCase() === lt.symbol?.trim().toUpperCase() &&
       pt.direction?.trim().toUpperCase() === lt.direction?.trim().toUpperCase() &&
-      pt.asset_category?.trim().toUpperCase() === lt.asset_category?.trim().toUpperCase()
+      pt.asset_category?.trim().toUpperCase() === lt.asset_category?.trim().toUpperCase() &&
+      pt.created_at && lt.opened_at &&
+      new Date(pt.created_at).getTime() <= new Date(lt.opened_at).getTime()
     );
 
     if (matches.length === 1) {
