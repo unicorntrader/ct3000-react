@@ -23,6 +23,7 @@ export default function HomeScreen({ session }) {
   const baseCurrency = useBaseCurrency();
   const [positions, setPositions] = useState([]);
   const [plans, setPlans] = useState([]);
+  const [matchedPlanIds, setMatchedPlanIds] = useState(() => new Set());
   const [logicalTrades, setLogicalTrades] = useState([]);
   const [pipelineTrades, setPipelineTrades] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +38,7 @@ export default function HomeScreen({ session }) {
     setLoadError(null);
     const load = async () => {
       try {
-        const [posRes, plansRes, tradesRes, pipelineRes] = await Promise.all([
+        const [posRes, plansRes, tradesRes, pipelineRes, matchedRes] = await Promise.all([
           supabase.from('open_positions').select('*').eq('user_id', userId),
           supabase.from('planned_trades').select('*').eq('user_id', userId),
           // 30-day window for KPI stats (today's P&L, win rate)
@@ -54,15 +55,30 @@ export default function HomeScreen({ session }) {
             .select('id, matching_status, planned_trade_id, review_notes')
             .eq('user_id', userId)
             .eq('status', 'closed'),
+          // Which plans already have a trade (closed OR open) matched to them.
+          // Used to filter matched plans out of "Active plans" — a plan that's
+          // been executed isn't active planning any more. Cheap: one column,
+          // indexed, server-side filter on non-null planned_trade_id.
+          supabase
+            .from('logical_trades')
+            .select('planned_trade_id')
+            .eq('user_id', userId)
+            .not('planned_trade_id', 'is', null),
         ]);
         if (posRes.error) throw posRes.error;
         if (plansRes.error) throw plansRes.error;
         if (tradesRes.error) throw tradesRes.error;
         if (pipelineRes.error) throw pipelineRes.error;
+        if (matchedRes.error) throw matchedRes.error;
         setPositions(posRes.data || []);
         setPlans(plansRes.data || []);
         setLogicalTrades(tradesRes.data || []);
         setPipelineTrades(pipelineRes.data || []);
+        const matchedIds = new Set();
+        for (const row of (matchedRes.data || [])) {
+          if (row.planned_trade_id != null) matchedIds.add(row.planned_trade_id);
+        }
+        setMatchedPlanIds(matchedIds);
       } catch (err) {
         console.error('[home] load failed:', err?.message || err);
         Sentry.withScope((scope) => {
@@ -113,6 +129,24 @@ export default function HomeScreen({ session }) {
   const pipelineFullyDone = pipelineTrades.filter(t => isResolved(t) && t.review_notes).length;
   const pipelineTotal = pipelineNeedMatching + pipelineNeedNotes + pipelineFullyDone;
 
+  // Active plans = plans not yet linked to any logical_trade. Sorted by most
+  // recently created so the newest idea is at the top.
+  const unmatchedPlans = plans
+    .filter(p => !matchedPlanIds.has(p.id))
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+
+  // R:R = |target − entry| ÷ |entry − stop|. Returns a string with one
+  // decimal ("1.7") or null if any leg is missing / risk is zero.
+  const computeRR = (plan) => {
+    const entry = plan.planned_entry_price;
+    const target = plan.planned_target_price;
+    const stop = plan.planned_stop_loss;
+    if (entry == null || target == null || stop == null) return null;
+    const risk = Math.abs(entry - stop);
+    if (risk === 0) return null;
+    return (Math.abs(target - entry) / risk).toFixed(1);
+  };
+
   const statCards = [
     {
       label: "Today's P&L",
@@ -133,9 +167,9 @@ export default function HomeScreen({ session }) {
     },
     {
       label: 'Active plans',
-      value: String(plans.length),
+      value: String(unmatchedPlans.length),
       maskValue: false,
-      sub: plans.length > 0 ? 'Ready to execute' : 'No plans yet',
+      sub: unmatchedPlans.length > 0 ? 'Ready to execute' : 'No plans yet',
       color: 'text-gray-900',
       onClick: () => navigate('/plans'),
     },
@@ -345,42 +379,44 @@ export default function HomeScreen({ session }) {
             <h3 className="text-sm font-semibold text-gray-700">Active plans</h3>
             <button onClick={() => navigate('/plans')} className="text-xs text-blue-600 font-medium hover:underline">View all &rarr;</button>
           </div>
-          {plans.length === 0 ? (
+          {unmatchedPlans.length === 0 ? (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-8 text-center">
               <p className="text-sm text-gray-400">No active plans</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {plans.map(plan => {
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-50 overflow-hidden">
+              {unmatchedPlans.map(plan => {
                 const dir = (plan.direction || '').toLowerCase();
+                const rr = computeRR(plan);
+                const currency = plan.currency || baseCurrency;
+                const rrColor = rr == null ? 'text-gray-300'
+                  : parseFloat(rr) >= 2 ? 'text-green-600'
+                  : parseFloat(rr) >= 1 ? 'text-amber-500'
+                  : 'text-red-500';
                 return (
-                  <div key={plan.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="font-semibold text-gray-900">{plan.symbol}</span>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                        dir === 'long' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
-                      }`}>
-                        {dir.toUpperCase()}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 mb-2">
-                      <div className="text-center bg-gray-50 rounded-lg py-1.5">
-                        <p className="text-xs text-gray-400 mb-0.5">Entry</p>
-                        <p className="text-sm font-medium">{fmtPrice(plan.planned_entry_price, plan.currency || baseCurrency)}</p>
-                      </div>
-                      <div className="text-center bg-gray-50 rounded-lg py-1.5">
-                        <p className="text-xs text-gray-400 mb-0.5">Target</p>
-                        <p className="text-sm font-medium text-green-600">{fmtPrice(plan.planned_target_price, plan.currency || baseCurrency)}</p>
-                      </div>
-                      <div className="text-center bg-gray-50 rounded-lg py-1.5">
-                        <p className="text-xs text-gray-400 mb-0.5">Stop</p>
-                        <p className="text-sm font-medium text-red-500">{fmtPrice(plan.planned_stop_loss, plan.currency || baseCurrency)}</p>
-                      </div>
-                    </div>
-                    {plan.thesis && (
-                      <p className="text-xs text-gray-500 italic">{plan.thesis}</p>
-                    )}
-                  </div>
+                  <button
+                    key={plan.id}
+                    onClick={() => navigate('/plans')}
+                    className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left"
+                  >
+                    <span className="font-semibold text-gray-900 w-16 shrink-0">{plan.symbol}</span>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${
+                      dir === 'long' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+                    }`}>
+                      {dir.toUpperCase()}
+                    </span>
+                    <span className="text-sm text-gray-600 flex-1 truncate">
+                      {fmtPrice(plan.planned_entry_price, currency)}
+                      <span className="text-gray-300 mx-1.5">→</span>
+                      <span className="text-green-600">{fmtPrice(plan.planned_target_price, currency)}</span>
+                    </span>
+                    <span className={`text-xs font-semibold shrink-0 ${rrColor}`}>
+                      {rr != null ? `${rr}R` : '—'}
+                    </span>
+                    <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
                 );
               })}
             </div>
@@ -390,3 +426,4 @@ export default function HomeScreen({ session }) {
     </div>
   );
 }
+
