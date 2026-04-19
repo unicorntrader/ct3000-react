@@ -1,34 +1,46 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import * as Sentry from '@sentry/react'
 import { supabase } from '../lib/supabaseClient'
 
 export default function WelcomeModal({ userId, onDone }) {
   const navigate = useNavigate()
   const [skipping, setSkipping] = useState(false)
-  const [error, setError] = useState(null)
 
   const dismiss = async (destination) => {
+    if (skipping) return
     setSkipping(true)
-    setError(null)
-    const { error: updateErr } = await supabase
-      .from('user_subscriptions')
-      .update({ has_seen_welcome: true })
-      .eq('user_id', userId)
-    if (updateErr) {
-      setError('Something went wrong. Please try again.')
-      setSkipping(false)
-      return
+    // Fire-and-forget semantics on the DB update: if it fails we log to
+    // Sentry but STILL dismiss the modal. Worst case the user sees Welcome
+    // again next login — annoying, not broken. Much better than a "One
+    // moment…" button that stays disabled forever on a network hiccup
+    // (the previous behaviour).
+    try {
+      const { error: updateErr } = await supabase
+        .from('user_subscriptions')
+        .update({ has_seen_welcome: true })
+        .eq('user_id', userId)
+      if (updateErr) throw updateErr
+    } catch (err) {
+      console.error('[welcome-modal] has_seen_welcome update failed:', err?.message || err)
+      Sentry.withScope((scope) => {
+        scope.setTag('component', 'welcome-modal')
+        scope.setTag('step', 'dismiss')
+        Sentry.captureException(err instanceof Error ? err : new Error(String(err)))
+      })
     }
     onDone()
     if (destination) navigate(destination)
   }
 
-  // Esc skips the modal; Enter confirms the primary action (Connect IBKR)
+  // Esc skips the modal. We deliberately do NOT listen for Enter here — a
+  // stray Enter keypress from the Auth screen's login form can bubble into
+  // this modal right after mount and auto-dismiss before the user sees
+  // anything. Require an explicit click instead.
   useEffect(() => {
     const onKey = (e) => {
       if (skipping) return
       if (e.key === 'Escape') dismiss(null)
-      else if (e.key === 'Enter') dismiss('/ibkr')
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -70,12 +82,6 @@ export default function WelcomeModal({ userId, onDone }) {
             Skip for now
           </button>
         </div>
-
-        {error && (
-          <div className="mt-4 bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-600">
-            {error}
-          </div>
-        )}
       </div>
     </div>
   )
