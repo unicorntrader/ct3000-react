@@ -35,13 +35,13 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 **Used by:** All components (global).
 
 #### `src/App.jsx`
-**Purpose:** Top-level shell. Handles auth session, subscription state, Stripe checkout polling, anonymous demo seeding, and routing.
+**Purpose:** Top-level shell. Handles auth session, subscription state, Stripe checkout polling, demo seeding on first login, and routing.
 
 **Key functions:**
 - `isActive(sub)` — checks if a subscription is `'active'` or in valid `'trialing'` state
 - `LoadingScreen({ message })` — spinner + optional message
-- `AppShell({ session, subscription, onSubscriptionRefresh, isAnonymous })` — renders `Header`, `Sidebar`, banners, global sheet (`PlanSheet`), and the `<Routes>` tree (including `/review` route for trade resolution)
-- `seedForAnon(session)` — POSTs to `/api/seed-demo` for anonymous users on first sign-in
+- `AppShell({ session, subscription, onSubscriptionRefresh })` — renders `Header`, `Sidebar`, `DemoBanner` (when applicable), global sheet (`PlanSheet`), and the `<Routes>` tree (including `/review` route for trade resolution)
+- `seedDemoData(session)` — POSTs to `/api/seed-demo` on first login so new users have something to explore before connecting IBKR
 - `fetchSubscription(userId)` — pulls `user_subscriptions` row
 - Default `App` — wraps auth state machine and polling after Stripe checkout
 
@@ -165,10 +165,6 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 **Modes:** `landing`, `signup`, `login`, `reset`, `invite` (if `?invite=<token>` in URL).
 **Tables touched:** `auth.users` (signUp, signIn). Redirects to Stripe checkout on signup.
 
-#### `src/components/WelcomeModal.jsx`
-**Purpose:** First-time onboarding modal after subscription activates. Two buttons: connect IBKR or skip.
-**Tables touched:** `user_subscriptions` (update `has_seen_welcome`).
-
 #### `src/components/PlanSheet.jsx`
 **Purpose:** Bottom sheet to create or edit a planned trade. Lives globally in `AppShell`.
 
@@ -218,11 +214,7 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 **Purpose:** Fixed bottom nav bar (mobile). Same NavLinks as Header + privacy toggle.
 
 #### `src/components/DemoBanner.jsx`
-**Purpose:** Yellow banner shown to real users who still have demo data (haven't connected IBKR yet). Nudges them to connect.
-
-#### `src/components/AnonymousBanner.jsx`
-**Purpose:** Blue banner shown to anonymous demo users. Expands into a signup form that converts the anon session to a real account + Stripe checkout.
-**Tables touched:** `auth.users` (updateUser with email/password).
+**Purpose:** Blue banner shown to signed-up users who still have demo data (haven't connected IBKR yet). Nudges them to /ibkr. Auto-disappears when api/sync.js flips `ibkr_connected=true` on first successful sync.
 
 #### `src/components/PrivacyValue.jsx`
 **Purpose:** Small wrapper component that either renders the passed value or a `•••` mask, based on the `PrivacyContext`. Used everywhere P&L and quantities are shown.
@@ -336,20 +328,19 @@ Rows where `user_reviewed = true` (user made an explicit choice) are preserved a
 **Tables read:** `trades`, `planned_trades`.
 
 #### `api/seed-demo.js`
-**Purpose:** Seed demo data for anonymous users on first sign-in.
+**Purpose:** Seed demo data for newly signed-up users on first sign-in so they have something to explore before connecting IBKR.
 
 **Safeguards:**
-- Blocks non-anonymous users (returns 403)
-- Skips if already seeded (idempotent)
+- Skips if already seeded (idempotent). Still updates `user_subscriptions.demo_seeded=true` on the short-circuit path so the DemoBanner gate works for users whose is_demo rows pre-date the flag.
 
 **What it inserts:**
-- 5 demo plans (NVDA, AAPL, TSLA, SPY, MSFT) — uses `thesis` + `strategy: 'Demo'` (fixed today)
+- 5 demo plans (NVDA, AAPL, TSLA, SPY, MSFT)
 - ~20 demo logical trades (mix of wins, losses, matched, unmatched, open)
 - 5 demo open positions
-- 2 demo playbooks (unused by any screen)
+- 2 demo playbooks
 
-**Called by:** `App.seedForAnon(session)` — only fires for anonymous sessions.
-**Tables written:** `planned_trades`, `logical_trades`, `open_positions`, `playbooks`, `anonymous_sessions`, `user_subscriptions` (flag update).
+**Called by:** `App.seedDemoData(session)` — fires on first login when `!demo_seeded && !ibkr_connected`.
+**Tables written:** `planned_trades`, `logical_trades`, `open_positions`, `playbooks`, `user_subscriptions` (sets `demo_seeded=true`).
 
 #### `api/create-checkout-session.js`
 **Purpose:** Create a Stripe Checkout Session tied to the user's Supabase ID.
@@ -361,7 +352,7 @@ Rows where `user_reviewed = true` (user made an explicit choice) are preserved a
 4. Create Stripe Checkout Session with `STRIPE_PRICE_ID`, success URL with `?checkout=success`
 5. Return session URL
 
-**Called by:** `AuthScreen` (signup), `PaywallScreen`, `AnonymousBanner` (conversion flow).
+**Called by:** `AuthScreen` (signup), `PaywallScreen`.
 **Tables written:** `user_subscriptions`.
 
 #### `api/stripe-webhook.js`
@@ -419,28 +410,18 @@ Rows where `user_reviewed = true` (user made an explicit choice) are preserved a
 5. User pays → Stripe redirects back with `?checkout=success`
 6. `App` detects the query param → starts polling `user_subscriptions` every 2 seconds
 7. Stripe webhook fires → `/api/stripe-webhook.js` → writes the active subscription row
-8. App poll detects the row → `isActive(sub) === true` → renders `AppShell`
-9. `WelcomeModal` appears (new user, hasn't seen it)
-10. User clicks "Connect IBKR account" → navigates to `/ibkr`, `has_seen_welcome=true`
-11. **IBKRScreen** — user pastes Flex token + query ID, clicks "Test first" then "Save"
-12. Credentials upserted to `user_ibkr_credentials`
-13. User clicks "Sync now" → POST `/api/sync.js`
-14. Sync fetches XML → parses → writes `trades` + `open_positions` → calls rebuild
-15. Rebuild runs `buildLogicalTrades` + `planMatcher` → upserts `logical_trades`
-16. Success banner shown. User navigates to HomeScreen and sees live data.
+8. App poll detects the row → `isActive(sub) === true` → peeks `user_subscriptions`
+9. Sees `!demo_seeded && !ibkr_connected` → POST `/api/seed-demo` → populates demo data
+10. `AppShell` renders with `DemoBanner` across the top ("you're exploring with demo data — connect IBKR")
+11. User clicks banner "Connect IBKR" → navigates to `/ibkr`
+12. **IBKRScreen** — user pastes Flex token + query ID, clicks "Test first" then "Save"
+13. Credentials upserted to `user_ibkr_credentials`
+14. User clicks "Sync now" → POST `/api/sync.js`
+15. Sync fetches XML → parses → deletes is_demo rows → writes real `trades` + `open_positions` → sets `ibkr_connected=true` → calls rebuild
+16. Rebuild runs `buildLogicalTrades` + plan matcher → upserts `logical_trades`
+17. DemoBanner disappears (condition `!ibkr_connected` now false). User sees live data.
 
-### Flow B: Anonymous demo user
-
-1. **AuthScreen** → user clicks "Explore demo" (or however it's wired)
-2. `supabase.auth.signInAnonymously()` → session with `is_anonymous=true`
-3. `App.seedForAnon(session)` fires
-4. POST `/api/seed-demo` → seeds demo data (5 plans, ~20 trades, etc.)
-5. `setAnonReady(true)` → renders `AppShell` with `AnonymousBanner`
-6. User clicks banner → expands signup form
-7. `updateUser({ email, password })` → anonymous session becomes real
-8. `createCheckoutSession()` → redirected to Stripe → flow converges with Flow A
-
-### Flow C: Daily sync
+### Flow B: Daily sync
 
 1. User clicks "Sync now" on `IBKRScreen`
 2. POST `/api/sync.js` (with Bearer JWT)
@@ -452,12 +433,12 @@ Rows where `user_reviewed = true` (user made an explicit choice) are preserved a
 8. Return counts → UI shows success banner
 9. Review queue count appears on HomeScreen if any unmatched/ambiguous trades surfaced
 
-### Flow D: Plan → execute → auto-match → review
+### Flow C: Plan → execute → auto-match → review
 
 1. **PlansScreen** → click "New plan" → `PlanSheet` opens
 2. Fill form → "Save plan" → insert into `planned_trades`
 3. Later, user executes the trade on IBKR
-4. User runs sync (Flow C)
+4. User runs sync (Flow B)
 5. Raw trades → `trades` table
 6. Rebuild → logical trade created with matching `symbol + direction + asset_category`
 7. `planMatcher` finds the plan → `matching_status='matched'`, `planned_trade_id` set
@@ -562,7 +543,7 @@ Rows where `user_reviewed = true` (user made an explicit choice) are preserved a
 
 | Table | Read by | Written by |
 |---|---|---|
-| `auth.users` | App, all screens (via `session`) | `AuthScreen`, `AnonymousBanner`, `api/redeem-invite` |
+| `auth.users` | App, all screens (via `session`) | `AuthScreen`, `api/redeem-invite` |
 | `user_subscriptions` | App (polling), `PaywallScreen` | `api/stripe-webhook`, `api/create-checkout-session`, `api/redeem-invite`, `WelcomeModal` (flag) |
 | `user_ibkr_credentials` | `IBKRScreen`, `Sidebar`, `SettingsScreen`, `HomeScreen`, `JournalScreen`, `PerformanceScreen`, `DailyViewScreen`, `ReviewSheet`, `PlanSheet` | `IBKRScreen`, `api/sync.js` |
 | `trades` (raw) | `api/rebuild.js`, `DailyViewScreen` | `api/sync.js` (upsert) |
@@ -571,8 +552,7 @@ Rows where `user_reviewed = true` (user made an explicit choice) are preserved a
 | `open_positions` | `HomeScreen`, `DailyViewScreen` | `api/sync.js` (delete + re-insert), `api/seed-demo.js` |
 | `daily_notes` | `DailyViewScreen` | `DailyViewScreen` (upsert) |
 | `invited_users` | `api/redeem-invite.js` | `api/redeem-invite.js` (external creation + mark redeemed) |
-| `anonymous_sessions` | (none in client) | `api/seed-demo.js` |
-| `playbooks` | **(nothing reads it — dead table)** | `api/seed-demo.js` (inserts unused demo rows) |
+| `playbooks` | `JournalScreen` (Playbooks section), `PlaybookSheet` | `api/seed-demo.js`, `PlaybookSheet` (CRUD) |
 | `securities` | (none in client code; reference data) | (none from our code) |
 | `ghost_webhook_events` | (service_role only) | (service_role only) |
 
@@ -609,8 +589,8 @@ See `src/lib/adherenceScore.js`. Four sub-scores (entry slippage, target capture
 ## 6. Auth & authorization
 
 **Session types:**
-- **Real user:** signed up via email/password or invite. `is_anonymous=false`. Full access post-subscription.
-- **Anonymous demo:** `supabase.auth.signInAnonymously()`. `is_anonymous=true`. Access to seeded demo data. Can be upgraded to real via `AnonymousBanner`.
+- **Real user:** signed up via email/password or invite. Full access post-subscription. Gets populated demo data on first login until they connect IBKR.
+- **Comped user:** redeemed an invite token. `is_comped=true`, `subscription_status='active'`. Same app experience as a paying user; Stripe webhook skips updates for them.
 
 **RLS (Row Level Security):** Every table has a policy that restricts rows to `auth.uid() = user_id`. This is the security boundary, not client-side filters. All server-side code uses `supabaseAdmin` (service role) which bypasses RLS. Client code uses the anon key which is subject to RLS.
 

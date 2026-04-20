@@ -15,10 +15,9 @@ module.exports = async function handler(req, res) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(authHeader.slice(7))
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  // Demo seeding is allowed for anonymous sessions (try-before-you-buy) AND for
-  // newly signed-up real users on first login (so they have something to explore
-  // before connecting IBKR). The "already seeded" check below prevents repeated
-  // calls from duplicating data.
+  // Demo seeding runs for newly signed-up users on first login so they have
+  // something to explore before connecting IBKR. The "already seeded" check
+  // below prevents repeated calls from duplicating data.
   const userId = user.id
 
   // Skip if already seeded — check planned_trades (survives IBKR sync better than logical_trades)
@@ -29,6 +28,14 @@ module.exports = async function handler(req, res) {
     .eq('is_demo', true)
     .limit(1)
   if (existing && existing.length > 0) {
+    // Demo rows already exist for this user. Make sure the subscription flag
+    // reflects that so App.jsx's DemoBanner gate works correctly -- otherwise
+    // the banner stays hidden and the user has demo data but no visible CTA
+    // to connect IBKR.
+    await supabaseAdmin
+      .from('user_subscriptions')
+      .update({ demo_seeded: true })
+      .eq('user_id', userId)
     return res.status(200).json({ already_seeded: true })
   }
 
@@ -172,20 +179,12 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: errors[0].message })
   }
 
-  // ── Step 5: Mark subscription flags ──
+  // ── Step 5: Mark subscription flag so App.jsx DemoBanner shows ──
   await supabaseAdmin
     .from('user_subscriptions')
-    .update({ has_seen_welcome: true, demo_seeded: true })
+    .update({ demo_seeded: true })
     .eq('user_id', userId)
 
-  // Track anonymous sessions for admin visibility
-  if (user.is_anonymous) {
-    await supabaseAdmin.from('anonymous_sessions').upsert(
-      { user_id: userId, created_at: new Date().toISOString(), is_anonymous: true },
-      { onConflict: 'user_id' }
-    )
-  }
-
-  console.log('[seed-demo] seeded demo data for userId:', userId, '| anon:', !!user.is_anonymous)
+  console.log('[seed-demo] seeded demo data for userId:', userId)
   return res.status(200).json({ success: true })
 }

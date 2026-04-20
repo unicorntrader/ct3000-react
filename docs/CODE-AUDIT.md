@@ -91,13 +91,9 @@ If a user deletes a plan via direct Supabase call (or if the PlanSheet delete pa
 
 ## MEDIUM
 
-### 7. `anonymous_sessions` table never cleaned up
+### 7. ~~`anonymous_sessions` table never cleaned up~~ ✅ RESOLVED
 
-**Where:** schema says `expires_at default now() + '48:00:00'`, but nothing deletes expired rows. No `pg_cron` job, no Vercel cron. Table grows forever.
-
-Already in `LIMITS-AUDIT.md` finding #13. Flagged here again because anonymous demo flow will be how new users evaluate CT3000, so the row count grows faster than anything else.
-
-**Fix:** `pg_cron` extension in Supabase, a weekly `DELETE FROM anonymous_sessions WHERE expires_at < now()`.
+The whole anonymous-user flow was retired 2026-04-20. Table dropped via `supabase/migrations/20260420_drop_anonymous_sessions.sql`. Nothing to clean up.
 
 ---
 
@@ -224,7 +220,6 @@ The agents flagged these — I read the code and they're wrong:
 4. #3 — rebuild transaction/swap
 5. #6 — FK cascade on planned_trade_id
 6. #11 — silent-error audit pass
-7. #7 — anonymous_sessions cleanup cron
 
 **Post-launch backlog:**
 8. #2 — dedupe the two logicalTradeBuilder.js files

@@ -12,7 +12,6 @@ import MobileNav from './components/MobileNav'
 import Sidebar from './components/Sidebar'
 import PlanSheet from './components/PlanSheet'
 import DemoBanner from './components/DemoBanner'
-import AnonymousBanner from './components/AnonymousBanner'
 
 import HomeScreen from './screens/HomeScreen'
 import PlansScreen from './screens/PlansScreen'
@@ -54,7 +53,7 @@ function LoadingScreen({ message }) {
   )
 }
 
-function AppShell({ session, subscription, onSubscriptionRefresh, isAnonymous }) {
+function AppShell({ session, subscription, onSubscriptionRefresh }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [planSheetOpen, setPlanSheetOpen] = useState(false)
   const [planRefreshKey, setPlanRefreshKey] = useState(0)
@@ -65,12 +64,12 @@ function AppShell({ session, subscription, onSubscriptionRefresh, isAnonymous })
   // Banner shown to signed-up users who have demo data but haven't yet
   // connected IBKR. Flips off automatically once api/sync.js sets
   // ibkr_connected=true and deletes the is_demo rows.
-  const showDemoBanner = !isAnonymous && subscription?.demo_seeded && !subscription?.ibkr_connected
+  const showDemoBanner = subscription?.demo_seeded && !subscription?.ibkr_connected
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Header onMenuOpen={() => setSidebarOpen(true)} />
-      {isAnonymous ? <AnonymousBanner /> : (showDemoBanner && <DemoBanner />)}
+      {showDemoBanner && <DemoBanner />}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onSignOut={handleSignOut} session={session} />
       <PlanSheet session={session} isOpen={planSheetOpen} plan={editingPlan} onClose={() => { setPlanSheetOpen(false); setEditingPlan(null) }} onSaved={() => setPlanRefreshKey(k => k + 1)} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6">
@@ -105,13 +104,11 @@ export default function App() {
   const [subscription, setSubscription] = useState(undefined) // undefined = still loading
   const [polling, setPolling] = useState(false)
   const [pollTimedOut, setPollTimedOut] = useState(false)
-  const [anonReady, setAnonReady] = useState(false)
 
   // Calls /api/seed-demo for the current session. Safe to call repeatedly --
-  // the endpoint short-circuits if demo data already exists. Used for both:
-  //   - anonymous users (landed pre-signup, try-before-you-buy)
-  //   - newly signed-up real users on first login (so they have something to
-  //     explore while the IBKR connection step is still ahead of them)
+  // the endpoint short-circuits if demo data already exists. Used on first
+  // login for newly signed-up users so they have something to explore while
+  // the IBKR connection step is still ahead of them.
   const seedDemoData = useCallback(async (session) => {
     try {
       const res = await fetch('/api/seed-demo', {
@@ -148,15 +145,12 @@ export default function App() {
   // Auth state
   useEffect(() => {
     const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_event, session) => {
-      // console.log('[app] auth event:', _event, '| userId:', session?.user?.id ?? 'none', '| anon:', session?.user?.is_anonymous ?? false)
       setSession(session)
       // Tag Sentry events with the Supabase user so errors are attributable.
-      // Email is omitted for anonymous sessions since there isn't one.
       if (session?.user?.id) {
         Sentry.setUser({
           id: session.user.id,
           ...(session.user.email ? { email: session.user.email } : {}),
-          ...(session.user.is_anonymous ? { anonymous: true } : {}),
         })
       } else {
         Sentry.setUser(null)
@@ -165,14 +159,8 @@ export default function App() {
         setSubscription(null)
         return
       }
-      if (session.user.is_anonymous) {
-        setSubscription(null)
-        setAnonReady(false)
-        seedDemoData(session).finally(() => setAnonReady(true))
-        return
-      }
-      // Signed-up user: fetch subscription. If this is their first login and
-      // they haven't connected IBKR yet, auto-seed demo data before surfacing
+      // Fetch subscription. If this is the user's first login and they
+      // haven't connected IBKR yet, auto-seed demo data before surfacing
       // the app so they don't see an empty home screen for a flash.
       setSubscription(undefined)
       ;(async () => {
@@ -198,7 +186,7 @@ export default function App() {
   useEffect(() => {
     const onFocus = () => {
       supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session?.user?.id && !session.user.is_anonymous) fetchSubscription(session.user.id)
+        if (session?.user?.id) fetchSubscription(session.user.id)
       })
     }
     window.addEventListener('focus', onFocus)
@@ -268,20 +256,6 @@ export default function App() {
   // Webhook timed out — show paywall with a note
   if (pollTimedOut && !isActive(subscription)) {
     return <PaywallScreen timedOut />
-  }
-
-  // Anonymous demo user — bypass Stripe entirely
-  if (session.user.is_anonymous) {
-    if (!anonReady) return <LoadingScreen message="Setting up your demo…" />
-    return (
-      <ErrorBoundary>
-        <PrivacyProvider>
-          <BaseCurrencyProvider userId={session.user.id}>
-            <AppShell session={session} subscription={null} onSubscriptionRefresh={() => {}} isAnonymous />
-          </BaseCurrencyProvider>
-        </PrivacyProvider>
-      </ErrorBoundary>
-    )
   }
 
   // Active or trialing subscription

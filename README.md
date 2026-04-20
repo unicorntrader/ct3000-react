@@ -38,7 +38,7 @@ IBKR Flex XML
 | `planned_trades` | User trade plans. Canonical columns: `planned_entry_price`, `planned_stop_loss`, `planned_target_price`, `planned_quantity`, `thesis`, `strategy` (NOT NULL), `asset_category`, `currency` (populated from securities lookup). |
 | `open_positions` | Current open positions from IBKR. Includes `fx_rate_to_base` (added April 15) for correct base-currency aggregation. |
 | `user_ibkr_credentials` | IBKR token, account_id, `last_sync_at`, `base_currency`. |
-| `user_subscriptions` | Stripe subscription state + flags (`has_seen_welcome`, `demo_seeded`, `ibkr_connected`). |
+| `user_subscriptions` | Stripe subscription state + flags (`demo_seeded`, `ibkr_connected`, `is_comped`). |
 | `securities` | Instrument reference data — `symbol`, `currency`, `asset_category`, `description`, `conid`, `multiplier`. Populated by IBKR sync (or ct3000-admin). Read by `PlanSheet` for ticker autocomplete + auto-fill. |
 | `daily_notes` | End-of-day journal notes per (user, date_key). Read/written by DailyViewScreen. |
 | `weekly_reviews` | Qualitative weekly review notes (worked / didn't_work / recurring / action) per (user, week_key). Read/written by PerformanceScreen weekly reflection section. |
@@ -64,7 +64,7 @@ IBKR Flex XML
 | `IBKRScreen` | Connect / disconnect IBKR, trigger sync. Sync success banner notes Flex Query latency (10–30 min for new fills). |
 | `SettingsScreen` | Sign out, subscription. |
 | `PaywallScreen` | Stripe checkout entrypoint. |
-| `AuthScreen` | Email/password + anonymous demo + invite redemption (detects `?invite=<token>`). |
+| `AuthScreen` | Email/password signup + login + invite redemption (detects `?invite=<token>`). |
 
 ### Popups / drawers
 | Component | Type | Esc | Enter |
@@ -119,7 +119,7 @@ Current state. ✅ = fixed, ⚠️ = open, 🔴 = critical.
 |---|---|---|---|
 | C1 | HomeScreen `todayPnl` and W/L counts use raw `total_realized_pnl` — **wrong for multi-currency users** | `src/screens/HomeScreen.jsx` (~l.49, 54) | ⚠️ open |
 | C2 | ReviewSheet trade card shows native P&L via `fmtPnl(pnl)` — no FX conversion | `src/components/ReviewSheet.jsx` (~l.22) | ⚠️ open |
-| C3 | `api/seed-demo.js` is stale: inserts non-existent `notes` column, missing NOT NULL `strategy`. **Any anonymous demo user today fails to seed.** | `api/seed-demo.js` | ⚠️ open |
+| C3 | `api/seed-demo.js` was stale: inserted non-existent `notes` column, missing NOT NULL `strategy`. | `api/seed-demo.js` | ✅ fixed `b2395d2d` |
 
 ### ⚠️ High priority
 
@@ -182,8 +182,8 @@ Safe `.select('*')` queries exist in `App.jsx`, `PlansScreen.jsx`, `HomeScreen.j
 
 ## Flows to manually test before shipping
 
-1. **Anonymous demo → real account**: anonymous session → seed (should work once C3 is fixed) → sign up → Stripe → verify demo data persists.
-2. **IBKR sync end-to-end**: connect IBKR → sync → raw trades in `trades` → logical rebuild → plan matching → adherence computed.
+1. **Signup → Stripe → demo seeded → app**: new email/password → Stripe checkout → return via `?checkout=success` → poll → demo seeded → DemoBanner visible on home.
+2. **IBKR sync end-to-end**: connect IBKR → sync → raw trades in `trades` → logical rebuild → plan matching → adherence computed → DemoBanner disappears.
 3. **Plan → trade → adherence**: create plan → sync matching execution → verify `matching_status='matched'` and plan vs actual visible in drawer.
 4. **Performance → Journal handoff**: select a period in Performance → click a symbol → Journal opens with correct symbol + date range pre-filled.
 5. **Paywall race**: complete Stripe → `?checkout=success` polling → verify active state or timeout path.
@@ -246,7 +246,7 @@ Safe `.select('*')` queries exist in `App.jsx`, `PlansScreen.jsx`, `HomeScreen.j
 - RLS migration applied to live Supabase (`6955b502`)
 - **Critical #1** — `ReviewSheet` plans query dropped non-existent `notes` column (`dc7dbc7d`). Same bug as `JournalScreen` fix yesterday; reimported via the backup merge, caught on audit.
 - **Critical #2** — HomeScreen + ReviewSheet multi-currency P&L fixed. HomeScreen now fetches `fx_rate_to_base` and `base_currency`, uses `pnlBase(t)` for `todayPnl`. ReviewSheet TradeCard takes `baseCurrency` prop and uses `pnlBase(trade)`. (`193dfc27`)
-- **Critical #3** — `api/seed-demo.js` fixed: `notes` → `thesis`, added `strategy: 'Demo'` for NOT NULL constraint. Anonymous demo flow now works end-to-end (`b2395d2d`).
+- **Critical #3** — `api/seed-demo.js` fixed: `notes` → `thesis`, added `strategy: 'Demo'` for NOT NULL constraint. Demo-seeding flow now works end-to-end (`b2395d2d`).
 - **Critical #4** — `ReviewSheet.handleMatch`, `handleNoPlan`, and `TradeJournalDrawer.handleSave` now include `.eq('user_id', ...)` and check the `.update()` error before advancing state. Silent failures eliminated. (`4ada87e9`)
 
 **Bugs found but not yet fixed** (from the April 15 audit):
@@ -267,7 +267,7 @@ Safe `.select('*')` queries exist in `App.jsx`, `PlansScreen.jsx`, `HomeScreen.j
 
 **Design / direction decisions:**
 - **`notes` vs `thesis` pattern now confirmed universal:** the canonical column is `thesis`. The codebase had `notes` hallucinated in at least 3 places (JournalScreen, ReviewSheet, seed-demo). Grep is now clean. Future copies of this pattern should fail the audit.
-- **Decision: keep anonymous demo flow.** `seed-demo.js` stays, now working. This is the "try without signing up" landing experience.
+- **Decision: keep demo-seeding flow, reworked for signed-up users.** `seed-demo.js` now populates demo data for newly signed-up users so they have something to explore before connecting IBKR. (The original anonymous-session variant of this flow was retired on 2026-04-20 — see `supabase/migrations/20260420_drop_anonymous_sessions.sql`.)
 - **Error-check sweep decision:** adopted convention that every client `.update()` / `.insert()` / `.upsert()` call must:
   1. Include `.eq('user_id', ...)` (CLAUDE.md convention)
   2. Destructure `error` from the response

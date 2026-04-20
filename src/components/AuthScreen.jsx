@@ -94,19 +94,6 @@ export default function AuthScreen() {
     setLoading(false)
   }
 
-  const handleTryDemo = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { error: anonError } = await supabase.auth.signInAnonymously()
-      if (anonError) throw anonError
-      // App.jsx detects the anonymous session, seeds demo data, then shows the app
-    } catch (err) {
-      setError(err.message)
-      setLoading(false)
-    }
-  }
-
   const handleInviteSignup = async (e) => {
     e.preventDefault()
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
@@ -218,16 +205,6 @@ export default function AuthScreen() {
           </div>
 
           {error && <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-600 mt-4">{error}</div>}
-
-          <div className="text-center mt-5">
-            <button
-              onClick={handleTryDemo}
-              disabled={loading}
-              className="text-sm text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
-            >
-              {loading ? 'Loading demo…' : 'Try demo — no signup needed'}
-            </button>
-          </div>
 
         </div>
       </div>

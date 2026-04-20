@@ -218,7 +218,7 @@ Recommended: create **one Sentry project** (platform: JavaScript → React) and
 use the same DSN for both `REACT_APP_SENTRY_DSN` and `SENTRY_DSN`. Issues are
 tagged with `route=sync|rebuild` and `sync_step=flex-fetch|trades-upsert|…` so
 you can filter server errors from browser errors in the UI. User context
-(Supabase `user_id`, email when non-anonymous) is attached to every event.
+(Supabase `user_id`, email) is attached to every event.
 
 See `docs/deployment.md` for full details.
 

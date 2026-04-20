@@ -30,8 +30,7 @@ Journaling & review:
 
 User & account:
 - `user_ibkr_credentials` — IBKR token, account_id, last_sync_at, `base_currency`
-- `user_subscriptions` — Stripe state: `stripe_customer_id`, `subscription_status`, `trial_ends_at`, `is_comped`, `has_seen_welcome`, `ibkr_connected`, `demo_seeded`
-- `anonymous_sessions` — 48h ephemeral pre-signup sessions; converts to real user on signup
+- `user_subscriptions` — Stripe state: `stripe_customer_id`, `subscription_status`, `trial_ends_at`, `is_comped`, `ibkr_connected`, `demo_seeded`
 - `invited_users` — beta invite tokens (email, token, redeemed_at, redeemed_by)
 
 Ops / admin:

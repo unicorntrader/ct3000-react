@@ -115,9 +115,8 @@ The client doing the DB writes is a quirk of this flow — sync.js parses and *r
 Even if we raise the row cap to 10k, we should log a warning when we get exactly the cap back, because that probably means there's more.
 **Fix sketch:** in the client, after a `.select()`, if `data.length === 1000`, `console.warn` + Sentry event.
 
-### 13. `anonymous_sessions` never cleaned up
-`expires_at` exists but no cron calls `DELETE ... WHERE expires_at < now()`. Not a scale-breaking issue — just bloats the table slowly.
-**Fix sketch:** Supabase `pg_cron` job or a weekly Vercel cron endpoint.
+### 13. ~~`anonymous_sessions` never cleaned up~~ ✅ RESOLVED
+The whole anonymous-user flow was retired 2026-04-20. Table dropped via `supabase/migrations/20260420_drop_anonymous_sessions.sql`. No more writers, no cleanup needed.
 
 ### 14. Sync result shows what *sync* returned, not what was *stored*
 `IBKRScreen.jsx:389` — `"{tradeCount} trades saved to database"` actually prints the count sync.js parsed, not what Supabase acknowledged. If upsert silently dropped rows, the UI lies.
