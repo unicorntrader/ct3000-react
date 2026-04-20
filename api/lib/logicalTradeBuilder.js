@@ -200,6 +200,12 @@ function buildLogicalTrades(rawTrades, userId) {
         : sumField(group, 'fifo_pnl_realized');
 
       if (opens.length === 0) {
+        // Orphan: the close execution is in our window but the open isn't.
+        // We DO NOT fabricate an entry price or open date. weightedAvgPrice()
+        // called on close executions returns the CLOSE price -- storing that
+        // in avg_entry_price would lie. Null is honest: "we don't know".
+        // P&L stays correct because IBKR's fifo_pnl_realized is computed
+        // against the real (pre-window) cost basis that IBKR remembers.
         const direction = firstTrade.buy_sell === 'SELL' ? 'LONG' : 'SHORT';
         const qty = Math.abs(sumField(group, 'quantity'));
         const orphan = {
@@ -211,19 +217,23 @@ function buildLogicalTrades(rawTrades, userId) {
           currency,
           opening_ib_order_id: firstTrade.ib_order_id,
           direction,
-          opened_at: parseDateTime(firstTrade.date_time),
+          opened_at: null,
           closed_at: parseDateTime(firstTrade.date_time),
           status: 'closed',
           total_opening_quantity: qty,
           total_closing_quantity: qty,
           remaining_quantity: 0,
-          avg_entry_price: weightedAvgPrice(group),
+          avg_entry_price: null,
+          // We DO know the exit price -- it's the average of the close
+          // executions we have. Store it so the UI can show "Exit: $X" even
+          // when entry is blank.
+          avg_exit_price: weightedAvgPrice(group),
           total_realized_pnl: sumField(group, 'fifo_pnl_realized'),
           fx_rate_to_base: weightedAvgFxRate(group),
           is_reversal: false,
           matching_status: 'needs_review',
           planned_trade_id: null,
-          source_notes: 'No matching open trade found — outside query window',
+          source_notes: 'Opened before the 30-day sync window — entry price and open date unknown. P&L from IBKR.',
         };
         logicalTrades.push(orphan);
       } else {

@@ -492,8 +492,11 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
             .from('logical_trades')
             .select('*')
             .eq('user_id', userId)
-            .gte('opened_at', isoDate)
-            .order('opened_at', { ascending: false }),
+            // Include a trade if it was opened OR closed within the window.
+            // Matters for (a) trades that opened months ago but closed in-window
+            // and (b) orphan trades with opened_at=null (pre-window opens).
+            .or(`opened_at.gte.${isoDate},closed_at.gte.${isoDate}`)
+            .order('opened_at', { ascending: false, nullsFirst: false }),
           supabase
             .from('trades')
             .select('ib_exec_id, ib_order_id, conid, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, currency')
