@@ -33,6 +33,27 @@ function ensureInit() {
   });
 }
 
+// Wrap a possibly-non-Error value into an Error, preserving useful fields
+// from Supabase error objects (they're plain {message,code,hint,details}
+// objects, not Error instances -- `String(err)` on them returns the
+// useless "[object Object]").
+function toError(err) {
+  if (err instanceof Error) return err;
+  if (err && typeof err === 'object') {
+    const msg = err.message
+      || err.error_description
+      || err.error
+      || `Non-Error object: ${JSON.stringify(err).slice(0, 500)}`;
+    const wrapped = new Error(msg);
+    if (err.code)    wrapped.code = err.code;
+    if (err.hint)    wrapped.hint = err.hint;
+    if (err.details) wrapped.details = err.details;
+    if (err.stack)   wrapped.stack = err.stack;
+    return wrapped;
+  }
+  return new Error(String(err));
+}
+
 // Capture an error with standardized tags/context and flush before the
 // serverless sandbox freezes. Flush timeout is short so a slow Sentry ingest
 // doesn't hang the API response for the user.
@@ -43,7 +64,21 @@ async function captureServerError(err, { userId, step, route } = {}) {
       if (route) scope.setTag('route', route);
       if (step) scope.setTag('sync_step', step);
       if (userId) scope.setUser({ id: userId });
-      Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+      // Attach the raw error fields as a context block -- viewable in the
+      // Sentry event under "Additional Data". Keeps all the Supabase details
+      // (code, hint, details) visible even though the exception title is
+      // just the message.
+      if (err && typeof err === 'object' && !(err instanceof Error)) {
+        scope.setContext('raw_error', {
+          message:  err.message,
+          code:     err.code,
+          hint:     err.hint,
+          details:  err.details,
+          status:   err.status,
+          name:     err.name,
+        });
+      }
+      Sentry.captureException(toError(err));
     });
     await Sentry.flush(2000);
   } catch (sentryErr) {

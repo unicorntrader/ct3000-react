@@ -215,6 +215,12 @@ module.exports = async function handler(req, res) {
     .insert(logical);
 
   if (insertError) {
+    console.error('[rebuild] insert-new-logical failed:', JSON.stringify({
+      message: insertError.message,
+      code: insertError.code,
+      hint: insertError.hint,
+      details: insertError.details,
+    }));
     await captureServerError(insertError, { userId, step: 'insert-new-logical', route: 'rebuild' });
     return res.status(500).json({ success: false, error: insertError.message });
   }
