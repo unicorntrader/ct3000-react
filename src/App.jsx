@@ -11,7 +11,6 @@ import Header from './components/Header'
 import MobileNav from './components/MobileNav'
 import Sidebar from './components/Sidebar'
 import PlanSheet from './components/PlanSheet'
-import WelcomeModal from './components/WelcomeModal'
 import DemoBanner from './components/DemoBanner'
 import AnonymousBanner from './components/AnonymousBanner'
 
@@ -63,18 +62,13 @@ function AppShell({ session, subscription, onSubscriptionRefresh, isAnonymous })
 
   const handleSignOut = async () => { await supabase.auth.signOut() }
 
-  const showWelcome = !isAnonymous &&
-    subscription !== null &&
-    subscription !== undefined &&
-    !subscription.has_seen_welcome &&
-    (subscription.subscription_status === 'active' || subscription.subscription_status === 'trialing')
+  // Banner shown to signed-up users who have demo data but haven't yet
+  // connected IBKR. Flips off automatically once api/sync.js sets
+  // ibkr_connected=true and deletes the is_demo rows.
   const showDemoBanner = !isAnonymous && subscription?.demo_seeded && !subscription?.ibkr_connected
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {showWelcome && (
-        <WelcomeModal userId={session.user.id} onDone={onSubscriptionRefresh} />
-      )}
       <Header onMenuOpen={() => setSidebarOpen(true)} />
       {isAnonymous ? <AnonymousBanner /> : (showDemoBanner && <DemoBanner />)}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onSignOut={handleSignOut} session={session} />
@@ -113,26 +107,25 @@ export default function App() {
   const [pollTimedOut, setPollTimedOut] = useState(false)
   const [anonReady, setAnonReady] = useState(false)
 
-  const seedForAnon = useCallback(async (session) => {
-    // Check if already seeded (handles returning anonymous users)
-    const { data } = await supabase
-      .from('logical_trades')
-      .select('id')
-      .eq('user_id', session.user.id)
-      .eq('is_demo', true)
-      .limit(1)
-
-    if (data && data.length > 0) {
-      setAnonReady(true)
-      return
+  // Calls /api/seed-demo for the current session. Safe to call repeatedly --
+  // the endpoint short-circuits if demo data already exists. Used for both:
+  //   - anonymous users (landed pre-signup, try-before-you-buy)
+  //   - newly signed-up real users on first login (so they have something to
+  //     explore while the IBKR connection step is still ahead of them)
+  const seedDemoData = useCallback(async (session) => {
+    try {
+      const res = await fetch('/api/seed-demo', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session.access_token}` },
+      })
+      if (!res.ok) {
+        console.error('[app] demo seed failed:', res.status)
+      }
+    } catch (err) {
+      console.error('[app] demo seed error:', err?.message || err)
+      // Non-fatal -- user just sees an empty app. Banner still points them
+      // at IBKR to get real data in.
     }
-
-    const res = await fetch('/api/seed-demo', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${session.access_token}` },
-    })
-    if (!res.ok) console.error('[app] anon seed failed')
-    setAnonReady(true)
   }, [])
 
   const fetchSubscription = useCallback(async (userId) => {
@@ -168,20 +161,38 @@ export default function App() {
       } else {
         Sentry.setUser(null)
       }
-      if (session?.user?.id) {
-        if (session.user.is_anonymous) {
-          setSubscription(null)
-          setAnonReady(false)
-          seedForAnon(session)
-        } else {
-          fetchSubscription(session.user.id)
-        }
-      } else {
+      if (!session?.user?.id) {
         setSubscription(null)
+        return
       }
+      if (session.user.is_anonymous) {
+        setSubscription(null)
+        setAnonReady(false)
+        seedDemoData(session).finally(() => setAnonReady(true))
+        return
+      }
+      // Signed-up user: fetch subscription. If this is their first login and
+      // they haven't connected IBKR yet, auto-seed demo data before surfacing
+      // the app so they don't see an empty home screen for a flash.
+      setSubscription(undefined)
+      ;(async () => {
+        // Peek without updating state — we don't want to flip the loading
+        // gate off until the seeding decision is final.
+        const { data: sub } = await supabase
+          .from('user_subscriptions')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .maybeSingle()
+        if (sub && !sub.demo_seeded && !sub.ibkr_connected) {
+          await seedDemoData(session)
+        }
+        // Either path ends with a real fetch that updates subscription state
+        // and flips the loading gate off.
+        await fetchSubscription(session.user.id)
+      })()
     })
     return () => authSub.unsubscribe()
-  }, [fetchSubscription, seedForAnon])
+  }, [fetchSubscription, seedDemoData])
 
   // Re-check subscription on window focus (e.g. user switches tabs back)
   useEffect(() => {

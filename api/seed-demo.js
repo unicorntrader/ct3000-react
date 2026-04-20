@@ -15,12 +15,10 @@ module.exports = async function handler(req, res) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(authHeader.slice(7))
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  // Only anonymous sessions may seed demo data — real user accounts must never be seeded
-  if (!user.is_anonymous) {
-    console.warn('[seed-demo] blocked: non-anonymous user attempted seed, userId:', user.id)
-    return res.status(403).json({ error: 'Demo seeding is only available for anonymous sessions' })
-  }
-
+  // Demo seeding is allowed for anonymous sessions (try-before-you-buy) AND for
+  // newly signed-up real users on first login (so they have something to explore
+  // before connecting IBKR). The "already seeded" check below prevents repeated
+  // calls from duplicating data.
   const userId = user.id
 
   // Skip if already seeded — check planned_trades (survives IBKR sync better than logical_trades)
