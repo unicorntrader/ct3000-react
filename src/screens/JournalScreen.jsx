@@ -434,7 +434,7 @@ export default function JournalScreen({ session }) {
           <span aria-hidden>←</span>
           <span>Back to Performance</span>
           {breadcrumb.symbol && (
-            <span className="text-blue-400 font-normal">· {breadcrumb.symbol}</span>
+            <span className="text-blue-400 font-normal">· {fmtSymbol(breadcrumb.symbol)}</span>
           )}
         </button>
       )}

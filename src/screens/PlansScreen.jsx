@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPrice, fmtPnl, fmtDate, fmtDateLong } from '../lib/formatters';
+import { fmtPrice, fmtPnl, fmtDate, fmtDateLong, fmtSymbol } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import PrivacyValue from '../components/PrivacyValue';
 import LoadError from '../components/LoadError';
@@ -51,7 +51,7 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
             .order('created_at', { ascending: false }),
           supabase
             .from('logical_trades')
-            .select('planned_trade_id, symbol, opened_at')
+            .select('planned_trade_id, symbol, opened_at, asset_category')
             .eq('user_id', userId)
             .not('planned_trade_id', 'is', null)
             .order('opened_at', { ascending: false }),
@@ -64,7 +64,7 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
         const byPlan = {};
         for (const row of (matchedRes.data || [])) {
           if (!byPlan[row.planned_trade_id]) byPlan[row.planned_trade_id] = [];
-          byPlan[row.planned_trade_id].push({ symbol: row.symbol, opened_at: row.opened_at });
+          byPlan[row.planned_trade_id].push({ symbol: row.symbol, opened_at: row.opened_at, asset_category: row.asset_category });
         }
         setMatchedByPlan(byPlan);
       } catch (err) {
@@ -275,7 +275,7 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
                       <p className="text-xs text-gray-500 mt-1.5 inline-flex items-center gap-1">
                         <span aria-hidden>🔒</span>
                         <span>
-                          Matched with {matchedTrades[0].symbol} from {fmtDate(matchedTrades[0].opened_at)}
+                          Matched with {fmtSymbol(matchedTrades[0])} from {fmtDate(matchedTrades[0].opened_at)}
                           {matchedTrades.length > 1 && ` +${matchedTrades.length - 1} more`} — cannot be edited
                         </span>
                       </p>

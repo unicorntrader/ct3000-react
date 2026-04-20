@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPnl, fmtPrice, fmtDate } from '../lib/formatters';
+import { fmtPnl, fmtPrice, fmtDate, fmtSymbol } from '../lib/formatters';
 import LoadError from '../components/LoadError';
 
 // Full-page review workflow — replaces the old ReviewSheet bottom drawer.
@@ -31,7 +31,7 @@ function TradeCard({ trade }) {
     <div className="bg-gray-50 rounded-xl p-5 mb-6 border border-gray-100">
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center flex-wrap gap-2">
-          <span className="text-lg font-semibold text-gray-900">{trade.symbol}</span>
+          <span className="text-lg font-semibold text-gray-900">{fmtSymbol(trade)}</span>
           <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
             trade.direction === 'LONG' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'
           }`}>

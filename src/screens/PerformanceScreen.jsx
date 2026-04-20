@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
-import { pnlBase, fmtPnl, fmtShort } from '../lib/formatters';
+import { pnlBase, fmtPnl, fmtShort, fmtSymbol } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import PrivacyValue from '../components/PrivacyValue';
 import LoadError from '../components/LoadError';
@@ -688,7 +688,7 @@ export default function PerformanceScreen({ session }) {
                     className="hover:bg-blue-50 cursor-pointer transition-colors"
                     title={`View ${row.symbol} trades in Smart Journal`}
                   >
-                    <td className="px-3 sm:px-5 py-3.5 text-sm font-semibold text-blue-600 whitespace-nowrap">{row.symbol}</td>
+                    <td className="px-3 sm:px-5 py-3.5 text-sm font-semibold text-blue-600 whitespace-nowrap">{fmtSymbol(row.symbol)}</td>
                     <td className="px-3 sm:px-5 py-3.5 text-sm text-gray-600">{row.trades}</td>
                     <td className="px-3 sm:px-5 py-3.5 text-sm text-gray-700">{row.winRate}%</td>
                     <td className={`px-3 sm:px-5 py-3.5 text-sm font-semibold whitespace-nowrap ${row.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>

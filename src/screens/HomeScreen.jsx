@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPnl, fmtPrice, pnlBase } from '../lib/formatters';
+import { fmtPnl, fmtPrice, fmtSymbol, pnlBase } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import PrivacyValue from '../components/PrivacyValue';
 import LoadError from '../components/LoadError';
@@ -356,7 +356,7 @@ export default function HomeScreen({ session }) {
                       return (
                         <div key={pos.id || pos.symbol} className="flex items-center justify-between px-5 py-3">
                           <div>
-                            <p className="font-semibold text-gray-900">{pos.symbol}</p>
+                            <p className="font-semibold text-gray-900">{fmtSymbol(pos)}</p>
                             <p className="text-xs text-gray-400 mt-0.5">
                               {isLong ? 'Long' : 'Short'} &middot; <PrivacyValue value={qty} /> {pos.asset_category === 'STK' ? 'shares' : pos.asset_category === 'OPT' ? 'contracts' : 'units'}
                             </p>

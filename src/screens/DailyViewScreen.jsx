@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
-import { pnlBase, fmtPrice, fmtPnl } from '../lib/formatters';
+import { pnlBase, fmtPrice, fmtPnl, fmtSymbol } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
@@ -338,7 +338,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     <td className="hidden sm:table-cell px-4 py-3.5">
                       <AssetBadge category={row.assetCategory} />
                     </td>
-                    <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{row.symbol}</td>
+                    <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{fmtSymbol({ symbol: row.symbol, asset_category: row.assetCategory })}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
                       {row.isOrphan ? <span className="text-gray-400">N/A</span> : fmtPrice(row.entry, row.currency)}
@@ -396,7 +396,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                       <td colSpan={COL_SPAN} className="px-6 py-3">
                         <div className="bg-white rounded-xl p-4 border border-purple-200">
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                            Resolve {row.symbol} &middot; <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency, 0)} />
+                            Resolve {fmtSymbol({ symbol: row.symbol, asset_category: row.assetCategory })} &middot; <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency, 0)} />
                           </p>
                           <p className="text-sm text-gray-500 mb-3">
                             Multiple plans matched this trade. Open the Review wizard to pick one.
