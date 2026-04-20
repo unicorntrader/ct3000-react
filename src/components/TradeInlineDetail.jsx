@@ -1,6 +1,34 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { fmtPrice, fmtPnl, fmtDateLong, fmtSymbol } from '../lib/formatters'
+import { useCodeLabels } from '../lib/CodeLabelContext'
+
+// Small inline pill — only rendered when learning mode is on — naming this
+// expanded row so the user can trace it back to TradeInlineDetail.jsx.
+function InlineDetailLabel() {
+  const { enabled } = useCodeLabels()
+  if (!enabled) return null
+  return (
+    <div className="mb-3 flex items-center gap-2 text-[11px] font-mono">
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-purple-600 text-white text-[10px] font-semibold">
+        component
+      </span>
+      <span className="text-gray-700 font-semibold">TradeInlineDetail</span>
+      <span className="text-gray-400">·</span>
+      <span className="text-gray-500">src/components/TradeInlineDetail.jsx</span>
+      <span className="text-gray-400">·</span>
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-semibold">
+        calcR()
+      </span>
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-semibold">
+        StatCard
+      </span>
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-semibold">
+        AdherencePill
+      </span>
+    </div>
+  )
+}
 
 // Rendered inline underneath a trade row in the Smart Journal table. Same
 // content the old TradeJournalDrawer used to show, but with no overlay, no
@@ -194,6 +222,7 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
 
   return (
     <div className="px-6 py-5 bg-gray-50 border-y border-gray-100">
+      <InlineDetailLabel />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl">
         {/* Left column: stats + plan vs actual */}
         <div>

@@ -3,6 +3,33 @@ import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { currencySymbol, fmtPrice, fmtPnl, fmtDate, pnlBase } from '../lib/formatters';
 import { usePrivacy } from '../lib/PrivacyContext';
+import { useCodeLabels } from '../lib/CodeLabelContext';
+
+// Inline learning-mode label identifying this drawer as PlanSheet.
+function PlanSheetLabel() {
+  const { enabled } = useCodeLabels();
+  if (!enabled) return null;
+  return (
+    <div className="mb-3 flex items-center gap-2 text-[11px] font-mono flex-wrap">
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-purple-600 text-white text-[10px] font-semibold">
+        component
+      </span>
+      <span className="text-gray-700 font-semibold">PlanSheet</span>
+      <span className="text-gray-400">·</span>
+      <span className="text-gray-500">src/components/PlanSheet.jsx</span>
+      <span className="text-gray-400">·</span>
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-rose-600 text-white text-[10px] font-semibold" title="Supabase table">
+        planned_trades
+      </span>
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-rose-600 text-white text-[10px] font-semibold" title="Supabase table">
+        playbooks
+      </span>
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-rose-600 text-white text-[10px] font-semibold" title="Supabase table">
+        securities
+      </span>
+    </div>
+  );
+}
 
 // PlanSheet's background loads (base currency, user symbols, matched count,
 // securities search, historical trades) all run on sheet open. They enrich
@@ -468,6 +495,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
 
       <div className="relative z-10 w-full max-w-lg bg-white rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="px-6 pt-6 pb-8">
+          <PlanSheetLabel />
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-lg font-semibold text-gray-900">
               {isEdit ? 'Edit plan' : 'New plan'}

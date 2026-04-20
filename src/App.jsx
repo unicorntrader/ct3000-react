@@ -4,6 +4,11 @@ import * as Sentry from '@sentry/react'
 import { supabase } from './lib/supabaseClient'
 import { PrivacyProvider } from './lib/PrivacyContext'
 import { BaseCurrencyProvider } from './lib/BaseCurrencyContext'
+import { CodeLabelProvider } from './lib/CodeLabelContext'
+import CodeLabel from './components/CodeLabel'
+import CodeLabelToggle from './components/CodeLabelToggle'
+import CodeLabelLegend from './components/CodeLabelLegend'
+import ScreenFrame from './components/ScreenFrame'
 import ErrorBoundary from './components/ErrorBoundary'
 import AuthScreen from './components/AuthScreen'
 import PaywallScreen from './screens/PaywallScreen'
@@ -68,20 +73,98 @@ function AppShell({ session, subscription, onSubscriptionRefresh }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header onMenuOpen={() => setSidebarOpen(true)} />
-      {showDemoBanner && <DemoBanner />}
+      <CodeLabel name="Header" file="components/Header.jsx" type="component">
+        <Header onMenuOpen={() => setSidebarOpen(true)} />
+      </CodeLabel>
+      {showDemoBanner && (
+        <CodeLabel name="DemoBanner" file="components/DemoBanner.jsx" type="component">
+          <DemoBanner />
+        </CodeLabel>
+      )}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onSignOut={handleSignOut} session={session} />
       <PlanSheet session={session} isOpen={planSheetOpen} plan={editingPlan} onClose={() => { setPlanSheetOpen(false); setEditingPlan(null) }} onSaved={() => setPlanRefreshKey(k => k + 1)} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6">
         <Routes>
-          <Route path="/"            element={<HomeScreen session={session} />} />
-          <Route path="/plans"       element={<PlansScreen session={session} onNewPlan={() => setPlanSheetOpen(true)} onEditPlan={(plan) => { setEditingPlan(plan); setPlanSheetOpen(true) }} refreshKey={planRefreshKey} />} />
-          <Route path="/daily"       element={<DailyViewScreen session={session} />} />
-          <Route path="/journal"     element={<JournalScreen session={session} />} />
-          <Route path="/performance" element={<PerformanceScreen session={session} />} />
-          <Route path="/ibkr"        element={<IBKRScreen session={session} />} />
-          <Route path="/settings"    element={<SettingsScreen session={session} />} />
-          <Route path="/review"      element={<ReviewScreen session={session} />} />
+          <Route path="/" element={
+            <ScreenFrame
+              name="HomeScreen"
+              file="src/screens/HomeScreen.jsx"
+              db={['open_positions', 'planned_trades', 'logical_trades']}
+              notes="Landing page. Shows today's P&L, open positions, active plans, and a preview of recent logical trades."
+            >
+              <HomeScreen session={session} />
+            </ScreenFrame>
+          } />
+          <Route path="/plans" element={
+            <ScreenFrame
+              name="PlansScreen"
+              file="src/screens/PlansScreen.jsx"
+              db={['planned_trades', 'playbooks', 'missed_trades', 'logical_trades']}
+              notes="Plans / Playbooks / Missed Trades tabs. Opens PlanSheet drawer to create/edit plans."
+            >
+              <PlansScreen session={session} onNewPlan={() => setPlanSheetOpen(true)} onEditPlan={(plan) => { setEditingPlan(plan); setPlanSheetOpen(true) }} refreshKey={planRefreshKey} />
+            </ScreenFrame>
+          } />
+          <Route path="/daily" element={
+            <ScreenFrame
+              name="DailyViewScreen"
+              file="src/screens/DailyViewScreen.jsx"
+              db={['logical_trades', 'trades', 'daily_notes', 'user_ibkr_credentials']}
+              notes="Per-day breakdown. Each DayBlock lists trades with expandable ExecSubTable drill-down showing raw executions."
+            >
+              <DailyViewScreen session={session} />
+            </ScreenFrame>
+          } />
+          <Route path="/journal" element={
+            <ScreenFrame
+              name="JournalScreen"
+              file="src/screens/JournalScreen.jsx"
+              db={['logical_trades', 'planned_trades', 'playbooks']}
+              notes="Smart Journal table. Expandable TradeInlineDetail rows. Bulk actions for needs_review. calcR() computes R-multiple."
+            >
+              <JournalScreen session={session} />
+            </ScreenFrame>
+          } />
+          <Route path="/performance" element={
+            <ScreenFrame
+              name="PerformanceScreen"
+              file="src/screens/PerformanceScreen.jsx"
+              db={['logical_trades', 'user_ibkr_credentials']}
+              notes="Charts + KPI dashboard. pnlBase() converts native P&L to account base currency using fx_rate_to_base."
+            >
+              <PerformanceScreen session={session} />
+            </ScreenFrame>
+          } />
+          <Route path="/ibkr" element={
+            <ScreenFrame
+              name="IBKRScreen"
+              file="src/screens/IBKRScreen.jsx"
+              db={['user_ibkr_credentials', 'trades', 'logical_trades']}
+              notes="IBKR connection + Sync Now / Rebuild buttons. Calls api/sync.js and api/rebuild.js serverless functions."
+            >
+              <IBKRScreen session={session} />
+            </ScreenFrame>
+          } />
+          <Route path="/settings" element={
+            <ScreenFrame
+              name="SettingsScreen"
+              file="src/screens/SettingsScreen.jsx"
+              db={['user_subscriptions', 'user_ibkr_credentials']}
+              notes="Account / billing / base currency. Stripe portal link for subscription management."
+            >
+              <SettingsScreen session={session} />
+            </ScreenFrame>
+          } />
+          <Route path="/review" element={
+            <ScreenFrame
+              name="ReviewScreen"
+              file="src/screens/ReviewScreen.jsx"
+              db={['weekly_reviews', 'logical_trades']}
+              notes="Weekly retrospective: worked / didnt_work / recurring / action notes per ISO week."
+            >
+              <ReviewScreen session={session} />
+            </ScreenFrame>
+          } />
           {/* /signup is the route ct3000-admin uses for invite links
               (https://.../signup?invite=TOKEN). Logged-out users never hit this
               route — App.jsx returns <AuthScreen /> directly when session is null,
@@ -94,7 +177,9 @@ function AppShell({ session, subscription, onSubscriptionRefresh }) {
           <Route path="*"            element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-      <MobileNav />
+      <CodeLabel name="MobileNav" file="components/MobileNav.jsx" type="component">
+        <MobileNav />
+      </CodeLabel>
     </div>
   )
 }
@@ -262,15 +347,19 @@ export default function App() {
   if (isActive(subscription)) {
     return (
       <ErrorBoundary>
-        <PrivacyProvider>
-          <BaseCurrencyProvider userId={session.user.id}>
-            <AppShell
-              session={session}
-              subscription={subscription}
-              onSubscriptionRefresh={() => fetchSubscription(session.user.id)}
-            />
-          </BaseCurrencyProvider>
-        </PrivacyProvider>
+        <CodeLabelProvider>
+          <PrivacyProvider>
+            <BaseCurrencyProvider userId={session.user.id}>
+              <AppShell
+                session={session}
+                subscription={subscription}
+                onSubscriptionRefresh={() => fetchSubscription(session.user.id)}
+              />
+              <CodeLabelLegend />
+              <CodeLabelToggle />
+            </BaseCurrencyProvider>
+          </PrivacyProvider>
+        </CodeLabelProvider>
       </ErrorBoundary>
     )
   }
