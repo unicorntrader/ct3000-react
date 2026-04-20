@@ -20,11 +20,6 @@ const statusLabels = {
   off_plan:     'Off-plan',
 };
 
-const fmtTime = (iso) => {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-};
-
 const fmtDateLabel = (dateKey) => {
   return new Date(dateKey + 'T12:00:00Z').toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
@@ -125,7 +120,7 @@ function AssetBadge({ category }) {
   return <span className="inline-flex items-center justify-center h-6 px-1 rounded text-xs font-bold bg-gray-100 text-gray-500">{label}</span>;
 }
 
-const COL_SPAN = 12; // TYPE TIME SYMBOL DIR ENTRY EXIT QTY DURATION P&L STATUS share chevron
+const COL_SPAN = 11; // TYPE SYMBOL DIR ENTRY EXIT QTY DURATION P&L STATUS share chevron
 
 function ExecSubTable({ execs }) {
   if (!execs || execs.length === 0) {
@@ -308,7 +303,6 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
             <tr>
               {[
                 { label: 'Type',     hide: true },
-                { label: 'Time',     hide: true },
                 { label: 'Symbol',   hide: false },
                 { label: 'Dir',      hide: false },
                 { label: 'Entry',    hide: true },
@@ -344,7 +338,6 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     <td className="hidden sm:table-cell px-4 py-3.5">
                       <AssetBadge category={row.assetCategory} />
                     </td>
-                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-600">{row.time}</td>
                     <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{row.symbol}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
@@ -586,10 +579,6 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
           closedAt: t.closed_at,
           assetCategory: t.asset_category,
           currency: t.currency,
-          // Fall back to close time when opened_at is missing (orphan trades
-          // where the open happened before our 30-day window -- we still want
-          // the row to have a visible time, which is the close time we DO know).
-          time: fmtTime(t.opened_at || t.closed_at),
           symbol: t.symbol,
           direction: t.direction,
           entry,
