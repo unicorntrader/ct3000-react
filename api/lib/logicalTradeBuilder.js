@@ -93,6 +93,20 @@ function buildLogicalTrades(rawTrades, userId) {
 
   const isFX = (t) => t.asset_category === 'FXCFD' || t.asset_category === 'CASH';
 
+  // Contract multiplier resolution. IBKR sends this per execution in the
+  // Flex XML; api/sync.js stores it in trades.multiplier. For equities it's
+  // 1, for standard US equity options it's 100, for futures it varies.
+  // We take the first valid multiplier in the group (all executions on the
+  // same contract share one) and fall back to 1 so equity rows without the
+  // column set don't get NaN'd.
+  const getMultiplier = (trades) => {
+    for (const t of trades) {
+      const m = parseFloat(t.multiplier);
+      if (!isNaN(m) && m > 0) return m;
+    }
+    return 1;
+  };
+
   for (const [, group] of orderGroups) {
     const firstTrade = group[0];
     const symbol = firstTrade.symbol;
@@ -153,6 +167,7 @@ function buildLogicalTrades(rawTrades, userId) {
         avg_entry_price: weightedAvgPrice(group),
         total_realized_pnl: 0,
         fx_rate_to_base: weightedAvgFxRate(group),
+        multiplier: getMultiplier(group),
         is_reversal: true,
         matching_status: 'needs_review',
         planned_trade_id: null,
@@ -221,6 +236,7 @@ function buildLogicalTrades(rawTrades, userId) {
           avg_entry_price: newEntryPrice,
           total_realized_pnl: pnl,
           fx_rate_to_base: newFxRate,
+          multiplier: getMultiplier(group),
           is_reversal: false,
           matching_status: 'needs_review',
           planned_trade_id: null,
@@ -272,6 +288,7 @@ function buildLogicalTrades(rawTrades, userId) {
           avg_exit_price: weightedAvgPrice(group),
           total_realized_pnl: sumField(group, 'fifo_pnl_realized'),
           fx_rate_to_base: weightedAvgFxRate(group),
+          multiplier: getMultiplier(group),
           is_reversal: false,
           matching_status: 'needs_review',
           planned_trade_id: null,
@@ -291,10 +308,16 @@ function buildLogicalTrades(rawTrades, userId) {
           // Per-lot P&L from actual prices. Weighted-average the closing
           // price into this lot's avg_exit_price so the UI can show a real
           // number instead of reverse-engineering one from stored P&L.
+          //
+          // Multiplier matters for options/futures: 1 contract = 100 shares
+          // for standard US equity options, so a $1 move on 1 contract is
+          // $100 of P&L -- not $1. Carried forward from trades.multiplier
+          // at LT creation time.
           const entry = oldest.avg_entry_price || 0;
+          const mult = parseFloat(oldest.multiplier) || 1;
           const lotPnl = oldest.direction === 'LONG'
-            ? used * (coverPrice - entry)
-            : used * (entry - coverPrice);
+            ? used * (coverPrice - entry) * mult
+            : used * (entry - coverPrice) * mult;
 
           const priorClosed = oldest.total_closing_quantity || 0;
           const priorExit = oldest.avg_exit_price || 0;

@@ -90,20 +90,27 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
   // fills). Fall back to the legacy P&L-derived value only for rows inserted
   // before avg_exit_price existed -- after the next rebuild, everything
   // shows a real number.
+  //
+  // Multiplier: options/futures carry a contract multiplier (100 for standard
+  // US equity options). P&L is already in dollars (multiplier-inclusive), so
+  // when reverse-engineering a per-share exit price we divide by
+  // (qty × multiplier), not just qty. Risk for R-multiple is quoted in
+  // dollars per share × shares × multiplier to match the dollar P&L.
   const closingQty = trade.total_closing_quantity || trade.total_opening_quantity || 0
+  const mult = parseFloat(trade.multiplier) || 1
   let actualExit = null
   if (trade.avg_exit_price != null) {
     actualExit = parseFloat(trade.avg_exit_price)
   } else if (trade.avg_entry_price != null && closingQty > 0 && trade.total_realized_pnl != null) {
     actualExit = trade.direction === 'LONG'
-      ? trade.avg_entry_price + (trade.total_realized_pnl / closingQty)
-      : trade.avg_entry_price - (trade.total_realized_pnl / closingQty)
+      ? trade.avg_entry_price + (trade.total_realized_pnl / (closingQty * mult))
+      : trade.avg_entry_price - (trade.total_realized_pnl / (closingQty * mult))
   }
 
   // R-multiple — native P&L / native risk (unitless ratio)
   let rMultiple = null
   if (plan && plan.planned_entry_price != null && plan.planned_stop_loss != null && closingQty > 0 && pnl != null) {
-    const risk = Math.abs(plan.planned_entry_price - plan.planned_stop_loss) * closingQty
+    const risk = Math.abs(plan.planned_entry_price - plan.planned_stop_loss) * closingQty * mult
     if (risk > 0) rMultiple = (pnl / risk).toFixed(1) + 'R'
   }
 

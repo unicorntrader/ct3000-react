@@ -343,7 +343,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
       try {
         const { data, error } = await supabase
           .from('logical_trades')
-          .select('id, direction, opened_at, closed_at, avg_entry_price, total_closing_quantity, total_opening_quantity, total_realized_pnl, fx_rate_to_base, currency')
+          .select('id, direction, opened_at, closed_at, avg_entry_price, total_closing_quantity, total_opening_quantity, total_realized_pnl, fx_rate_to_base, currency, multiplier')
           .eq('user_id', uid)
           .eq('symbol', debouncedSymbol)
           .eq('status', 'closed')
@@ -606,8 +606,17 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                             const q = t.total_closing_quantity || t.total_opening_quantity || 0;
                             const isLong = t.direction === 'LONG';
                             const tPnl = pnlBase(t);
+                            // Multiplier-aware reverse-engineered exit: for
+                            // options/futures, P&L is in dollars already
+                            // (qty × multiplier × priceDiff), so divide by
+                            // (qty × multiplier) to back out a per-share
+                            // price. Equities (multiplier=1) behave as
+                            // before.
+                            const tMult = parseFloat(t.multiplier) || 1;
                             const exit = (t.avg_entry_price != null && q > 0 && t.total_realized_pnl != null)
-                              ? (isLong ? t.avg_entry_price + t.total_realized_pnl / q : t.avg_entry_price - t.total_realized_pnl / q)
+                              ? (isLong
+                                  ? t.avg_entry_price + t.total_realized_pnl / (q * tMult)
+                                  : t.avg_entry_price - t.total_realized_pnl / (q * tMult))
                               : null;
                             const dur = calcDuration(t.opened_at, t.closed_at);
                             const tCurrency = t.currency || baseCurrency;

@@ -113,7 +113,11 @@ const calcR = (trade, plan) => {
   if (riskPerShare === 0) return null;
   // R-multiple is unitless — use native P&L so numerator and denominator share units.
   // Using pnlBase() here would silently scale R by fx_rate_to_base for non-base trades.
-  const r = (trade.total_realized_pnl || 0) / (riskPerShare * qty);
+  // Multiplier: for options (100x), total_realized_pnl is in dollars of the
+  // full contract, so risk must also be scaled by multiplier to keep units
+  // aligned ($ / $ = R).
+  const mult = parseFloat(trade.multiplier) || 1;
+  const r = (trade.total_realized_pnl || 0) / (riskPerShare * qty * mult);
   return r.toFixed(1) + 'R';
 };
 
@@ -773,7 +777,11 @@ export default function JournalScreen({ session }) {
                 // P&L % of cost basis. Same math for LONG and SHORT since
                 // total_realized_pnl already carries the sign.
                 const qty = trade.total_closing_quantity || trade.total_opening_quantity || 0;
-                const costBasis = (parseFloat(trade.avg_entry_price) || 0) * qty;
+                // Multiplier matters for options/futures: 1 option contract
+                // = 100 shares' worth of exposure. Default 1 keeps equities
+                // unchanged. Stored on logical_trades by the FIFO builder.
+                const mult = parseFloat(trade.multiplier) || 1;
+                const costBasis = (parseFloat(trade.avg_entry_price) || 0) * qty * mult;
                 const pnlPct = (!isOpen && costBasis > 0) ? (pnl / costBasis) * 100 : null;
                 const plan = plansMap[trade.planned_trade_id];
                 const rMultiple = isOpen ? null : calcR(trade, plan);
