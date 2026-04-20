@@ -586,7 +586,10 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
           closedAt: t.closed_at,
           assetCategory: t.asset_category,
           currency: t.currency,
-          time: fmtTime(t.opened_at),
+          // Fall back to close time when opened_at is missing (orphan trades
+          // where the open happened before our 30-day window -- we still want
+          // the row to have a visible time, which is the close time we DO know).
+          time: fmtTime(t.opened_at || t.closed_at),
           symbol: t.symbol,
           direction: t.direction,
           entry,
