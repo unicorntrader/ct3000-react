@@ -217,13 +217,11 @@ function buildLogicalTrades(rawTrades, userId) {
           currency,
           opening_ib_order_id: firstTrade.ib_order_id,
           direction,
-          // opened_at stays = the close date as a fallback because the column
-          // is NOT NULL in the current schema. Once migration 20260420_
-          // logical_trades_opened_at_nullable.sql runs, this can become null.
-          // Display layer detects orphans via avg_entry_price=null and shows
-          // "—" for the open date anyway, so the stored value doesn't leak
-          // into the UI.
-          opened_at: parseDateTime(firstTrade.date_time),
+          // opened_at is genuinely unknown for orphans. Now that the NOT NULL
+          // constraint was dropped (migration 20260420_logical_trades_opened_
+          // at_nullable.sql), we store null -- the display layer already
+          // renders "—" for null dates + null durations.
+          opened_at: null,
           closed_at: parseDateTime(firstTrade.date_time),
           status: 'closed',
           total_opening_quantity: qty,
