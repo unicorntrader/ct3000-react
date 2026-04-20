@@ -155,7 +155,7 @@ function ExecSubTable({ execs }) {
                   <tr key={i} className="border-t border-gray-100 first:border-0">
                     <td className="py-1.5 pr-3 text-xs text-gray-600">{time}</td>
                     <td className="py-1.5 pr-3 text-xs text-gray-800 font-medium">{fmtPrice(parseFloat(ex.trade_price), ex.currency)}</td>
-                    <td className="py-1.5 pr-3 text-xs text-gray-600"><PrivacyValue value={Math.abs(parseFloat(ex.quantity) || 0)} /></td>
+                    <td className="py-1.5 pr-3 text-xs text-gray-600"><PrivacyValue value={Math.abs(parseFloat(ex.quantity) || 0).toLocaleString()} /></td>
                     <td className="py-1.5 pr-3">
                       <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${ex.buy_sell === 'BUY' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
                         {ex.buy_sell}
@@ -346,7 +346,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
                       {row.tradeStatus === 'open' ? '—' : fmtPrice(row.exit, row.currency)}
                     </td>
-                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900"><PrivacyValue value={row.qty} /></td>
+                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900"><PrivacyValue value={row.qty != null ? Number(row.qty).toLocaleString() : '—'} /></td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-500">{row.duration}</td>
                     <td className={`px-4 py-3.5 text-sm font-medium ${(rowPnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                       {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency, 0)} />}
