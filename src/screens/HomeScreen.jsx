@@ -31,6 +31,8 @@ export default function HomeScreen({ session }) {
   const [reloadKey, setReloadKey] = useState(0);
   // Open positions sort: by unrealized P&L magnitude (biggest movers first).
   // Previously had Size / Date sort pills; removed per UX feedback.
+  // Inline expand: default to top PAGE_SIZE, user can toggle to see all.
+  const [showAllPositions, setShowAllPositions] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
@@ -163,7 +165,14 @@ export default function HomeScreen({ session }) {
       sub: positions.length > 0 ? fmtPnl(totalUnrealized, baseCurrency) + ' unrealized' : 'No open positions',
       maskSub: positions.length > 0,
       color: 'text-blue-600',
-      onClick: () => document.getElementById('open-positions')?.scrollIntoView({ behavior: 'smooth' }),
+      // Scroll to the positions section AND expand it so clicking the KPI
+      // card reveals every position for users with more than PAGE_SIZE.
+      onClick: () => {
+        setShowAllPositions(true);
+        setTimeout(() => {
+          document.getElementById('open-positions')?.scrollIntoView({ behavior: 'smooth' });
+        }, 0);
+      },
     },
     {
       label: 'Active plans',
@@ -322,11 +331,15 @@ export default function HomeScreen({ session }) {
               <p className="text-sm text-gray-400">No open positions</p>
             </div>
           ) : (() => {
+            // Sort by unrealized-P&L magnitude (biggest movers first).
+            // Default render: top PAGE_SIZE. User can click "Show all" to
+            // expand inline for pro traders with many positions. No navigation
+            // -- open positions are informational, there's nowhere to drill.
             const sorted = [...positions].sort((a, b) =>
               Math.abs(b.unrealized_pnl || 0) - Math.abs(a.unrealized_pnl || 0)
             );
-            const visible = sorted.slice(0, PAGE_SIZE);
-            const overflow = positions.length > PAGE_SIZE;
+            const visible = showAllPositions ? sorted : sorted.slice(0, PAGE_SIZE);
+            const hasMore = positions.length > PAGE_SIZE;
             return (
               <>
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100">
@@ -361,12 +374,14 @@ export default function HomeScreen({ session }) {
                     })}
                   </div>
                 </div>
-                {overflow && (
+                {hasMore && (
                   <button
-                    onClick={() => navigate('/daily')}
+                    onClick={() => setShowAllPositions(v => !v)}
                     className="mt-2 text-xs text-blue-600 font-medium hover:underline w-full text-center py-1"
                   >
-                    View all {positions.length} positions &rarr;
+                    {showAllPositions
+                      ? 'Show less ↑'
+                      : `Show all ${positions.length} positions ↓`}
                   </button>
                 )}
               </>
