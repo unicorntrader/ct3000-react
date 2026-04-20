@@ -85,6 +85,25 @@ function planPillFor(trade) {
   return { label: 'Need matching', cls: 'bg-amber-50 text-amber-700' };
 }
 
+// Open-to-close duration as a compact string. Returns '—' when either
+// timestamp is missing -- which is the case for orphan trades (opened_at
+// is null because the open is outside our 30-day sync window), so the
+// em-dash doubles as a visual signal that we don't have the full story.
+const calcDuration = (openedAt, closedAt) => {
+  if (!openedAt || !closedAt) return '—';
+  const ms = new Date(closedAt) - new Date(openedAt);
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const mins = Math.round(ms / 60000);
+  if (mins < 1) return '<1m';
+  if (mins < 60) return `${mins}m`;
+  const hrs = mins / 60;
+  if (hrs < 24) return `${Math.round(hrs)}h`;
+  const days = hrs / 24;
+  if (days < 30) return `${Math.round(days)}d`;
+  const months = days / 30;
+  return `${Math.round(months)}mo`;
+};
+
 const calcR = (trade, plan) => {
   if (!plan) return null;
   const { planned_entry_price: entry, planned_stop_loss: stop } = plan;
@@ -734,6 +753,7 @@ export default function JournalScreen({ session }) {
                 <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
                 <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Direction</th>
                 <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
                 <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">P&L</th>
                 <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">R</th>
                 <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Adh</th>
@@ -759,6 +779,10 @@ export default function JournalScreen({ session }) {
                 const rMultiple = isOpen ? null : calcR(trade, plan);
                 const matchStatus = trade.matching_status;
                 const dateDisplay = fmtDate(isOpen ? trade.opened_at : trade.closed_at);
+                // Open-to-close duration. Orphans (null opened_at) render as '—',
+                // which is how the user visually distinguishes them from the
+                // within-window trade of the same symbol on the same day.
+                const duration = isOpen ? '—' : calcDuration(trade.opened_at, trade.closed_at);
                 // adherence_score is written by api/rebuild.js for every
                 // matched closed trade. Read it directly — no client recompute.
                 const adherence = isOpen ? null : trade.adherence_score;
@@ -802,6 +826,9 @@ export default function JournalScreen({ session }) {
                       <td className="hidden sm:table-cell px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
                       <td className="hidden sm:table-cell px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
                         <PrivacyValue value={qty > 0 ? qty.toLocaleString() : '—'} />
+                      </td>
+                      <td className="hidden md:table-cell px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
+                        {duration}
                       </td>
                       <td className={`px-4 sm:px-6 py-4 text-sm font-semibold whitespace-nowrap ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>
                         {isOpen ? '—' : (
