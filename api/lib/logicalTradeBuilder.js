@@ -162,35 +162,69 @@ function buildLogicalTrades(rawTrades, userId) {
       getOpenForSymbol(symbol).push(newTrade);
 
     } else if (hasOpen && !hasClose) {
+      // Scaling rule: one open logical_trade per (symbol, direction) at a time.
+      // If there's already an open position on this symbol in the same direction,
+      // merge this new open into it -- update qty + weighted-avg entry -- rather
+      // than creating a second concurrent row. Matches how traders think about
+      // a position: "I scaled in," not "two separate trades."
       const direction = getDirection(group);
       const qty = Math.abs(sumField(group, 'quantity'));
       const pnl = isFX(firstTrade) ? sumField(group, 'net_cash') : 0;
+      const newEntryPrice = weightedAvgPrice(group);
+      const newFxRate = weightedAvgFxRate(group);
 
-      const newTrade = {
-        user_id: userId,
-        account_id: accountId,
-        symbol,
-        conid,
-        asset_category: assetCategory,
-        currency,
-        opening_ib_order_id: firstTrade.ib_order_id,
-        direction,
-        opened_at: parseDateTime(firstTrade.date_time),
-        closed_at: null,
-        status: 'open',
-        total_opening_quantity: qty,
-        total_closing_quantity: 0,
-        remaining_quantity: qty,
-        avg_entry_price: weightedAvgPrice(group),
-        total_realized_pnl: pnl,
-        fx_rate_to_base: weightedAvgFxRate(group),
-        is_reversal: false,
-        matching_status: 'needs_review',
-        planned_trade_id: null,
-        source_notes: null,
-      };
-      logicalTrades.push(newTrade);
-      getOpenForSymbol(symbol).push(newTrade);
+      const existingOpens = getOpenForSymbol(symbol);
+      const existing = existingOpens.find(lt => lt.direction === direction);
+
+      if (existing) {
+        // Scale into the existing position
+        const existingQty = existing.total_opening_quantity || 0;
+        const totalQty = existingQty + qty;
+        if (existing.avg_entry_price != null && totalQty > 0) {
+          existing.avg_entry_price =
+            (existing.avg_entry_price * existingQty + newEntryPrice * qty) / totalQty;
+        }
+        // else existing was an orphan (null entry); leave it null -- the mix
+        // of known + unknown can't produce a meaningful average.
+        existing.total_opening_quantity = totalQty;
+        existing.remaining_quantity = (existing.remaining_quantity || 0) + qty;
+        if (newFxRate != null) {
+          existing.fx_rate_to_base = existing.fx_rate_to_base != null && totalQty > 0
+            ? (existing.fx_rate_to_base * existingQty + newFxRate * qty) / totalQty
+            : newFxRate;
+        }
+        if (isFX(firstTrade)) {
+          // FX P&L lives in net_cash on each leg; accumulate.
+          existing.total_realized_pnl = (existing.total_realized_pnl || 0) + pnl;
+        }
+        // Keep opened_at as the original -- this is ONE position that began then.
+      } else {
+        const newTrade = {
+          user_id: userId,
+          account_id: accountId,
+          symbol,
+          conid,
+          asset_category: assetCategory,
+          currency,
+          opening_ib_order_id: firstTrade.ib_order_id,
+          direction,
+          opened_at: parseDateTime(firstTrade.date_time),
+          closed_at: null,
+          status: 'open',
+          total_opening_quantity: qty,
+          total_closing_quantity: 0,
+          remaining_quantity: qty,
+          avg_entry_price: newEntryPrice,
+          total_realized_pnl: pnl,
+          fx_rate_to_base: newFxRate,
+          is_reversal: false,
+          matching_status: 'needs_review',
+          planned_trade_id: null,
+          source_notes: null,
+        };
+        logicalTrades.push(newTrade);
+        existingOpens.push(newTrade);
+      }
 
     } else if (hasClose && !hasOpen) {
       const opens = getOpenForSymbol(symbol);
@@ -243,6 +277,7 @@ function buildLogicalTrades(rawTrades, userId) {
       } else {
         const closingFxRate = weightedAvgFxRate(group);
         const coverPrice = weightedAvgPrice(group);
+        let lastClosedLt = null;
 
         while (closingQty > 0 && opens.length > 0) {
           const oldest = opens[0];
@@ -274,16 +309,37 @@ function buildLogicalTrades(rawTrades, userId) {
           if (oldest.remaining_quantity <= 0) {
             oldest.status = 'closed';
             oldest.remaining_quantity = 0;
+            lastClosedLt = oldest; // remember for possible orphan-leftover merge
             opens.shift();
           }
         }
 
-        // If closingQty > 0 here, FIFO ran dry -- more close qty than we
-        // have visible opens. Happens when the user had positions opened
-        // before the 30-day Flex window started. We DO NOT fabricate a
-        // synthetic trade for the leftover -- truth-first. Our logical_
-        // trades sum will not match IBKRs aggregate in this case, and
-        // that gap is an honest signal of data we simply do not have.
+        // Leftover close qty with nothing open to match it = some of this
+        // close covers a position we never saw open (pre-30-day-window).
+        // Per the "one trade per ticker" rule we merge that orphan portion
+        // into the LT we just finished closing in this same order -- the
+        // user sees one row for the full round-trip, not two.
+        if (closingQty > 0 && lastClosedLt) {
+          const orphanQty = closingQty;
+          lastClosedLt.total_opening_quantity =
+            (lastClosedLt.total_opening_quantity || 0) + orphanQty;
+          lastClosedLt.total_closing_quantity =
+            (lastClosedLt.total_closing_quantity || 0) + orphanQty;
+          // Entry price no longer meaningful -- it was a blend of a known
+          // in-window portion and an unknown pre-window portion.
+          lastClosedLt.avg_entry_price = null;
+          // Use IBKR's fifo_pnl_realized for the whole group -- it already
+          // accounts for both the known and pre-window portions.
+          lastClosedLt.total_realized_pnl = totalPnl;
+          lastClosedLt.source_notes =
+            `Includes ${orphanQty} share${orphanQty !== 1 ? 's' : ''} ` +
+            `from a position opened before the 30-day sync window. ` +
+            `Entry price unknown for the pre-window portion.`;
+        }
+        // If closingQty > 0 AND lastClosedLt is null (no LT was closed
+        // this pass), that's the pure-orphan case already handled by
+        // the `if (opens.length === 0)` branch above. Leftover only
+        // happens here if we DID close at least one LT and ran dry.
       }
     }
   }

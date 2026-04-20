@@ -10,6 +10,37 @@ For the code-quality audit findings, see `docs/CODE-AUDIT.md`.
 
 ---
 
+## Position management visualization (scale in / scale out boxes)
+
+**Why:** Once scaling is merged into a single logical trade (shipped Apr 21, 2026),
+the user loses the per-fill detail on the main row. A trader might have e.g. 15
+entries and 30 exits on a single ticker before exiting the position — the merged
+row shows one weighted-avg entry, one weighted-avg exit, one P&L, and to get
+detail they have to expand.
+
+A small graphical strip next to the row could tell the story at a glance:
+- 5 little green boxes for 5 scale-in entries
+- 5 little red boxes for 5 scale-out exits
+- Or a compact sparkline of position size over time
+- Or a count badge: "scaled in 5× / out 3×"
+
+**Scope:** Design decision first. Implementation ~1 day once we've picked a style.
+
+---
+
+## Options trades — rewrite the FIFO handling
+
+**Why:** The current FIFO builder treats options roughly (keyed by
+`ib_order_id_conid` but doesn't reason about contract lifecycles — expiry,
+assignment, exercise, multi-leg spreads). User flagged 2026-04-21 that options
+trades are botched. Needs a focused pass with real options data from a user
+account.
+
+**Scope:** probably 1-2 days. Touches `api/lib/logicalTradeBuilder.js` and
+relevant UI that renders OSI-formatted symbols.
+
+---
+
 ## Chart wiring inside the trade detail drawer
 
 **Why:** Users review a closed trade and want to see the price action — not
