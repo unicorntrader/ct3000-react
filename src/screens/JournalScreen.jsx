@@ -753,8 +753,8 @@ export default function JournalScreen({ session }) {
                 <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
                 <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Direction</th>
                 <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
-                <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
                 <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">P&L</th>
+                <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
                 <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">R</th>
                 <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Adh</th>
                 <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Outcome</th>
@@ -827,9 +827,6 @@ export default function JournalScreen({ session }) {
                       <td className="hidden sm:table-cell px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
                         <PrivacyValue value={qty > 0 ? qty.toLocaleString() : '—'} />
                       </td>
-                      <td className="hidden md:table-cell px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
-                        {duration}
-                      </td>
                       <td className={`px-4 sm:px-6 py-4 text-sm font-semibold whitespace-nowrap ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>
                         {isOpen ? '—' : (
                           <PrivacyValue value={
@@ -838,6 +835,9 @@ export default function JournalScreen({ session }) {
                               : fmtPnl(pnl, rowCurrency)
                           } />
                         )}
+                      </td>
+                      <td className="hidden md:table-cell px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
+                        {duration}
                       </td>
                       <td className="hidden md:table-cell px-6 py-4 text-sm text-gray-600">{rMultiple ?? '—'}</td>
                       <td className="hidden md:table-cell px-6 py-4">
