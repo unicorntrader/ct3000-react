@@ -396,7 +396,7 @@ export default function HomeScreen({ session }) {
                 return (
                   <button
                     key={plan.id}
-                    onClick={() => navigate('/plans')}
+                    onClick={() => navigate('/plans', { state: { openPlanId: plan.id } })}
                     className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left"
                   >
                     <span className="font-semibold text-gray-900 w-16 shrink-0">{plan.symbol}</span>

@@ -273,7 +273,12 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
 
         const limited = merged.slice(0, 12);
         setSecSuggestions(limited);
-        if (limited.length > 0) setSecSuggestOpen(true);
+        // Do NOT auto-open the dropdown here. It's tempting ("we got results,
+        // show them!"), but it fires in edit mode too: the sheet opens with a
+        // pre-filled symbol, debouncedSymbol becomes that symbol, this search
+        // runs, the dropdown pops open unprompted. We only want the dropdown
+        // open when the user actively types or focuses the input — those code
+        // paths already call setSecSuggestOpen(true).
       } catch (err) {
         reportPlanSheetLoadError('search-securities', err);
         setSecSuggestions([]);
@@ -373,12 +378,36 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
     setError(null);
     setSaving(true);
 
+    // Last-ditch currency resolution. The auto-match effect above already
+    // tries to set planCurrency from the security the user typed, but it
+    // can miss (race with debounce, or an edit of a pre-existing plan that
+    // never got a currency). Before we save a null currency — which makes
+    // the UI fall back to baseCurrency and display SPY as EUR for an EUR
+    // base user — try one more direct lookup against the securities table.
+    let resolvedCurrency = planCurrency;
+    if (!resolvedCurrency) {
+      try {
+        const { data: sec } = await supabase
+          .from('securities')
+          .select('currency')
+          .eq('symbol', symbol.trim().toUpperCase())
+          .eq('asset_category', assetCategory)
+          .limit(1)
+          .maybeSingle();
+        if (sec?.currency) resolvedCurrency = sec.currency;
+      } catch (err) {
+        // Non-fatal — fall through and write null. We'll log so we can see
+        // if this is happening in the wild.
+        reportPlanSheetLoadError('resolve-currency-on-save', err);
+      }
+    }
+
     const payload = {
       user_id:               session.user.id,
       symbol:                symbol.trim().toUpperCase(),
       direction:             direction.toUpperCase(),
       asset_category:        assetCategory,
-      currency:              planCurrency || null,
+      currency:              resolvedCurrency || null,
       planned_entry_price:   e || null,
       planned_target_price:  t || null,
       planned_stop_loss:     s || null,

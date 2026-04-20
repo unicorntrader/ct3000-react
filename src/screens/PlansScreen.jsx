@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPrice, fmtPnl, fmtDate, fmtDateLong } from '../lib/formatters';
@@ -17,6 +18,8 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
   // (can happen for plans created before a security was looked up and
   // currency-tagged). Plan cards render as: fmtPrice(..., plan.currency || baseCurrency).
   const baseCurrency = useBaseCurrency();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [plans, setPlans] = useState([]);
   // Map<plan.id, Array<{ symbol, opened_at }>> — trades each plan is matched to.
   // Used to (1) hide matched plans from the default "Planning" view, (2) show
@@ -78,6 +81,17 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
     };
     load();
   }, [userId, refreshKey, reloadKey]);
+
+  // Deep-link: HomeScreen's active-plan rows navigate here with
+  // `state.openPlanId`. Once plans have loaded, find that plan and open
+  // its edit sheet. Clear state so a browser refresh doesn't re-open it.
+  useEffect(() => {
+    const openId = location.state?.openPlanId;
+    if (openId == null || loading) return;
+    const target = plans.find(p => p.id === openId);
+    if (target) onEditPlan?.(target);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.state, location.pathname, loading, plans, onEditPlan, navigate]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toUpperCase();

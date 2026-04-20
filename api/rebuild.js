@@ -130,12 +130,20 @@ module.exports = async function handler(req, res) {
   for (const row of (existingLogical || [])) {
     if (!row.opening_ib_order_id) continue;
     const key = `${row.opening_ib_order_id}:${row.conid ?? ''}`;
+    // Only treat user_reviewed as a real decision if the stored status is
+    // actually a decision (matched or off_plan). needs_review + user_reviewed
+    // is a contradiction -- it means the user was "done reviewing" while the
+    // trade was still marked "needs review", which has no sensible meaning
+    // in our 3-state model. We've seen legacy rows in this state (from
+    // before the 3-state migration). Treat them as undecided so
+    // applyPlanMatching gets a fresh look at current plans.
+    const isRealDecision = !!row.user_reviewed &&
+      (row.matching_status === 'matched' || row.matching_status === 'off_plan');
     preservedByKey.set(key, {
       review_notes: row.review_notes || null,
-      user_reviewed: !!row.user_reviewed,
-      // Snapshot the user's decision so the rebuild carries it forward.
-      preserved_status: row.user_reviewed ? row.matching_status : null,
-      preserved_planned_trade_id: row.user_reviewed ? row.planned_trade_id : null,
+      user_reviewed: isRealDecision,
+      preserved_status: isRealDecision ? row.matching_status : null,
+      preserved_planned_trade_id: isRealDecision ? row.planned_trade_id : null,
     });
   }
 
