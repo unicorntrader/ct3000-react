@@ -174,7 +174,11 @@ function buildLogicalTrades(rawTrades, userId) {
       const newFxRate = weightedAvgFxRate(group);
 
       const existingOpens = getOpenForSymbol(symbol);
-      const existing = existingOpens.find(lt => lt.direction === direction);
+      // Compare directions case-insensitively in case a legacy LT stored
+      // a lowercase value. All new LTs use uppercase ('LONG'/'SHORT').
+      const existing = existingOpens.find(lt =>
+        (lt.direction || '').toUpperCase() === (direction || '').toUpperCase()
+      );
 
       if (existing) {
         // Scale into the existing position
