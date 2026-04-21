@@ -130,14 +130,24 @@ export default function TradeSquares({ userId }) {
   const isDemo = searchParams.get('demo') === '1';
   const [range, setRange] = useState(90);
   const [rows, setRows] = useState([]); // raw daily_adherence rows for the window
+  const [noteDates, setNoteDates] = useState(() => new Set()); // dates with daily_notes
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (isDemo) {
-      // Short-circuit — synthetic rows, no network.
-      setRows(generateDemoRows(range));
+      // Short-circuit — synthetic rows + synthetic journal markers. Uses the
+      // same stable hash so the same days have notes on every render.
+      const demoRows = generateDemoRows(range);
+      setRows(demoRows);
+      const demoNotes = new Set();
+      for (const r of demoRows) {
+        // ~55% of active days have a note — feels realistic for a user who
+        // journals most of the time but skips occasionally.
+        if (hashStr(r.date_key + ':note') > 0.45) demoNotes.add(r.date_key);
+      }
+      setNoteDates(demoNotes);
       setLoading(false);
       setLoadError(null);
       return;
@@ -150,13 +160,25 @@ export default function TradeSquares({ userId }) {
         const from = new Date();
         from.setDate(from.getDate() - (range - 1));
         const fromKey = from.toISOString().slice(0, 10);
-        const res = await supabase
-          .from('daily_adherence')
-          .select('*')
-          .eq('user_id', userId)
-          .gte('date_key', fromKey);
-        if (res.error) throw res.error;
-        setRows(res.data || []);
+        // Parallel fetch — adherence rows + journal note date_keys. The
+        // journal dot indicator overlays the square when the user wrote
+        // notes that day, reinforcing the "reflect on the day" habit.
+        const [adhRes, notesRes] = await Promise.all([
+          supabase
+            .from('daily_adherence')
+            .select('*')
+            .eq('user_id', userId)
+            .gte('date_key', fromKey),
+          supabase
+            .from('daily_notes')
+            .select('date_key')
+            .eq('user_id', userId)
+            .gte('date_key', fromKey),
+        ]);
+        if (adhRes.error) throw adhRes.error;
+        if (notesRes.error) throw notesRes.error;
+        setRows(adhRes.data || []);
+        setNoteDates(new Set((notesRes.data || []).map(n => n.date_key)));
       } catch (err) {
         console.error('[trade-squares] load failed:', err?.message || err);
         Sentry.withScope((scope) => {
@@ -178,11 +200,18 @@ export default function TradeSquares({ userId }) {
     return m;
   }, [rows]);
 
-  // Ordered list of dates + classified cells for the window.
+  // Ordered list of dates + classified cells for the window. `hasNote` is
+  // sourced from daily_notes (or the demo synthetic set) and used to render
+  // the journal-dot overlay on each square.
   const dates = useMemo(() => daysBack(range), [range]);
   const cells = useMemo(
-    () => dates.map(d => ({ date: d, row: byDate.get(d) || null, ...classifyDay(byDate.get(d)) })),
-    [dates, byDate],
+    () => dates.map(d => ({
+      date: d,
+      row: byDate.get(d) || null,
+      hasNote: noteDates.has(d),
+      ...classifyDay(byDate.get(d)),
+    })),
+    [dates, byDate, noteDates],
   );
 
   // Discipline score: simple average of adherence_score across days that had
@@ -460,21 +489,39 @@ export default function TradeSquares({ userId }) {
                   <div key={ci} className="flex flex-col gap-1">
                     {col.map((cell, ri) => {
                       if (!cell) return <div key={ri} className="w-4 h-4" />;
-                      const title = cell.row
+                      // Tooltip composes the square's full context: date, the
+                      // day's adherence (or "no matched trades"), total trade
+                      // count, and whether notes were written. The journal
+                      // suffix makes the dot's meaning obvious on hover.
+                      const basePart = cell.row
                         ? `${cell.date} · ${
                             cell.row.adherence_score != null
                               ? `${Math.round(cell.row.adherence_score)}% adherence`
                               : 'No matched trades'
                           } · ${cell.row.trade_count} trade${cell.row.trade_count !== 1 ? 's' : ''}`
                         : `${cell.date} · No data`;
+                      const title = cell.hasNote ? `${basePart} · ✎ Journalled` : basePart;
                       return (
                         <button
                           key={ri}
                           title={title}
                           onClick={() => navigate('/daily')}
-                          className={`w-4 h-4 rounded-[3px] transition-colors ${cell.cls}`}
+                          className={`relative w-4 h-4 rounded-[3px] transition-colors ${cell.cls}`}
                           aria-label={title}
-                        />
+                        >
+                          {cell.hasNote && (
+                            // Journal-dot indicator — small white dot in the
+                            // bottom-right corner. White-on-any-colour with a
+                            // faint shadow so it's legible on green / yellow /
+                            // red / gray alike. Reinforces the reflection
+                            // habit: colour = followed the plan, dot = then
+                            // wrote about it.
+                            <span
+                              className="absolute bottom-[2px] right-[2px] w-[3px] h-[3px] rounded-full bg-white shadow-[0_0_2px_rgba(0,0,0,0.35)] pointer-events-none"
+                              aria-hidden
+                            />
+                          )}
+                        </button>
                       );
                     })}
                   </div>
@@ -491,6 +538,17 @@ export default function TradeSquares({ userId }) {
         {legendDot('bg-yellow-400', 'Partial')}
         {legendDot('bg-red-500', 'Broke rules')}
         {legendDot('bg-gray-200', 'No trade')}
+        {/* Journal-dot legend — mirrors the overlay on each square. Visual
+            shorthand: "this coloured block had a journal note attached". */}
+        <span className="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
+          <span className="relative inline-block w-2.5 h-2.5 rounded-sm bg-gray-300">
+            <span
+              className="absolute bottom-[1px] right-[1px] w-[3px] h-[3px] rounded-full bg-white shadow-[0_0_1.5px_rgba(0,0,0,0.35)]"
+              aria-hidden
+            />
+          </span>
+          Journalled
+        </span>
       </div>
 
       {/* Smart insight line */}
