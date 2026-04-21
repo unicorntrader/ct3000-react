@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -43,6 +43,70 @@ function daysBack(n) {
   return out;
 }
 
+// Deterministic pseudo-random so the demo grid is stable across renders and
+// the preview URL shows the same pattern each visit. Seed from the date
+// string so each day has a consistent category.
+function hashStr(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) / 4294967296;
+}
+
+// Synthetic daily_adherence rows with a realistic distribution:
+//   ~55% green (disciplined days)
+//   ~20% yellow (partial adherence)
+//   ~10% red  (rule breaks)
+//   ~15% gray (no trade / weekend bias)
+// Weekends skew toward gray (no matched trades) to feel like real trading.
+// Used when the component is mounted with ?demo=1 so we can preview the UI
+// without touching real data or the DB. See the usage in the effect below.
+function generateDemoRows(range) {
+  const dates = daysBack(range);
+  const rows = [];
+  for (const d of dates) {
+    const dow = new Date(d + 'T00:00:00').getDay();
+    const r = hashStr(d);
+
+    // Weekends mostly gray, occasionally a late close
+    if ((dow === 0 || dow === 6) && r > 0.15) continue;
+
+    // Bucket by uniform roll
+    let bucket;
+    if (r < 0.55) bucket = 'green';
+    else if (r < 0.75) bucket = 'yellow';
+    else if (r < 0.85) bucket = 'red';
+    else bucket = 'gray';
+
+    if (bucket === 'gray') continue; // no row = gray cell
+
+    // Realistic adherence inside the bucket
+    const innerRoll = hashStr(d + ':a');
+    let adh;
+    if (bucket === 'green')  adh = 90 + Math.round(innerRoll * 10);      // 90–100
+    else if (bucket === 'yellow') adh = 50 + Math.round(innerRoll * 39); // 50–89
+    else adh = Math.round(innerRoll * 49);                               // 0–49
+
+    // Trade counts — mostly 1–3, occasional busier day
+    const countRoll = hashStr(d + ':c');
+    const matched = 1 + Math.floor(countRoll * 3); // 1–3
+    const offPlan = countRoll > 0.75 ? 1 : 0;
+    const needsReview = countRoll > 0.92 ? 1 : 0;
+
+    rows.push({
+      date_key: d,
+      adherence_score: adh,
+      matched_count: matched,
+      off_plan_count: offPlan,
+      needs_review_count: needsReview,
+      trade_count: matched + offPlan + needsReview,
+    });
+  }
+  return rows;
+}
+
 // Map a day's row (or null) to a category + Tailwind colour class.
 // Category drives the legend + insight text; colour class drives the cell.
 function classifyDay(row) {
@@ -57,6 +121,12 @@ function classifyDay(row) {
 
 export default function TradeSquares({ userId }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // `?demo=1` — preview mode with deterministic synthetic data. Lets us
+  // review the UI on a Vercel preview URL before any user has enough real
+  // matched-trade history to populate the grid organically. Real data path
+  // is untouched when the flag is absent; nothing is written to the DB.
+  const isDemo = searchParams.get('demo') === '1';
   const [range, setRange] = useState(90);
   const [rows, setRows] = useState([]); // raw daily_adherence rows for the window
   const [loading, setLoading] = useState(true);
@@ -64,6 +134,13 @@ export default function TradeSquares({ userId }) {
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    if (isDemo) {
+      // Short-circuit — synthetic rows, no network.
+      setRows(generateDemoRows(range));
+      setLoading(false);
+      setLoadError(null);
+      return;
+    }
     if (!userId) return;
     setLoading(true);
     setLoadError(null);
@@ -91,7 +168,7 @@ export default function TradeSquares({ userId }) {
         setLoading(false);
       }
     })();
-  }, [userId, range, reloadKey]);
+  }, [userId, range, reloadKey, isDemo]);
 
   // Index rows by date_key so cell lookup is O(1) during render.
   const byDate = useMemo(() => {
@@ -232,7 +309,14 @@ export default function TradeSquares({ userId }) {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-4">
           <div>
-            <h3 className="text-sm font-semibold text-gray-700">TradeSquares</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-700">TradeSquares</h3>
+              {isDemo && (
+                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded">
+                  Demo
+                </span>
+              )}
+            </div>
             <p className="text-[11px] text-gray-400 mt-0.5">Discipline, not activity</p>
           </div>
           <div className="hidden sm:flex items-center gap-5 pl-5 border-l border-gray-100">
