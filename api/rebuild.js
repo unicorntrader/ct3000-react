@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { buildLogicalTrades } = require('./lib/logicalTradeBuilder');
 const { computeAdherenceScore } = require('./lib/adherenceScore');
+const { buildDailyAdherence } = require('./lib/dailyAdherenceBuilder');
 const { captureServerError } = require('./lib/sentry');
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://ct3000-react.vercel.app';
@@ -226,6 +227,34 @@ module.exports = async function handler(req, res) {
   }
 
   console.log(`[rebuild] userId=${userId} — inserted ${logical.length} logical trades`);
+
+  // ── Daily adherence (TradeSquares) ──────────────────────────────────────
+  // After logical_trades are rebuilt, regenerate the per-day aggregate used
+  // by the TradeSquares heatmap on HomeScreen. Full replace (delete + insert)
+  // mirrors logical_trades semantics — rebuild is authoritative, so stale
+  // rows for days that no longer have trades should disappear too.
+  const dailyRows = buildDailyAdherence(logical).map(r => ({ ...r, user_id: userId }));
+
+  const { error: clearDailyErr } = await supabaseAdmin
+    .from('daily_adherence')
+    .delete()
+    .eq('user_id', userId);
+  if (clearDailyErr) {
+    // Don't fail the whole rebuild on this — the heatmap can regenerate on
+    // the next rebuild. Log + report to Sentry so we see it.
+    console.warn('[rebuild] daily_adherence clear failed:', clearDailyErr.message);
+    await captureServerError(clearDailyErr, { userId, step: 'clear-daily-adherence', route: 'rebuild' });
+  } else if (dailyRows.length > 0) {
+    const { error: insertDailyErr } = await supabaseAdmin
+      .from('daily_adherence')
+      .insert(dailyRows);
+    if (insertDailyErr) {
+      console.warn('[rebuild] daily_adherence insert failed:', insertDailyErr.message);
+      await captureServerError(insertDailyErr, { userId, step: 'insert-daily-adherence', route: 'rebuild' });
+    } else {
+      console.log(`[rebuild] userId=${userId} — wrote ${dailyRows.length} daily_adherence rows`);
+    }
+  }
 
   return res.status(200).json({ success: true, count: logical.length, warnings });
   } catch (err) {

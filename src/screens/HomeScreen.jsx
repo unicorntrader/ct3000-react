@@ -6,6 +6,7 @@ import { fmtPnl, fmtPrice, fmtSymbol, pnlBase } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import PrivacyValue from '../components/PrivacyValue';
 import LoadError from '../components/LoadError';
+import TradeSquares from '../components/TradeSquares';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -235,6 +236,12 @@ export default function HomeScreen({ session }) {
 
   return (
     <div>
+      {/* ── TradeSquares (discipline heatmap) ──
+          Sits at the very top of the dashboard as the hook. Reads from the
+          daily_adherence table populated by api/rebuild.js. Fully self-
+          contained — loads, renders, handles its own errors. */}
+      <TradeSquares userId={userId} />
+
       {/* ── Trade review pipeline ── */}
       {pipelineTotal > 0 && (
         <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-5 mb-6">
