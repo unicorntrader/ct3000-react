@@ -38,6 +38,10 @@ const PRESETS = [
 const GRID_DAYS = 364;
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Short DOW labels shown on every row of the y-axis. Sun starts the week to
+// match JS's Date.getDay() convention (0=Sun); that ordering also puts the
+// weekend pair (Sun at top, Sat at bottom) symmetrically on the grid.
+const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // Generate an array of YYYY-MM-DD strings for the last N days, oldest first.
 function daysBack(n) {
@@ -257,28 +261,40 @@ export default function TradeSquares({ userId }) {
     return Math.round(sum / scored.length);
   }, [inRangeCells]);
 
-  // Clean streak: walk backwards from today through in-range cells,
-  // counting consecutive non-broken days. Green AND gray both preserve the
-  // streak (gray = no trade = no violation). Yellow and red break it.
-  // Stops at the range boundary — the streak reported is "within this
-  // window", consistent with the other stats.
+  // Streaks intentionally ignore the range preset — they're lifetime-ish
+  // metrics, not scoped stats. Capping "Current streak" at the selected
+  // window would under-report real progress (a 90-day streak showing as
+  // "30d" when the user picked 30D) and demotivate toggling. Walks the
+  // full cells array (which is the fetched year, the practical horizon).
+  //
+  // For streak classification we need green/yellow/red by the raw adherence,
+  // ignoring the out-of-range dim — otherwise every out-of-range cell would
+  // read as "outOfRange" and streak logic couldn't tell green from red.
+  // Re-classify from the underlying row data.
+  const rawClassify = (row) => classifyDay(row, true).cat;
+
+  // Current streak: walk backwards from today, counting consecutive non-
+  // broken days. Green AND gray both preserve (no trade = no violation).
+  // Yellow and red break it.
   const cleanStreak = useMemo(() => {
     let streak = 0;
-    for (let i = inRangeCells.length - 1; i >= 0; i--) {
-      const c = inRangeCells[i];
-      if (c.cat === 'green' || c.cat === 'gray') streak += 1;
+    for (let i = cells.length - 1; i >= 0; i--) {
+      const cat = rawClassify(cells[i].row);
+      if (cat === 'green' || cat === 'gray') streak += 1;
       else break;
     }
     return streak;
-  }, [inRangeCells]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cells]);
 
-  // Longest streak within the selected range — the motivational
-  // "beat your PR" number, scoped to the active window.
+  // Longest streak across the full fetched window — the "beat your PR"
+  // number. Same preservation rules as cleanStreak.
   const longestStreak = useMemo(() => {
     let max = 0;
     let cur = 0;
-    for (const c of inRangeCells) {
-      if (c.cat === 'green' || c.cat === 'gray') {
+    for (const c of cells) {
+      const cat = rawClassify(c.row);
+      if (cat === 'green' || cat === 'gray') {
         cur += 1;
         if (cur > max) max = cur;
       } else {
@@ -286,7 +302,8 @@ export default function TradeSquares({ userId }) {
       }
     }
     return max;
-  }, [inRangeCells]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cells]);
 
   // Per-category counts + trading-day aggregates, scoped to in-range only.
   // One pass, used across the stats grid tiles below.
@@ -445,14 +462,16 @@ export default function TradeSquares({ userId }) {
       ) : (
         <div className="overflow-x-auto">
           <div className="flex gap-2 min-w-max">
-            {/* DOW labels column */}
+            {/* DOW labels column — every day labelled (not just Mon/Wed/Fri
+                like GitHub). This is a discipline tool, so DOW patterns
+                matter; every row deserves a clear anchor. */}
             <div className="flex flex-col gap-1 pt-[18px]">
-              {[0, 1, 2, 3, 4, 5, 6].map(i => (
+              {DOW_LABELS.map((label, i) => (
                 <div
                   key={i}
                   className="h-4 text-[10px] text-gray-400 leading-4 text-right w-7 pr-1"
                 >
-                  {i === 1 ? 'Mon' : i === 3 ? 'Wed' : i === 5 ? 'Fri' : ''}
+                  {label}
                 </div>
               ))}
             </div>
