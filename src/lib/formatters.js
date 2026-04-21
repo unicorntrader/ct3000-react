@@ -35,9 +35,9 @@ export const fmtPrice = (n, currency) => {
   return currencySymbol(currency) + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
-/** Signed P&L with currency symbol, e.g. "+£1,234.56". Currency is REQUIRED.
- *  Pass decimals=0 for whole-number display: "+£1,234" */
-export const fmtPnl = (n, currency, decimals = 2) => {
+/** Signed P&L with currency symbol, e.g. "+£1,234". Currency is REQUIRED.
+ *  Defaults to whole-number display. Pass decimals=2 if you need "+£1,234.56". */
+export const fmtPnl = (n, currency, decimals = 0) => {
   if (n == null) return '—';
   const sym = currencySymbol(currency);
   const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });

@@ -32,7 +32,7 @@ export default function ShareModal({ row, plannedStop, onClose }) {
 
   // Direction-aware return %: positive = won, negative = lost (regardless of direction)
   const pctReturn = (avgExit != null && row.entry != null && row.entry !== 0)
-    ? ((isLong ? (avgExit - row.entry) : (row.entry - avgExit)) / row.entry * 100).toFixed(2)
+    ? ((isLong ? (avgExit - row.entry) : (row.entry - avgExit)) / row.entry * 100).toFixed(0)
     : null;
 
   const rMultiple = (plannedStop != null && row.entry != null && qtyForCalc != null && qtyForCalc !== 0)

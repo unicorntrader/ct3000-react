@@ -839,7 +839,7 @@ export default function JournalScreen({ session }) {
                         {isOpen ? '—' : (
                           <PrivacyValue value={
                             pnlPct != null
-                              ? `${fmtPnl(pnl, rowCurrency)} / ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%`
+                              ? `${fmtPnl(pnl, rowCurrency)} / ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(0)}%`
                               : fmtPnl(pnl, rowCurrency)
                           } />
                         )}

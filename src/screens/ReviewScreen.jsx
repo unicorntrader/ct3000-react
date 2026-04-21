@@ -329,7 +329,7 @@ export default function ReviewScreen({ session }) {
                     : (entryOk && qtyOk)
                     ? 'text-green-600 font-medium'
                     : 'text-amber-600';
-                  const fmtPct = (n) => `${n > 0 ? '+' : ''}${n.toFixed(n === 0 ? 0 : 1)}%`;
+                  const fmtPct = (n) => `${n > 0 ? '+' : ''}${n.toFixed(0)}%`;
                   return (
                     <label
                       key={plan.id}
