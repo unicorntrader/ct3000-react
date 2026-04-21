@@ -37,7 +37,6 @@ const PRESETS = [
 // how much history the current stats cover.
 const GRID_DAYS = 364;
 
-const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // Generate an array of YYYY-MM-DD strings for the last N days, oldest first.
@@ -349,51 +348,6 @@ export default function TradeSquares({ userId }) {
     return headers;
   }, [columns]);
 
-  // Smart insight: pick the most telling 1-liner from a few deterministic
-  // checks. Scoped to the selected range so the commentary matches what's
-  // visually highlighted on the grid.
-  const insight = useMemo(() => {
-    const rangeRows = inRangeCells.map(c => c.row).filter(r => r && r.adherence_score != null);
-    if (rangeRows.length < 5) return null;
-
-    // Pattern 1: "You break rules on Fridays" — worst day-of-week by avg score
-    const byDow = Array.from({ length: 7 }, () => ({ sum: 0, n: 0 }));
-    for (const r of rangeRows) {
-      const dow = new Date(r.date_key + 'T00:00:00').getDay();
-      byDow[dow].sum += Number(r.adherence_score);
-      byDow[dow].n += 1;
-    }
-    const dowScores = byDow.map((b, i) => ({ i, avg: b.n > 0 ? b.sum / b.n : null, n: b.n }));
-    const eligible = dowScores.filter(d => d.n >= 2);
-    if (eligible.length >= 2) {
-      const worstDow = [...eligible].sort((a, b) => a.avg - b.avg)[0];
-      const bestDow  = [...eligible].sort((a, b) => b.avg - a.avg)[0];
-      if (bestDow.avg - worstDow.avg >= 20) {
-        return `Discipline is strongest on ${DOW_LABELS[bestDow.i]}s and weakest on ${DOW_LABELS[worstDow.i]}s.`;
-      }
-    }
-
-    // Pattern 2: "Best adherence on days with ≤N trades" — compare low-volume
-    // days against high-volume days. Uses trade_count to avoid recomputing.
-    const withCount = rangeRows.filter(r => r.trade_count > 0);
-    if (withCount.length >= 6) {
-      const counts = withCount.map(r => r.trade_count).sort((a, b) => a - b);
-      const median = counts[Math.floor(counts.length / 2)];
-      const low  = withCount.filter(r => r.trade_count <= median);
-      const high = withCount.filter(r => r.trade_count > median);
-      if (low.length >= 3 && high.length >= 3) {
-        const avg = arr => arr.reduce((s, r) => s + Number(r.adherence_score), 0) / arr.length;
-        const lowAvg = avg(low);
-        const highAvg = avg(high);
-        if (lowAvg - highAvg >= 15) {
-          return `Adherence is notably higher on days with ≤${median} trades — a case for fewer, higher-quality setups.`;
-        }
-      }
-    }
-
-    return null;
-  }, [inRangeCells]);
-
   // Empty-state: migration ran but no rows yet (rebuild hasn't populated).
   const isEmpty = !loading && rows.length === 0;
 
@@ -590,11 +544,6 @@ export default function TradeSquares({ userId }) {
           Journalled
         </span>
       </div>
-
-      {/* Smart insight line */}
-      {insight && (
-        <p className="text-[12px] text-gray-500 mt-3 italic">{insight}</p>
-      )}
 
       {/* Empty-state prompt — migration ran but rebuild hasn't populated yet */}
       {isEmpty && (
