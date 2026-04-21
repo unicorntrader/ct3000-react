@@ -124,6 +124,18 @@ export default function PerformanceScreen({ session }) {
   const [sortCol, setSortCol] = useState('pnl');
   const [sortDir, setSortDir] = useState('desc');
 
+  // Which callouts are expanded to show their "why / action" panel.
+  // Stored as a Set of indexes so multiple can be open at once.
+  const [expandedCallouts, setExpandedCallouts] = useState(() => new Set());
+  const toggleCallout = useCallback((i) => {
+    setExpandedCallouts(prev => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  }, []);
+
   // weekly reflection
   const weekKey = currentISOWeek();
   const [reflection, setReflection] = useState({ worked: '', didnt_work: '', recurring: '', action: '' });
@@ -353,55 +365,265 @@ export default function PerformanceScreen({ session }) {
 
   // ── auto-generated callouts ──
   // Deterministic rules that fire when the data shows something notable.
-  // Returns an array of { type: 'positive'|'warning'|'insight', text: string }.
+  // Returns an array of:
+  //   { type: 'positive'|'warning'|'insight', text, why, action }
+  // where `text` is the short one-liner with evidence (collapsed view) and
+  // `why` / `action` power the expanded "learn from this" panel.
+  //
+  // Rules are grouped into three tiers:
+  //   1-5   Symbol & discipline signals (need ≥3 trades)
+  //   6-7   Day-of-week patterns        (need ≥3 trades on that weekday)
+  //   8-12  Behavioural / overtrading   (need chronology, some need ≥5 days)
+  //
+  // Thresholds are personalised where possible (e.g. overtrading uses the
+  // user's own median daily trade count) so a scalper and a swing trader
+  // both get meaningful signal.
   const callouts = useMemo(() => {
     const results = [];
     if (!stats || trades.length < 3) return results;
 
-    // Rule 1: Standout symbol (high win rate with enough trades)
+    // ─── SYMBOL & DISCIPLINE ────────────────────────────────────────────────
+
+    // 1. Standout symbol — high WR with enough sample size
     const standout = symbolRows.find(s => s.trades >= 3 && s.winRate >= 80);
     if (standout) {
       results.push({
         type: 'positive',
         text: `${standout.symbol}: ${standout.winRate}% win rate across ${standout.trades} trades${standout.pnl > 0 ? ` (${fmtPnl(standout.pnl, baseCurrency)})` : ''}.`,
+        why: 'A symbol where you have a real edge — enough trades to trust the signal, and you\'re winning most of them. Concentration here is working in your favour.',
+        action: 'Study what\'s different about how you play this one — setup, timing, sizing. That pattern may be repeatable on similar names.',
       });
     }
 
-    // Rule 2: Worst symbol (net loss with enough trades)
+    // 2. Worst symbol — biggest net drag
     const worst = [...symbolRows].sort((a, b) => a.pnl - b.pnl)[0];
     if (worst && worst.pnl < 0 && worst.trades >= 2) {
       results.push({
         type: 'warning',
         text: `${worst.symbol}: net ${fmtPnl(worst.pnl, baseCurrency)} across ${worst.trades} trades — your biggest drag.`,
+        why: 'A symbol that\'s consistently costing you money across multiple trades. Could be a poor setup fit, wrong timeframe, or you keep taking the same trade hoping for a different outcome.',
+        action: 'Review your entries on this one. Either find the rule that excludes the losing setup, or drop it from the watchlist for a few weeks.',
       });
     }
 
-    // Rule 3: Low overall adherence across matched trades
+    // 3. Adherence drift
     if (adherenceStats && adherenceStats.overall < 70) {
       results.push({
         type: 'warning',
         text: `Avg adherence is ${Math.round(adherenceStats.overall)} across ${adherenceStats.matchedCount} matched trade${adherenceStats.matchedCount !== 1 ? 's' : ''} — plans and execution are drifting apart.`,
+        why: 'Adherence measures how closely your actual executions match the plan (entry, stop, target, size). A low score means plans aren\'t guiding behaviour — you\'re improvising in the moment.',
+        action: 'For the next few trades, screenshot the plan before entering. After the trade, compare side-by-side. Either the plan needs fixing, or the discipline does.',
       });
     }
 
-    // Rule 5: Off-plan trading signal
+    // 4. Off-plan share
     const offPlanCount = trades.filter(t => t.matching_status === 'off_plan').length;
-    if (offPlanCount > 0 && trades.length > 0) {
+    if (offPlanCount > 0) {
       const pct = Math.round((offPlanCount / trades.length) * 100);
       if (pct >= 30) {
         results.push({
           type: 'warning',
           text: `${offPlanCount} of ${trades.length} trades (${pct}%) were off-plan — consider writing plans before entering.`,
+          why: 'A significant share of trades has no written plan. Without a plan there\'s no reference point for review, no way to measure adherence, and no hypothesis to test — every trade is an experiment you can\'t learn from.',
+          action: 'Require yourself to write a plan before every entry. One line is enough: setup, entry, stop, target. If you can\'t write it, you probably shouldn\'t take it.',
         });
       }
     }
 
-    // Rule 6: Strong overall performance
+    // 5. Strong overall performance
     if (stats.winRate >= 60 && stats.netPnl > 0) {
       results.push({
         type: 'positive',
         text: `Strong overall performance: ${stats.winRate}% win rate across ${stats.n} trades.`,
+        why: 'Win rate above 60% with positive net P&L — you\'re executing a real edge. This is also the dangerous moment where confidence can slip into complacency.',
+        action: 'Open Weekly Review and write down exactly what\'s working. Codify the rules that got you here — this is when to tighten discipline, not loosen it.',
       });
+    }
+
+    // ─── CHRONOLOGY-DEPENDENT HELPERS ───────────────────────────────────────
+    // Sort closed trades by close time. Used by rules 6–12.
+
+    const chrono = [...trades]
+      .filter(t => t.closed_at)
+      .sort((a, b) => (a.closed_at > b.closed_at ? 1 : -1));
+
+    // Daily P&L + count buckets (keyed by YYYY-MM-DD of close)
+    const byDay = new Map();
+    for (const t of chrono) {
+      const day = t.closed_at.slice(0, 10);
+      if (!byDay.has(day)) byDay.set(day, { count: 0, pnl: 0 });
+      const b = byDay.get(day);
+      b.count += 1;
+      b.pnl += pnlBase(t);
+    }
+
+    // ─── DAY-OF-WEEK ────────────────────────────────────────────────────────
+
+    const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dowBuckets = Array.from({ length: 7 }, () => ({ trades: 0, wins: 0, pnl: 0 }));
+    for (const t of chrono) {
+      const d = new Date(t.closed_at).getDay();
+      dowBuckets[d].trades += 1;
+      dowBuckets[d].pnl += pnlBase(t);
+      if (pnlBase(t) > 0) dowBuckets[d].wins += 1;
+    }
+    const dowEligible = dowBuckets
+      .map((b, i) => ({ ...b, dow: i, wr: b.trades > 0 ? Math.round((b.wins / b.trades) * 100) : 0 }))
+      .filter(b => b.trades >= 3);
+
+    if (dowEligible.length >= 2) {
+      const dowBest = [...dowEligible].sort((a, b) => b.pnl - a.pnl)[0];
+      const dowWorst = [...dowEligible].sort((a, b) => a.pnl - b.pnl)[0];
+
+      // 6. Best day of the week
+      if (dowBest.pnl > 0 && dowBest.wr >= 60) {
+        results.push({
+          type: 'positive',
+          text: `${DOW[dowBest.dow]}s are your strongest day — ${dowBest.wr}% WR, ${fmtPnl(dowBest.pnl, baseCurrency)} across ${dowBest.trades} trades.`,
+          why: 'You perform noticeably better on this weekday. Likely explanations: a weekly catalyst (earnings, macro release), a recurring market regime (Monday trend, Friday chop), or simply you\'re mentally fresher on that day.',
+          action: 'Figure out the why, then lean into it — prepare harder for this day and consider thinning out your activity on the weakest ones.',
+        });
+      }
+
+      // 7. Worst day of the week (skip if same as best)
+      if (dowWorst.dow !== dowBest.dow && dowWorst.pnl < 0) {
+        results.push({
+          type: 'warning',
+          text: `${DOW[dowWorst.dow]}s are dragging you down — ${fmtPnl(dowWorst.pnl, baseCurrency)} across ${dowWorst.trades} trades.`,
+          why: 'This weekday is a consistent drag on P&L. Common culprits: end-of-week fatigue, range-bound markets with low-quality setups, or boredom trading when nothing is moving.',
+          action: 'Try skipping this day for 2 weeks and compare. If total P&L goes up, you\'ve found a free return — fewer trades, more profit.',
+        });
+      }
+    }
+
+    // ─── BEHAVIOURAL / OVERTRADING ──────────────────────────────────────────
+
+    // 8. Loss streak (≥3 consecutive losses anywhere in the period)
+    let maxLossStreak = 0;
+    let curStreak = 0;
+    for (const t of chrono) {
+      if (pnlBase(t) < 0) {
+        curStreak += 1;
+        if (curStreak > maxLossStreak) maxLossStreak = curStreak;
+      } else {
+        curStreak = 0;
+      }
+    }
+    if (maxLossStreak >= 3) {
+      results.push({
+        type: 'warning',
+        text: `Longest losing streak this period: ${maxLossStreak} trades in a row. A "step off after 2 losses" rule can protect equity.`,
+        why: 'Three or more consecutive losses erode more than capital — they distort confidence, nudge you to oversize the next trade to "get it back", and open the door to revenge trades. Streaks compound psychologically.',
+        action: 'Pre-commit to a hard stop: after 2 losing trades in a session, walk away for an hour. Review charts later with a clear head. The market will still be there.',
+      });
+    }
+
+    // 9. Revenge trading — a real revenge trade is:
+    //      (a) opened within 60 min of closing a losing trade, AND
+    //      (b) UNPLANNED (off_plan) — planned entries aren't revenge, they're scheduled
+    //    Sizing up is a common amplifier ("double down to get it back") so we
+    //    track it separately and mention it if it happens. Exposure is
+    //    qty × multiplier × avg_entry_price × fx-to-base so options and
+    //    cross-currency trades compare on equal footing.
+    //    Orphans (null opened_at) are skipped — we can't time their entry.
+    const exposureOf = (t) => {
+      const qty = parseFloat(t.total_opening_quantity) || parseFloat(t.total_closing_quantity) || 0;
+      const mult = parseFloat(t.multiplier) || 1;
+      const price = parseFloat(t.avg_entry_price) || 0;
+      const fx = parseFloat(t.fx_rate_to_base) || 1;
+      return Math.abs(qty * mult * price * fx);
+    };
+    let revengeCount = 0;
+    let sizedUpCount = 0;
+    for (let i = 0; i < chrono.length - 1; i++) {
+      const t = chrono[i];
+      if (pnlBase(t) >= 0) continue;
+      const next = chrono[i + 1];
+      if (!next.opened_at) continue;
+      if (next.matching_status !== 'off_plan') continue;
+      const gapMin = (new Date(next.opened_at) - new Date(t.closed_at)) / 60000;
+      if (gapMin > 0 && gapMin <= 60) {
+        revengeCount += 1;
+        const losingExp = exposureOf(t);
+        const nextExp = exposureOf(next);
+        if (losingExp > 0 && nextExp > losingExp * 1.25) sizedUpCount += 1;
+      }
+    }
+    if (revengeCount >= 2) {
+      const sizeNote = sizedUpCount >= 1
+        ? ` (${sizedUpCount} with bigger size — doubling down)`
+        : '';
+      results.push({
+        type: 'warning',
+        text: `${revengeCount} unplanned trade${revengeCount > 1 ? 's' : ''} opened within an hour of a loss${sizeNote} — revenge pattern. A 30-minute cool-off helps.`,
+        why: 'Revenge trading is entering an unplanned trade right after a loss — often sized larger — to "get it back". It\'s emotion-driven, not edge-driven. The evidence across trading literature and our own data is consistent: these trades deepen the hole rather than recover it.',
+        action: 'Set a hard rule: after any losing trade, no new entry for 30 minutes. If the idea still looks good after the cool-off, it was probably real. If not, you just dodged a tilt trade.',
+      });
+    }
+
+    // 10. Overtrading days — days where you traded ≥ max(2× your median daily
+    //     count, 4) AND finished net negative. Threshold is personalised.
+    const dayCounts = [...byDay.values()].map(b => b.count).sort((a, b) => a - b);
+    if (dayCounts.length >= 3) {
+      const median = dayCounts[Math.floor(dayCounts.length / 2)];
+      const threshold = Math.max(median * 2, 4);
+      const overLosing = [...byDay.values()].filter(b => b.count >= threshold && b.pnl < 0);
+      if (overLosing.length >= 1) {
+        const total = overLosing.reduce((s, b) => s + b.pnl, 0);
+        results.push({
+          type: 'warning',
+          text: `${overLosing.length} day${overLosing.length > 1 ? 's' : ''} with ≥${threshold} trades closed red (${fmtPnl(total, baseCurrency)} total) — overtrading signal vs your usual pace.`,
+          why: `Overtrading is trading well above your normal pace — usually chasing action in a slow market or forcing trades to hit a P&L target. We flag days with at least ${threshold} trades because that's 2× your typical median day. The quality of setups tends to drop fast after the first few of the session.`,
+          action: 'Set a daily max trade count based on your average (e.g. median + 2). Once you hit it, close the platform. Protect the edge by protecting your patience.',
+        });
+      }
+    }
+
+    // 11. Post-big-win giveback — after a top-quartile winner, later same-day
+    //     trades net negative. Needs ≥4 winners to define a meaningful Q3.
+    const winnerPnls = chrono.filter(t => pnlBase(t) > 0).map(t => pnlBase(t)).sort((a, b) => a - b);
+    if (winnerPnls.length >= 4) {
+      const q3 = winnerPnls[Math.floor(winnerPnls.length * 0.75)];
+      let givebackCount = 0;
+      for (let i = 0; i < chrono.length; i++) {
+        const t = chrono[i];
+        if (pnlBase(t) < q3) continue;
+        const day = t.closed_at.slice(0, 10);
+        let netAfter = 0;
+        let laterCount = 0;
+        for (let j = i + 1; j < chrono.length; j++) {
+          const x = chrono[j];
+          if (x.closed_at.slice(0, 10) !== day) break;
+          netAfter += pnlBase(x);
+          laterCount += 1;
+        }
+        if (laterCount >= 1 && netAfter < 0) givebackCount += 1;
+      }
+      if (givebackCount >= 2) {
+        results.push({
+          type: 'insight',
+          text: `After ${givebackCount} of your biggest wins you gave back P&L on later trades that day. Consider stopping after a big green.`,
+          why: 'After a big winner, two things happen: euphoria makes you feel unbeatable, and a comfortable day\'s P&L makes you willing to risk more loosely. Entries get sloppier, exits get wider, and the day slowly gives back what it earned.',
+          action: 'Make it a rule: after a big green day or trade, stop. You already got paid. The next trade almost never matters as much as the win you just protected.',
+        });
+      }
+    }
+
+    // 12. Volatile daily P&L — one-day swings dwarf the average edge.
+    if (byDay.size >= 5) {
+      const dailyPnls = [...byDay.values()].map(b => b.pnl);
+      const mean = dailyPnls.reduce((s, x) => s + x, 0) / dailyPnls.length;
+      const variance = dailyPnls.reduce((s, x) => s + (x - mean) ** 2, 0) / dailyPnls.length;
+      const stdDev = Math.sqrt(variance);
+      if (Math.abs(mean) > 0 && stdDev > 2 * Math.abs(mean)) {
+        const ratio = (stdDev / Math.abs(mean)).toFixed(1);
+        results.push({
+          type: 'insight',
+          text: `Daily P&L is volatile — single-day swings are ~${ratio}× your average day. Smaller, steadier sizing compounds faster than boom/bust.`,
+          why: 'High daily P&L volatility means one outlier day can wipe out several good ones. It usually traces back to inconsistent position sizing, concentrated bets on a single day, or trading bigger when confident and smaller when unsure (which amplifies both emotions).',
+          action: 'Audit your sizing: are outsized days coming from more trades, bigger size per trade, or both? Standardising size per trade is the single biggest reducer of variance.',
+        });
+      }
     }
 
     return results;
@@ -564,7 +786,12 @@ export default function PerformanceScreen({ session }) {
         ))}
       </div>
 
-      {/* ── auto callouts ── */}
+      {/* ── auto callouts ──
+          Each callout is a clickable card that expands to reveal "Why flagged"
+          and "What to try" — turns the insight from a stat into a learning
+          moment. Expand state is tracked per-index in a Set (multiple can be
+          open at once). Cards without `why`/`action` fields silently skip the
+          chevron, so older callout shapes still render cleanly. */}
       {callouts.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {callouts.map((c, i) => {
@@ -572,6 +799,16 @@ export default function PerformanceScreen({ session }) {
               positive: 'bg-green-50 border-green-200 text-green-800',
               warning:  'bg-amber-50 border-amber-200 text-amber-800',
               insight:  'bg-blue-50 border-blue-200 text-blue-800',
+            };
+            const dividerStyles = {
+              positive: 'border-green-200/70',
+              warning:  'border-amber-200/70',
+              insight:  'border-blue-200/70',
+            };
+            const labelStyles = {
+              positive: 'text-green-700',
+              warning:  'text-amber-700',
+              insight:  'text-blue-700',
             };
             const icons = {
               positive: (
@@ -590,10 +827,43 @@ export default function PerformanceScreen({ session }) {
                 </svg>
               ),
             };
+            const hasDetail = !!(c.why || c.action);
+            const isOpen = expandedCallouts.has(i);
             return (
-              <div key={i} className={`flex items-start gap-2.5 rounded-xl border px-4 py-3 text-sm ${styles[c.type]}`}>
-                {icons[c.type]}
-                <span>{c.text}</span>
+              <div key={i} className={`rounded-xl border text-sm ${styles[c.type]}`}>
+                <button
+                  type="button"
+                  onClick={hasDetail ? () => toggleCallout(i) : undefined}
+                  className={`w-full flex items-start gap-2.5 px-4 py-3 text-left ${hasDetail ? 'cursor-pointer' : 'cursor-default'}`}
+                  aria-expanded={hasDetail ? isOpen : undefined}
+                >
+                  {icons[c.type]}
+                  <span className="flex-1">{c.text}</span>
+                  {hasDetail && (
+                    <svg
+                      className={`w-4 h-4 shrink-0 mt-0.5 opacity-60 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                      fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  )}
+                </button>
+                {hasDetail && isOpen && (
+                  <div className={`px-4 pb-4 pt-1 border-t ${dividerStyles[c.type]} space-y-3`}>
+                    {c.why && (
+                      <div>
+                        <p className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${labelStyles[c.type]}`}>Why flagged</p>
+                        <p className="text-sm leading-relaxed">{c.why}</p>
+                      </div>
+                    )}
+                    {c.action && (
+                      <div>
+                        <p className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${labelStyles[c.type]}`}>What to try</p>
+                        <p className="text-sm leading-relaxed">{c.action}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
