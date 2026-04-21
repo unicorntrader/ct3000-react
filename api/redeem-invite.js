@@ -38,11 +38,18 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: createErr.message })
   }
 
-  // Create subscription
+  // Create subscription — match the shape ct3000-admin's compAction writes
+  // for "Forever" comps so every comped user looks identical in the DB
+  // (status=active, is_comped=true, both date fields pinned to 2099). Keeps
+  // the admin dashboard's is_comped aggregation + period display consistent
+  // regardless of whether the comp came from Grant-comp-Forever or an invite.
+  const FOREVER = '2099-01-01T00:00:00.000Z'
   const { error: subErr } = await supabaseAdmin.from('user_subscriptions').insert({
     user_id: user.id,
     subscription_status: 'active',
     is_comped: true,
+    current_period_ends_at: FOREVER,
+    trial_ends_at: FOREVER,
   })
   if (subErr) {
     console.error('[redeem-invite] subscription insert error:', subErr.message)
