@@ -157,6 +157,22 @@ export default function TradeSquares({ userId }) {
   const [loadError, setLoadError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
 
+  // Collapse state — persists across sessions via localStorage so the user's
+  // preference sticks. Default expanded so new users see the whole thing on
+  // first load; they can tuck it away once they've scanned.
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem('tradesquares:collapsed') === '1'; }
+    catch { return false; }
+  });
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem('tradesquares:collapsed', next ? '1' : '0'); }
+      catch { /* storage disabled — state still toggles in-memory */ }
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (isDemo) {
       // Short-circuit — synthetic rows + synthetic journal markers. Uses the
@@ -315,21 +331,29 @@ export default function TradeSquares({ userId }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cells]);
 
-  // Per-category counts + trading-day aggregates, scoped to in-range only.
-  // One pass, used across the stats grid tiles below.
+  // Trading-activity aggregates scoped to in-range only. One pass over the
+  // cells' underlying daily_adherence rows. Powers the second row of stat
+  // tiles (Total trades / Planned / Off-plan / Plan rate).
+  //
+  // Plan rate = matched / (matched + off_plan) — excludes needs_review from
+  // the denominator because those are unresolved and would distort the
+  // metric in either direction. When both counts are zero, plan rate is
+  // null (shown as em-dash) rather than 0 or 100.
   const stats = useMemo(() => {
-    let green = 0, yellow = 0, red = 0;
     let tradingDays = 0, totalTrades = 0;
+    let matchedTotal = 0, offPlanTotal = 0, needsReviewTotal = 0;
     for (const c of inRangeCells) {
-      if (c.cat === 'green') green += 1;
-      else if (c.cat === 'yellow') yellow += 1;
-      else if (c.cat === 'red') red += 1;
-      if (c.row && c.row.trade_count > 0) {
-        tradingDays += 1;
-        totalTrades += Number(c.row.trade_count) || 0;
-      }
+      const row = c.row;
+      if (!row) continue;
+      if (row.trade_count > 0) tradingDays += 1;
+      totalTrades += Number(row.trade_count) || 0;
+      matchedTotal += Number(row.matched_count) || 0;
+      offPlanTotal += Number(row.off_plan_count) || 0;
+      needsReviewTotal += Number(row.needs_review_count) || 0;
     }
-    return { green, yellow, red, tradingDays, totalTrades };
+    const planDenom = matchedTotal + offPlanTotal;
+    const planRate = planDenom > 0 ? Math.round((matchedTotal / planDenom) * 100) : null;
+    return { tradingDays, totalTrades, matchedTotal, offPlanTotal, needsReviewTotal, planRate };
   }, [inRangeCells]);
 
   // Group cells into weekly columns for the 7×N grid. GitHub convention:
@@ -418,11 +442,33 @@ export default function TradeSquares({ userId }) {
     : disciplineScore >= 50 ? 'text-amber-600'
     : 'text-red-500';
 
+  // Plan-rate colour band — same thresholds as discipline for visual parity.
+  const planRateColor =
+    stats.planRate == null ? 'text-gray-400'
+    : stats.planRate >= 75 ? 'text-green-600'
+    : stats.planRate >= 50 ? 'text-amber-600'
+    : 'text-red-500';
+
   return (
     <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-5 mb-6">
-      {/* Title row — title on the left, period selector on the right. */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2">
+      {/* Title row — title on the left, period selector + collapse toggle on
+          the right. Chevron rotates 90° when expanded (points down), returns
+          to pointing right when collapsed. Period selector hides when
+          collapsed since the data it controls isn't visible anyway. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          className="flex items-center gap-2 group cursor-pointer"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? 'Expand TradeSquares' : 'Collapse TradeSquares'}
+        >
+          <svg
+            className={`w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 transition-transform ${collapsed ? '' : 'rotate-90'}`}
+            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
           <h3 className="text-sm font-semibold text-gray-700">TradeSquares</h3>
           <span className="text-[11px] text-gray-400">· Discipline, not activity</span>
           {isDemo && (
@@ -430,36 +476,55 @@ export default function TradeSquares({ userId }) {
               Demo
             </span>
           )}
-        </div>
-        <div className="flex items-center gap-1.5">
-          {PRESETS.map(p => (
-            <button
-              key={p.key}
-              onClick={() => setRange(p.key)}
-              className={`text-[11px] font-medium px-2.5 py-1 rounded-full border transition-colors ${
-                range === p.key
-                  ? 'bg-blue-600 text-white border-transparent'
-                  : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+          {/* Collapsed-state summary — mini discipline + streak teaser so the
+              user can see how they're doing without expanding. */}
+          {collapsed && (
+            <span className="text-[11px] text-gray-500 ml-2">
+              <span className={`font-semibold ${disciplineColor}`}>
+                {disciplineScore == null ? '—' : `${disciplineScore}%`}
+              </span>
+              <span className="mx-1.5 text-gray-300">·</span>
+              <span className="font-semibold text-gray-700">
+                {cleanStreak === 0 ? '—' : `${cleanStreak}d`}
+              </span>
+              <span className="text-gray-400"> streak</span>
+            </span>
+          )}
+        </button>
+        {!collapsed && (
+          <div className="flex items-center gap-1.5">
+            {PRESETS.map(p => (
+              <button
+                key={p.key}
+                onClick={() => setRange(p.key)}
+                className={`text-[11px] font-medium px-2.5 py-1 rounded-full border transition-colors ${
+                  range === p.key
+                    ? 'bg-blue-600 text-white border-transparent'
+                    : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
+      {/* Everything below the title bar hides when collapsed. */}
+      {!collapsed && (
+        <>
       {/* Stats grid — 2 cols on mobile, 4 on sm+. Two rows of four tiles:
-          row 1 focuses on discipline + streaks (the "how am I doing?" view),
-          row 2 on activity counts (the "what did I do?" view). */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+          row 1 = how am I doing (discipline side),
+          row 2 = what did I do (activity breakdown — trades by plan state). */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 mb-4">
         {statTile('Discipline', disciplineScore == null ? '—' : `${disciplineScore}%`, disciplineColor)}
         {statTile('Current streak', cleanStreak === 0 ? '—' : `${cleanStreak}d`)}
         {statTile('Longest streak', longestStreak === 0 ? '—' : `${longestStreak}d`)}
         {statTile('Trading days', stats.tradingDays === 0 ? '—' : stats.tradingDays)}
         {statTile('Total trades', stats.totalTrades === 0 ? '—' : stats.totalTrades.toLocaleString())}
-        {statTile('Green days', stats.green, stats.green > 0 ? 'text-green-600' : 'text-gray-400')}
-        {statTile('Yellow days', stats.yellow, stats.yellow > 0 ? 'text-amber-600' : 'text-gray-400')}
-        {statTile('Red days', stats.red, stats.red > 0 ? 'text-red-500' : 'text-gray-400')}
+        {statTile('Planned', stats.matchedTotal, stats.matchedTotal > 0 ? 'text-green-600' : 'text-gray-400')}
+        {statTile('Off-plan', stats.offPlanTotal, stats.offPlanTotal > 0 ? 'text-red-500' : 'text-gray-400')}
+        {statTile('Plan rate', stats.planRate == null ? '—' : `${stats.planRate}%`, planRateColor)}
       </div>
 
       {/* Grid — GitHub-style with month header + DOW labels on the side.
@@ -579,6 +644,8 @@ export default function TradeSquares({ userId }) {
         <p className="text-[12px] text-gray-400 mt-3">
           No discipline data yet. Run Sync or Rebuild to populate TradeSquares from your existing trades.
         </p>
+      )}
+        </>
       )}
     </div>
   );
