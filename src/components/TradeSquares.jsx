@@ -207,6 +207,40 @@ export default function TradeSquares({ userId }) {
     return streak;
   }, [cells]);
 
+  // Longest streak across the whole window — the motivational "beat your PR"
+  // number. Same streak rules as cleanStreak (green/gray preserve, yellow/red
+  // break). Walks the cells forward and tracks the max run.
+  const longestStreak = useMemo(() => {
+    let max = 0;
+    let cur = 0;
+    for (const c of cells) {
+      if (c.cat === 'green' || c.cat === 'gray') {
+        cur += 1;
+        if (cur > max) max = cur;
+      } else {
+        cur = 0;
+      }
+    }
+    return max;
+  }, [cells]);
+
+  // Per-category counts + trading-day aggregates. One pass, used across the
+  // stats grid tiles below.
+  const stats = useMemo(() => {
+    let green = 0, yellow = 0, red = 0;
+    let tradingDays = 0, totalTrades = 0;
+    for (const c of cells) {
+      if (c.cat === 'green') green += 1;
+      else if (c.cat === 'yellow') yellow += 1;
+      else if (c.cat === 'red') red += 1;
+      if (c.row && c.row.trade_count > 0) {
+        tradingDays += 1;
+        totalTrades += Number(c.row.trade_count) || 0;
+      }
+    }
+    return { green, yellow, red, tradingDays, totalTrades };
+  }, [cells]);
+
   // Group cells into weekly columns for the 7×N grid. GitHub convention:
   // each column = one week, rows = day-of-week (Sun at top). To align the
   // first column's Sunday with the actual weekday of the earliest cell,
@@ -303,41 +337,34 @@ export default function TradeSquares({ userId }) {
     );
   }
 
+  // Helper for the stats grid — each tile is a small bordered box with a
+  // grey label and a bold value. Nullable values render as '—'. Colour only
+  // applied when the value carries meaning (discipline %, red/green counts).
+  const statTile = (label, value, valueClass = 'text-gray-900') => (
+    <div className="rounded-lg border border-gray-100 bg-gray-50/50 px-3 py-2.5">
+      <p className="text-[11px] font-medium text-gray-500">{label}</p>
+      <p className={`text-lg font-semibold leading-none mt-1 ${valueClass}`}>{value}</p>
+    </div>
+  );
+
+  const disciplineColor =
+    disciplineScore == null ? 'text-gray-400'
+    : disciplineScore >= 75 ? 'text-green-600'
+    : disciplineScore >= 50 ? 'text-amber-600'
+    : 'text-red-500';
+
   return (
     <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-5 mb-6">
-      {/* Top bar */}
+      {/* Title row — title on the left, period selector on the right. */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-gray-700">TradeSquares</h3>
-              {isDemo && (
-                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded">
-                  Demo
-                </span>
-              )}
-            </div>
-            <p className="text-[11px] text-gray-400 mt-0.5">Discipline, not activity</p>
-          </div>
-          <div className="hidden sm:flex items-center gap-5 pl-5 border-l border-gray-100">
-            <div>
-              <p className="text-[11px] font-medium text-gray-400">Discipline</p>
-              <p className={`text-lg font-semibold leading-none ${
-                disciplineScore == null ? 'text-gray-400'
-                  : disciplineScore >= 75 ? 'text-green-600'
-                  : disciplineScore >= 50 ? 'text-amber-600'
-                  : 'text-red-500'
-              }`}>
-                {disciplineScore == null ? '—' : `${disciplineScore}%`}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] font-medium text-gray-400">Clean streak</p>
-              <p className="text-lg font-semibold leading-none text-gray-900">
-                {cleanStreak === 0 ? '—' : `${cleanStreak}d`}
-              </p>
-            </div>
-          </div>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-gray-700">TradeSquares</h3>
+          <span className="text-[11px] text-gray-400">· Discipline, not activity</span>
+          {isDemo && (
+            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded ml-1">
+              Demo
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           {PRESETS.map(p => (
@@ -356,25 +383,18 @@ export default function TradeSquares({ userId }) {
         </div>
       </div>
 
-      {/* Mobile stats row (shown below title on small screens) */}
-      <div className="flex items-center gap-5 mb-4 sm:hidden">
-        <div>
-          <p className="text-[11px] font-medium text-gray-400">Discipline</p>
-          <p className={`text-base font-semibold leading-none ${
-            disciplineScore == null ? 'text-gray-400'
-              : disciplineScore >= 75 ? 'text-green-600'
-              : disciplineScore >= 50 ? 'text-amber-600'
-              : 'text-red-500'
-          }`}>
-            {disciplineScore == null ? '—' : `${disciplineScore}%`}
-          </p>
-        </div>
-        <div>
-          <p className="text-[11px] font-medium text-gray-400">Clean streak</p>
-          <p className="text-base font-semibold leading-none text-gray-900">
-            {cleanStreak === 0 ? '—' : `${cleanStreak}d`}
-          </p>
-        </div>
+      {/* Stats grid — 2 cols on mobile, 4 on sm+. Two rows of four tiles:
+          row 1 focuses on discipline + streaks (the "how am I doing?" view),
+          row 2 on activity counts (the "what did I do?" view). */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+        {statTile('Discipline', disciplineScore == null ? '—' : `${disciplineScore}%`, disciplineColor)}
+        {statTile('Current streak', cleanStreak === 0 ? '—' : `${cleanStreak}d`)}
+        {statTile('Longest streak', longestStreak === 0 ? '—' : `${longestStreak}d`)}
+        {statTile('Trading days', stats.tradingDays === 0 ? '—' : stats.tradingDays)}
+        {statTile('Total trades', stats.totalTrades === 0 ? '—' : stats.totalTrades.toLocaleString())}
+        {statTile('Green days', stats.green, stats.green > 0 ? 'text-green-600' : 'text-gray-400')}
+        {statTile('Yellow days', stats.yellow, stats.yellow > 0 ? 'text-amber-600' : 'text-gray-400')}
+        {statTile('Red days', stats.red, stats.red > 0 ? 'text-red-500' : 'text-gray-400')}
       </div>
 
       {/* Grid */}
