@@ -29,6 +29,7 @@ const PRESETS = [
 ];
 
 const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // Generate an array of YYYY-MM-DD strings for the last N days, oldest first.
 function daysBack(n) {
@@ -266,6 +267,24 @@ export default function TradeSquares({ userId }) {
     return cols;
   }, [cells]);
 
+  // Month-label positions — label the first column of each month. Matches
+  // GitHub's contribution graph convention. Uses the earliest real cell in
+  // each column to determine which month that column belongs to.
+  const monthHeaders = useMemo(() => {
+    const headers = new Array(columns.length).fill('');
+    let lastMonth = -1;
+    for (let ci = 0; ci < columns.length; ci++) {
+      const firstCell = columns[ci].find(c => c !== null);
+      if (!firstCell) continue;
+      const m = new Date(firstCell.date + 'T00:00:00').getMonth();
+      if (m !== lastMonth) {
+        headers[ci] = MONTH_LABELS[m];
+        lastMonth = m;
+      }
+    }
+    return headers;
+  }, [columns]);
+
   // Smart insight: pick the most telling 1-liner from a few deterministic
   // checks. Runs only when we have enough signal (≥5 days with data).
   const insight = useMemo(() => {
@@ -397,35 +416,71 @@ export default function TradeSquares({ userId }) {
         {statTile('Red days', stats.red, stats.red > 0 ? 'text-red-500' : 'text-gray-400')}
       </div>
 
-      {/* Grid */}
+      {/* Grid — GitHub-style with month header + DOW labels on the side.
+          Cell size 16px with 4px gaps for better mobile/desktop legibility.
+          Month labels sit in a thin row above the grid and are placed at the
+          first column of each month. DOW labels show Mon/Wed/Fri only to
+          keep the left gutter light. */}
       {loading ? (
-        <div className="h-24 bg-gray-50 rounded-lg animate-pulse" />
+        <div className="h-28 bg-gray-50 rounded-lg animate-pulse" />
       ) : (
         <div className="overflow-x-auto">
-          <div className="flex gap-[3px] min-w-max">
-            {columns.map((col, ci) => (
-              <div key={ci} className="flex flex-col gap-[3px]">
-                {col.map((cell, ri) => {
-                  if (!cell) return <div key={ri} className="w-[14px] h-[14px]" />;
-                  const title = cell.row
-                    ? `${cell.date} · ${
-                        cell.row.adherence_score != null
-                          ? `${Math.round(cell.row.adherence_score)}% adherence`
-                          : 'No matched trades'
-                      } · ${cell.row.trade_count} trade${cell.row.trade_count !== 1 ? 's' : ''}`
-                    : `${cell.date} · No data`;
-                  return (
-                    <button
-                      key={ri}
-                      title={title}
-                      onClick={() => navigate('/daily')}
-                      className={`w-[14px] h-[14px] rounded-sm transition-colors ${cell.cls}`}
-                      aria-label={title}
-                    />
-                  );
-                })}
+          <div className="flex gap-2 min-w-max">
+            {/* DOW labels column */}
+            <div className="flex flex-col gap-1 pt-[18px]">
+              {[0, 1, 2, 3, 4, 5, 6].map(i => (
+                <div
+                  key={i}
+                  className="h-4 text-[10px] text-gray-400 leading-4 text-right w-7 pr-1"
+                >
+                  {i === 1 ? 'Mon' : i === 3 ? 'Wed' : i === 5 ? 'Fri' : ''}
+                </div>
+              ))}
+            </div>
+
+            {/* Grid area: month row above, 7xN cells below */}
+            <div className="flex flex-col gap-1">
+              {/* Month labels — one slot per column; non-empty only on the
+                  first column of each month. Width matches cell width so the
+                  label sits above the column it belongs to. */}
+              <div className="flex gap-1 h-[14px]">
+                {monthHeaders.map((m, ci) => (
+                  <div
+                    key={ci}
+                    className="w-4 text-[10px] text-gray-400 leading-[14px] whitespace-nowrap"
+                  >
+                    {m}
+                  </div>
+                ))}
               </div>
-            ))}
+
+              {/* Cell grid */}
+              <div className="flex gap-1">
+                {columns.map((col, ci) => (
+                  <div key={ci} className="flex flex-col gap-1">
+                    {col.map((cell, ri) => {
+                      if (!cell) return <div key={ri} className="w-4 h-4" />;
+                      const title = cell.row
+                        ? `${cell.date} · ${
+                            cell.row.adherence_score != null
+                              ? `${Math.round(cell.row.adherence_score)}% adherence`
+                              : 'No matched trades'
+                          } · ${cell.row.trade_count} trade${cell.row.trade_count !== 1 ? 's' : ''}`
+                        : `${cell.date} · No data`;
+                      return (
+                        <button
+                          key={ri}
+                          title={title}
+                          onClick={() => navigate('/daily')}
+                          className={`w-4 h-4 rounded-[3px] transition-colors ${cell.cls}`}
+                          aria-label={title}
+                        />
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
