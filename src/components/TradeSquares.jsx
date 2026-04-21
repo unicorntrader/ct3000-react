@@ -26,7 +26,16 @@ import { supabase } from '../lib/supabaseClient';
 const PRESETS = [
   { key: 30, label: '30D' },
   { key: 90, label: '90D' },
+  { key: 365, label: '365D' },
 ];
+
+// The grid itself is always this many days wide, regardless of preset.
+// 364 = 52 weeks × 7 days. The range preset only controls which squares
+// get coloured + which days feed the stats; the grid never resizes.
+// Rationale: a fixed-width grid keeps the layout stable when toggling
+// ranges and lets the coloured cluster on the right visually demonstrate
+// how much history the current stats cover.
+const GRID_DAYS = 364;
 
 const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -63,9 +72,10 @@ function hashStr(s) {
 //   ~15% gray (no trade / weekend bias)
 // Weekends skew toward gray (no matched trades) to feel like real trading.
 // Used when the component is mounted with ?demo=1 so we can preview the UI
-// without touching real data or the DB. See the usage in the effect below.
-function generateDemoRows(range) {
-  const dates = daysBack(range);
+// without touching real data or the DB. Always generates a full year so
+// the grid stays populated regardless of which preset is selected.
+function generateDemoRows() {
+  const dates = daysBack(GRID_DAYS);
   const rows = [];
   for (const d of dates) {
     const dow = new Date(d + 'T00:00:00').getDay();
@@ -110,7 +120,13 @@ function generateDemoRows(range) {
 
 // Map a day's row (or null) to a category + Tailwind colour class.
 // Category drives the legend + insight text; colour class drives the cell.
-function classifyDay(row) {
+// When `inRange` is false (the cell exists on the grid but falls outside
+// the user's selected preset), we render a dimmer gray regardless of the
+// underlying data — it's visibly "not counted" without hiding the square.
+function classifyDay(row, inRange = true) {
+  if (!inRange) {
+    return { cat: 'outOfRange', cls: 'bg-gray-100 hover:bg-gray-200' };
+  }
   if (!row || row.adherence_score == null) {
     return { cat: 'gray', cls: 'bg-gray-200 hover:bg-gray-300' };
   }
@@ -139,7 +155,7 @@ export default function TradeSquares({ userId }) {
     if (isDemo) {
       // Short-circuit — synthetic rows + synthetic journal markers. Uses the
       // same stable hash so the same days have notes on every render.
-      const demoRows = generateDemoRows(range);
+      const demoRows = generateDemoRows();
       setRows(demoRows);
       const demoNotes = new Set();
       for (const r of demoRows) {
@@ -157,8 +173,11 @@ export default function TradeSquares({ userId }) {
     setLoadError(null);
     (async () => {
       try {
+        // Always fetch the full grid window — the range preset only scopes
+        // colouring + stats, not data retrieval. Fetching a year's worth of
+        // per-day rows is cheap (≤ 364 rows per user).
         const from = new Date();
-        from.setDate(from.getDate() - (range - 1));
+        from.setDate(from.getDate() - (GRID_DAYS - 1));
         const fromKey = from.toISOString().slice(0, 10);
         // Parallel fetch — adherence rows + journal note date_keys. The
         // journal dot indicator overlays the square when the user wrote
@@ -191,7 +210,7 @@ export default function TradeSquares({ userId }) {
         setLoading(false);
       }
     })();
-  }, [userId, range, reloadKey, isDemo]);
+  }, [userId, reloadKey, isDemo]);
 
   // Index rows by date_key so cell lookup is O(1) during render.
   const byDate = useMemo(() => {
@@ -200,50 +219,66 @@ export default function TradeSquares({ userId }) {
     return m;
   }, [rows]);
 
-  // Ordered list of dates + classified cells for the window. `hasNote` is
-  // sourced from daily_notes (or the demo synthetic set) and used to render
-  // the journal-dot overlay on each square.
-  const dates = useMemo(() => daysBack(range), [range]);
+  // Ordered list of dates — always the full grid window (364 days).
+  // Range preset no longer slices this; it only controls which cells are
+  // "in range" for colouring + stats.
+  const dates = useMemo(() => daysBack(GRID_DAYS), []);
+
+  // Classified cells for the grid. `inRange` flags whether the day falls
+  // inside the active preset (last `range` days). Out-of-range cells render
+  // as dimmed gray regardless of their underlying data.
   const cells = useMemo(
-    () => dates.map(d => ({
-      date: d,
-      row: byDate.get(d) || null,
-      hasNote: noteDates.has(d),
-      ...classifyDay(byDate.get(d)),
-    })),
-    [dates, byDate, noteDates],
+    () => dates.map((d, i) => {
+      const daysAgo = GRID_DAYS - 1 - i; // 0 = today, GRID_DAYS-1 = oldest
+      const inRange = daysAgo < range;
+      const row = byDate.get(d) || null;
+      return {
+        date: d,
+        row,
+        hasNote: noteDates.has(d),
+        inRange,
+        ...classifyDay(row, inRange),
+      };
+    }),
+    [dates, byDate, noteDates, range],
   );
 
+  // In-range cells — the scope for every stat tile and the smart-insight
+  // line. Picking a smaller preset shrinks this subset; picking 365D = all.
+  const inRangeCells = useMemo(() => cells.filter(c => c.inRange), [cells]);
+
   // Discipline score: simple average of adherence_score across days that had
-  // matched trades. Days without matched trades don't count (they have no
-  // signal to average — same convention as the per-day colour).
+  // matched trades, within the selected range only.
   const disciplineScore = useMemo(() => {
-    const scored = rows.filter(r => r.adherence_score != null);
+    const scored = inRangeCells
+      .map(c => c.row)
+      .filter(r => r && r.adherence_score != null);
     if (scored.length === 0) return null;
     const sum = scored.reduce((s, r) => s + Number(r.adherence_score), 0);
     return Math.round(sum / scored.length);
-  }, [rows]);
+  }, [inRangeCells]);
 
-  // Clean streak: walk backwards from today, counting consecutive non-broken
-  // days. Green AND gray both preserve the streak (gray = no trade = no
-  // violation). Yellow and red break it.
+  // Clean streak: walk backwards from today through in-range cells,
+  // counting consecutive non-broken days. Green AND gray both preserve the
+  // streak (gray = no trade = no violation). Yellow and red break it.
+  // Stops at the range boundary — the streak reported is "within this
+  // window", consistent with the other stats.
   const cleanStreak = useMemo(() => {
     let streak = 0;
-    for (let i = cells.length - 1; i >= 0; i--) {
-      const c = cells[i];
+    for (let i = inRangeCells.length - 1; i >= 0; i--) {
+      const c = inRangeCells[i];
       if (c.cat === 'green' || c.cat === 'gray') streak += 1;
       else break;
     }
     return streak;
-  }, [cells]);
+  }, [inRangeCells]);
 
-  // Longest streak across the whole window — the motivational "beat your PR"
-  // number. Same streak rules as cleanStreak (green/gray preserve, yellow/red
-  // break). Walks the cells forward and tracks the max run.
+  // Longest streak within the selected range — the motivational
+  // "beat your PR" number, scoped to the active window.
   const longestStreak = useMemo(() => {
     let max = 0;
     let cur = 0;
-    for (const c of cells) {
+    for (const c of inRangeCells) {
       if (c.cat === 'green' || c.cat === 'gray') {
         cur += 1;
         if (cur > max) max = cur;
@@ -252,14 +287,14 @@ export default function TradeSquares({ userId }) {
       }
     }
     return max;
-  }, [cells]);
+  }, [inRangeCells]);
 
-  // Per-category counts + trading-day aggregates. One pass, used across the
-  // stats grid tiles below.
+  // Per-category counts + trading-day aggregates, scoped to in-range only.
+  // One pass, used across the stats grid tiles below.
   const stats = useMemo(() => {
     let green = 0, yellow = 0, red = 0;
     let tradingDays = 0, totalTrades = 0;
-    for (const c of cells) {
+    for (const c of inRangeCells) {
       if (c.cat === 'green') green += 1;
       else if (c.cat === 'yellow') yellow += 1;
       else if (c.cat === 'red') red += 1;
@@ -269,7 +304,7 @@ export default function TradeSquares({ userId }) {
       }
     }
     return { green, yellow, red, tradingDays, totalTrades };
-  }, [cells]);
+  }, [inRangeCells]);
 
   // Group cells into weekly columns for the 7×N grid. GitHub convention:
   // each column = one week, rows = day-of-week (Sun at top). To align the
@@ -315,14 +350,15 @@ export default function TradeSquares({ userId }) {
   }, [columns]);
 
   // Smart insight: pick the most telling 1-liner from a few deterministic
-  // checks. Runs only when we have enough signal (≥5 days with data).
+  // checks. Scoped to the selected range so the commentary matches what's
+  // visually highlighted on the grid.
   const insight = useMemo(() => {
-    const scored = rows.filter(r => r.adherence_score != null);
-    if (scored.length < 5) return null;
+    const rangeRows = inRangeCells.map(c => c.row).filter(r => r && r.adherence_score != null);
+    if (rangeRows.length < 5) return null;
 
     // Pattern 1: "You break rules on Fridays" — worst day-of-week by avg score
     const byDow = Array.from({ length: 7 }, () => ({ sum: 0, n: 0 }));
-    for (const r of scored) {
+    for (const r of rangeRows) {
       const dow = new Date(r.date_key + 'T00:00:00').getDay();
       byDow[dow].sum += Number(r.adherence_score);
       byDow[dow].n += 1;
@@ -339,7 +375,7 @@ export default function TradeSquares({ userId }) {
 
     // Pattern 2: "Best adherence on days with ≤N trades" — compare low-volume
     // days against high-volume days. Uses trade_count to avoid recomputing.
-    const withCount = rows.filter(r => r.adherence_score != null && r.trade_count > 0);
+    const withCount = rangeRows.filter(r => r.trade_count > 0);
     if (withCount.length >= 6) {
       const counts = withCount.map(r => r.trade_count).sort((a, b) => a - b);
       const median = counts[Math.floor(counts.length / 2)];
@@ -356,7 +392,7 @@ export default function TradeSquares({ userId }) {
     }
 
     return null;
-  }, [rows]);
+  }, [inRangeCells]);
 
   // Empty-state: migration ran but no rows yet (rebuild hasn't populated).
   const isEmpty = !loading && rows.length === 0;
@@ -500,7 +536,10 @@ export default function TradeSquares({ userId }) {
                               : 'No matched trades'
                           } · ${cell.row.trade_count} trade${cell.row.trade_count !== 1 ? 's' : ''}`
                         : `${cell.date} · No data`;
-                      const title = cell.hasNote ? `${basePart} · ✎ Journalled` : basePart;
+                      const rangeSuffix = cell.inRange ? '' : ' · Outside selected range';
+                      const title = cell.hasNote && cell.inRange
+                        ? `${basePart} · ✎ Journalled${rangeSuffix}`
+                        : `${basePart}${rangeSuffix}`;
                       return (
                         <button
                           key={ri}
@@ -509,13 +548,14 @@ export default function TradeSquares({ userId }) {
                           className={`relative w-4 h-4 rounded-[3px] transition-colors ${cell.cls}`}
                           aria-label={title}
                         >
-                          {cell.hasNote && (
+                          {cell.hasNote && cell.inRange && (
                             // Journal-dot indicator — small white dot in the
                             // bottom-right corner. White-on-any-colour with a
                             // faint shadow so it's legible on green / yellow /
                             // red / gray alike. Reinforces the reflection
                             // habit: colour = followed the plan, dot = then
-                            // wrote about it.
+                            // wrote about it. Hidden on out-of-range cells so
+                            // the signal is always "in scope".
                             <span
                               className="absolute bottom-[2px] right-[2px] w-[3px] h-[3px] rounded-full bg-white shadow-[0_0_2px_rgba(0,0,0,0.35)] pointer-events-none"
                               aria-hidden
