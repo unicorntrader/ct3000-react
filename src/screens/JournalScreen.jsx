@@ -761,7 +761,6 @@ export default function JournalScreen({ session }) {
                 <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
                 <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">R</th>
                 <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Adh</th>
-                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Outcome</th>
                 <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
                 <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Journal</th>
                 <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" />
@@ -850,17 +849,6 @@ export default function JournalScreen({ session }) {
                       <td className="hidden md:table-cell px-6 py-4 text-sm text-gray-600">{rMultiple ?? '—'}</td>
                       <td className="hidden md:table-cell px-6 py-4">
                         <AdherencePill score={adherence} />
-                      </td>
-                      <td className="px-4 sm:px-6 py-4">
-                        {isOpen ? (
-                          <span className="px-2.5 py-1 text-xs rounded-full font-medium bg-blue-50 text-blue-600">open</span>
-                        ) : (
-                          <span className={`px-2.5 py-1 text-xs rounded-full font-medium ${
-                            isWin ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'
-                          }`}>
-                            {isWin ? 'win' : 'loss'}
-                          </span>
-                        )}
                       </td>
                       <td className="hidden sm:table-cell px-6 py-4">
                         {(() => {
