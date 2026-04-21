@@ -144,7 +144,7 @@ export default function App() {
 
   // Auth state
   useEffect(() => {
-    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session)
       // Tag Sentry events with the Supabase user so errors are attributable.
       if (session?.user?.id) {
@@ -159,6 +159,16 @@ export default function App() {
         setSubscription(null)
         return
       }
+      // Silent auth events (TOKEN_REFRESHED fires whenever Supabase rotates
+      // the access token in the background, e.g. when the tab regains focus
+      // after being idle; USER_UPDATED fires on metadata changes). These are
+      // not a real session/user change — the same user is still logged in.
+      // Bailing out here matters: the block below flips `subscription` to
+      // `undefined`, which makes the root gate render <LoadingScreen/> and
+      // unmount the entire app tree. That was wiping unsaved form state —
+      // e.g. a user typing their IBKR Flex token, switching tabs to IBKR to
+      // copy it, coming back and finding the fields empty.
+      if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') return;
       // Fetch subscription. If this is the user's first login and they
       // haven't connected IBKR yet, auto-seed demo data before surfacing
       // the app so they don't see an empty home screen for a flash.
