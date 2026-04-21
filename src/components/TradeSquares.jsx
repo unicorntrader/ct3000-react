@@ -19,9 +19,12 @@ import { supabase } from '../lib/supabaseClient';
 //   yellow → adherence 50–89
 //   red    → adherence < 50
 //
-// Streak: consecutive days working backwards from today that are GREEN OR
-// GRAY. Rationale (product decision): a no-trade day did not break any rule,
-// so it preserves the streak. Only yellow/red days break it.
+// Streak: consecutive days walking backwards from today that are NOT red.
+// Only red (< 50% adherence) breaks the streak. Green, yellow, and gray all
+// preserve. Rationale: yellow is partial execution of a real plan — "still
+// disciplined, just imperfect" — which shouldn't reset a streak. Red is
+// abandonment of the plan, which should. No-trade days (gray) also
+// preserve, since no trade means no rule to break.
 
 const PRESETS = [
   { key: 30, label: '30D' },
@@ -267,20 +270,27 @@ export default function TradeSquares({ userId }) {
   // "30d" when the user picked 30D) and demotivate toggling. Walks the
   // full cells array (which is the fetched year, the practical horizon).
   //
-  // For streak classification we need green/yellow/red by the raw adherence,
-  // ignoring the out-of-range dim — otherwise every out-of-range cell would
-  // read as "outOfRange" and streak logic couldn't tell green from red.
-  // Re-classify from the underlying row data.
+  // STREAK-BREAK RULE: only RED days (<50% adherence) break the streak.
+  // Green and gray preserve the streak, and YELLOW (50–89%, partial
+  // adherence) also preserves. Rationale: yellow is execution slippage on
+  // a plan the trader was still following — a 78% day isn't a rule break,
+  // it's imperfect-but-disciplined. Only actual abandonment of the plan
+  // (red) should reset the counter. This keeps streaks achievable and
+  // makes the metric reward sustained discipline, not perfection.
+  //
+  // For streak classification we need the raw category regardless of the
+  // out-of-range dim flag (otherwise every out-of-range cell would read as
+  // "outOfRange" and the walker couldn't tell green from red beyond the
+  // preset boundary). Re-classify from the underlying row data.
   const rawClassify = (row) => classifyDay(row, true).cat;
+  const isStreakPreserving = (cat) => cat !== 'red';
 
-  // Current streak: walk backwards from today, counting consecutive non-
-  // broken days. Green AND gray both preserve (no trade = no violation).
-  // Yellow and red break it.
+  // Current streak: walk backwards from today. Stops only on a red day.
   const cleanStreak = useMemo(() => {
     let streak = 0;
     for (let i = cells.length - 1; i >= 0; i--) {
       const cat = rawClassify(cells[i].row);
-      if (cat === 'green' || cat === 'gray') streak += 1;
+      if (isStreakPreserving(cat)) streak += 1;
       else break;
     }
     return streak;
@@ -294,7 +304,7 @@ export default function TradeSquares({ userId }) {
     let cur = 0;
     for (const c of cells) {
       const cat = rawClassify(c.row);
-      if (cat === 'green' || cat === 'gray') {
+      if (isStreakPreserving(cat)) {
         cur += 1;
         if (cur > max) max = cur;
       } else {
