@@ -96,3 +96,30 @@ list.
 - **No rate limit or circuit breaker on `/api/sync`.** If IBKR is down,
   each user sync still tries 10 retries × 3s. Fine for 10 beta users;
   revisit if sync frequency grows.
+
+## Pre-public-launch infrastructure
+
+- **Custom SMTP for Supabase Auth.** Currently using Supabase's built-in
+  email service, which is rate-limited and not intended for production.
+  Fine for invite-only BETA. Before public launch: set up Postmark or
+  Resend (~$10/mo), point Supabase → Authentication → SMTP Settings at
+  it. Ensures password resets, invite emails, and confirmation emails
+  don't get throttled or spam-filtered.
+
+- **90-day cleanup cron on `account_deletions`.** Privacy policy
+  promises we strip email + stripe_customer_id from deletion records
+  after 90 days. Currently we never do. Before public launch: add a
+  scheduled job (Supabase pg_cron or a Vercel cron function) that
+  UPDATEs the table to null out identifying columns on rows older
+  than 90 days.
+
+- **Legal review of `/terms` and `/privacy`.** Both pages carry a
+  `NEEDS LEGAL REVIEW` header comment. Placeholder copy is fit for
+  private BETA but must be reviewed by a solicitor familiar with
+  Cyprus / EU consumer contract law and financial-tools liability
+  before public launch.
+
+- **Swap support email.** `src/lib/constants.js` → `SUPPORT_EMAIL`
+  currently `thinker@philoinvestor.com`. Flip to
+  `support@cotraderapp.com` once the mailbox + ticket service is
+  wired. Single string change propagates everywhere.
