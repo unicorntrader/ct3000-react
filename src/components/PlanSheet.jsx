@@ -345,7 +345,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
       try {
         const { data, error } = await supabase
           .from('logical_trades')
-          .select('id, direction, opened_at, closed_at, avg_entry_price, total_closing_quantity, total_opening_quantity, total_realized_pnl, fx_rate_to_base, currency, multiplier')
+          .select('id, direction, opened_at, closed_at, avg_entry_price, total_closing_quantity, total_opening_quantity, total_realized_pnl, fx_rate_to_base, currency, multiplier, adherence_score')
           .eq('user_id', uid)
           .eq('symbol', debouncedSymbol)
           .eq('status', 'closed')
@@ -573,6 +573,8 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                 {histTrades.length > 0 && (() => {
                   const wins = histTrades.filter(t => pnlBase(t) > 0).length;
                   const losses = histTrades.length - wins;
+                  const longs = histTrades.filter(t => t.direction === 'LONG').length;
+                  const shorts = histTrades.length - longs;
                   const totalPnl = histTrades.reduce((sum, t) => sum + pnlBase(t), 0);
                   const totalQty = histTrades.reduce((sum, t) => sum + (t.total_closing_quantity || t.total_opening_quantity || 0), 0);
                   const weightedEntry = histTrades.reduce((sum, t) => {
@@ -581,6 +583,12 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                   }, 0);
                   const avgEntry = totalQty > 0 ? weightedEntry / totalQty : null;
                   const tradeCurrency = histTrades[0]?.currency || baseCurrency;
+                  // "Bad history" heuristic — fires when the trader has a
+                  // losing record AND is down net on this ticker. We surface
+                  // it with amber tint + bold type on the collapsed summary
+                  // so the eye picks up the warning before parsing numbers.
+                  // Needs ≥2 trades to avoid nagging on a single bad day.
+                  const isBadHistory = histTrades.length >= 2 && totalPnl < 0 && losses > wins;
 
                   return (
                     <div className="mt-2">
@@ -589,8 +597,17 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                         onClick={() => setHistExpanded(x => !x)}
                         className="w-full text-left"
                       >
-                        <p className="text-xs text-gray-400 leading-relaxed">
-                          <span className="text-gray-500 font-medium">{histTrades.length} trade{histTrades.length !== 1 ? 's' : ''}</span>
+                        <p className={`text-xs leading-relaxed ${isBadHistory ? 'text-amber-700 font-semibold' : 'text-gray-400'}`}>
+                          <span className={isBadHistory ? 'text-amber-800' : 'text-gray-500 font-medium'}>
+                            {histTrades.length} trade{histTrades.length !== 1 ? 's' : ''}
+                          </span>
+                          {' · '}
+                          {/* Direction breakdown uses full words to avoid
+                              collision with the W/L (wins/losses) shorthand
+                              below — "1L" would be ambiguous. */}
+                          <span className="text-blue-600">{longs} long</span>
+                          {' / '}
+                          <span className="text-red-500">{shorts} short</span>
                           {' · '}
                           <span className="text-green-600">{wins}W</span>
                           {' / '}
@@ -624,6 +641,18 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                               : null;
                             const dur = calcDuration(t.opened_at, t.closed_at);
                             const tCurrency = t.currency || baseCurrency;
+                            // Adherence pill — only shown when the trade was
+                            // matched to a plan and had an adherence score
+                            // computed (off-plan and needs-review trades
+                            // render no pill, which itself is a signal: "this
+                            // trade wasn't pre-planned").
+                            const adh = t.adherence_score;
+                            const adhRounded = adh != null ? Math.round(adh) : null;
+                            const adhColour = adhRounded == null
+                              ? ''
+                              : adhRounded >= 75 ? 'bg-green-100 text-green-700'
+                              : adhRounded >= 50 ? 'bg-amber-100 text-amber-700'
+                              : 'bg-red-100 text-red-700';
                             return (
                               <div key={t.id} className="flex items-center gap-2 px-3 py-2 text-xs border-b border-gray-50 last:border-0 bg-white">
                                 <span className="text-gray-400 w-12 shrink-0">{fmtDate(t.closed_at)}</span>
@@ -633,6 +662,14 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                                 <span className="text-gray-600">{fmtPrice(t.avg_entry_price, tCurrency)}</span>
                                 <span className="text-gray-300">→</span>
                                 <span className="text-gray-600">{exit != null ? fmtPrice(exit, tCurrency) : 'N/A'}</span>
+                                {adhRounded != null && (
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded font-semibold shrink-0 ${adhColour}`}
+                                    title="Plan adherence score for this trade"
+                                  >
+                                    {adhRounded}
+                                  </span>
+                                )}
                                 <span className={`font-medium ml-auto shrink-0 ${tPnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                                   {isPrivate ? '••••' : fmtPnl(tPnl, tCurrency, 0)}
                                 </span>
