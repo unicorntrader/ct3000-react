@@ -7,6 +7,7 @@ import { BaseCurrencyProvider } from './lib/BaseCurrencyContext'
 import { DataVersionProvider } from './lib/DataVersionContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import AuthScreen from './components/AuthScreen'
+import MaintenanceScreen from './components/MaintenanceScreen'
 import PaywallScreen from './screens/PaywallScreen'
 import Header from './components/Header'
 import MobileNav from './components/MobileNav'
@@ -156,6 +157,25 @@ export default function App() {
   const [polling, setPolling] = useState(false)
   const [pollTimedOut, setPollTimedOut] = useState(false)
 
+  // Maintenance flag — polled from /api/maintenance-status which reads the
+  // app_settings row that ct3000-admin's Settings screen writes. Fetched on
+  // mount and on window focus so a toggle in admin takes effect within the
+  // user's next tab-switch without needing a manual reload.
+  //   undefined = still loading, true = app is down, false = normal
+  const [maintenance, setMaintenance] = useState(undefined)
+
+  useEffect(() => {
+    const check = () => {
+      fetch('/api/maintenance-status')
+        .then(r => r.json())
+        .then(({ active }) => setMaintenance(!!active))
+        .catch(() => setMaintenance(false)) // fail open
+    }
+    check()
+    window.addEventListener('focus', check)
+    return () => window.removeEventListener('focus', check)
+  }, [])
+
   // Calls /api/seed-demo for the current session. Safe to call repeatedly --
   // the endpoint short-circuits if demo data already exists. Used on first
   // login for newly signed-up users so they have something to explore while
@@ -303,8 +323,16 @@ export default function App() {
   // search engine) can read them before signing up. Checked BEFORE the
   // auth gate so logged-out users get the content instead of the login
   // screen, and logged-in users get it instead of the dashboard.
+  // Also checked BEFORE maintenance — legal content is static and
+  // shouldn't go dark during app-level maintenance windows.
   if (window.location.pathname === '/terms')   return <TermsScreen />
   if (window.location.pathname === '/privacy') return <PrivacyScreen />
+
+  // Maintenance check runs BEFORE auth so a DB-toggled outage gates
+  // everything including the login screen. Fail-open happens inside the
+  // fetch — if the endpoint errors, `maintenance` becomes false, not true.
+  if (maintenance === undefined) return <LoadingScreen />
+  if (maintenance) return <MaintenanceScreen />
 
   // Auth or subscription still loading
   if (session === undefined || (session !== null && subscription === undefined)) {
