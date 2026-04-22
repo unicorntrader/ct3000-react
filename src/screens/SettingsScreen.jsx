@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useDataVersion, useInitialLoadTracker } from '../lib/DataVersionContext';
 import { SUPPORT_EMAIL, APP_VERSION, supportMailto } from '../lib/constants';
 import LoadError from '../components/LoadError';
+import DeleteAccountModal from '../components/DeleteAccountModal';
 
 function Section({ title, children }) {
   return (
@@ -38,6 +39,7 @@ export default function SettingsScreen({ session }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Open Stripe's customer portal — the only self-service path to update
   // payment method, change plan, cancel, or download invoices. Errors are
@@ -231,6 +233,41 @@ export default function SettingsScreen({ session }) {
           </span>
         </Row>
       </Section>
+
+      {/* ── Danger zone ──
+          Account deletion is a two-step flow: if the user has an active
+          Stripe subscription, the modal blocks them and sends them to the
+          billing portal to cancel first. Once billing is inactive, they
+          land on the feedback form + typed DELETE confirmation. */}
+      <Section title="Danger zone">
+        <button
+          type="button"
+          onClick={() => setDeleteOpen(true)}
+          className="w-full px-5 py-4 flex items-center justify-between gap-4 hover:bg-red-50 transition-colors text-left"
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-red-600">Delete account</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Permanently remove your account and all data. Cannot be undone.
+            </p>
+          </div>
+          <svg className="w-4 h-4 text-red-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </Section>
+
+      <DeleteAccountModal
+        session={session}
+        isOpen={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => {
+          // After signOut inside the modal, App.jsx's onAuthStateChange
+          // handler sees no session and flips to AuthScreen on its own.
+          // We just need to close the modal so its overlay doesn't linger.
+          setDeleteOpen(false);
+        }}
+      />
     </div>
   );
 }
