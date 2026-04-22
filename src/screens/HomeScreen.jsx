@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtPrice, fmtSymbol, pnlBase } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
+import { useDataVersion, useInitialLoadTracker } from '../lib/DataVersionContext';
 import PrivacyValue from '../components/PrivacyValue';
 import LoadError from '../components/LoadError';
 
@@ -34,9 +35,19 @@ export default function HomeScreen({ session }) {
   // Inline expand: default to top PAGE_SIZE, user can toggle to see all.
   const [showAllPositions, setShowAllPositions] = useState(false);
 
+  // Cross-screen data invalidation — refetch silently when any of these
+  // tables have been mutated elsewhere (Sync, Rebuild, Save plan, etc).
+  const [tradesV, positionsV, plansV] = useDataVersion('trades', 'positions', 'plans');
+  const loadTracker = useInitialLoadTracker(reloadKey);
+
   useEffect(() => {
     if (!userId) return;
-    setLoading(true);
+    // Initial load = first mount or user-triggered retry; only those show the
+    // spinner and the LoadError screen. Version-bump refetches are silent:
+    // the old data stays visible until the new data swaps in, and transient
+    // errors log to Sentry without replacing the UI.
+    const isInitial = loadTracker.isInitial;
+    if (isInitial) setLoading(true);
     setLoadError(null);
     const load = async () => {
       try {
@@ -86,15 +97,19 @@ export default function HomeScreen({ session }) {
         Sentry.withScope((scope) => {
           scope.setTag('screen', 'home');
           scope.setTag('step', 'load');
+          scope.setTag('load_kind', isInitial ? 'initial' : 'silent-refetch');
           Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
         });
-        setLoadError(err?.message || 'Could not load.');
+        // Only replace the UI with LoadError on initial failure — a transient
+        // refetch error keeps the last-known-good data on screen.
+        if (isInitial) setLoadError(err?.message || 'Could not load.');
       } finally {
-        setLoading(false);
+        if (isInitial) setLoading(false);
+        loadTracker.markLoaded();
       }
     };
     load();
-  }, [userId, reloadKey]);
+  }, [userId, reloadKey, tradesV, positionsV, plansV]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derived stats
   const today = todayStr();

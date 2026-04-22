@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { pnlBase, fmtPrice, fmtPnl, fmtSymbol } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
+import { useDataVersion, useInitialLoadTracker, useBumpDataVersion } from '../lib/DataVersionContext';
 import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
 import LoadError from '../components/LoadError';
@@ -184,6 +185,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
   const [openResolve, setOpenResolve] = useState(null);
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [shareRow, setShareRow] = useState(null);
+  const bump = useBumpDataVersion();
 
   const toggleExpand = (id) => {
     setExpandedRows(prev => {
@@ -201,7 +203,9 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
     if (error) {
       console.error('[daily-notes] upsert failed:', error.message);
       alert(`Could not save daily note: ${error.message}`);
+      return;
     }
+    bump('notes');
   };
 
   const handleSaveNote = async () => {
@@ -468,9 +472,16 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
   // Default window: last 30 days. Prevents fetching entire trade history.
   // Raw trades use IBKR's YYYYMMDD;HHMMSS format, so string comparison works.
   const [dvWindow, setDvWindow] = useState(30); // days
+
+  // Cross-screen data invalidation — refetch silently when watched tables
+  // are mutated elsewhere. See lib/DataVersionContext for the key map.
+  const [tradesV, notesV] = useDataVersion('trades', 'notes');
+  const loadTracker = useInitialLoadTracker(reloadKey);
+
   useEffect(() => {
     if (!userId) return;
-    setLoading(true);
+    const isInitial = loadTracker.isInitial;
+    if (isInitial) setLoading(true);
     setLoadError(null);
 
     const cutoff = new Date();
@@ -522,15 +533,17 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
         Sentry.withScope((scope) => {
           scope.setTag('screen', 'daily-view');
           scope.setTag('step', 'load');
+          scope.setTag('load_kind', isInitial ? 'initial' : 'silent-refetch');
           Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
         });
-        setLoadError(err?.message || 'Could not load daily trades.');
+        if (isInitial) setLoadError(err?.message || 'Could not load daily trades.');
       } finally {
-        setLoading(false);
+        if (isInitial) setLoading(false);
+        loadTracker.markLoaded();
       }
     };
     load();
-  }, [userId, refreshKey, dvWindow, reloadKey]);
+  }, [userId, refreshKey, dvWindow, reloadKey, tradesV, notesV]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleResolve = async (tradeId, newStatus) => {
     await supabase

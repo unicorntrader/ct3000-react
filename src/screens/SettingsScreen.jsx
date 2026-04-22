@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
+import { useDataVersion, useInitialLoadTracker } from '../lib/DataVersionContext';
 import LoadError from '../components/LoadError';
 
 function Section({ title, children }) {
@@ -45,9 +46,15 @@ export default function SettingsScreen({ session }) {
   const [loadError, setLoadError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
 
+  // Cross-screen data invalidation — refetch silently when watched tables
+  // are mutated elsewhere. See lib/DataVersionContext for the key map.
+  const [ibkrCredsV] = useDataVersion('ibkrCreds');
+  const loadTracker = useInitialLoadTracker(reloadKey);
+
   useEffect(() => {
     if (!session?.user?.id) return;
-    setLoading(true);
+    const isInitial = loadTracker.isInitial;
+    if (isInitial) setLoading(true);
     setLoadError(null);
     (async () => {
       try {
@@ -66,14 +73,16 @@ export default function SettingsScreen({ session }) {
         Sentry.withScope((scope) => {
           scope.setTag('screen', 'settings');
           scope.setTag('step', 'load');
+          scope.setTag('load_kind', isInitial ? 'initial' : 'silent-refetch');
           Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
         });
-        setLoadError(err?.message || 'Could not load settings.');
+        if (isInitial) setLoadError(err?.message || 'Could not load settings.');
       } finally {
-        setLoading(false);
+        if (isInitial) setLoading(false);
+        loadTracker.markLoaded();
       }
     })();
-  }, [session?.user?.id, reloadKey]);
+  }, [session?.user?.id, reloadKey, ibkrCredsV]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loadError) {
     return (

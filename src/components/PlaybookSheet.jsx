@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { useBumpDataVersion } from '../lib/DataVersionContext';
 
 // Modal for creating / editing a playbook.
 // A playbook is a named, reusable setup definition (e.g. "MA30 Retracement
@@ -14,6 +15,7 @@ export default function PlaybookSheet({ isOpen, onClose, session, playbook, onSa
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const bump = useBumpDataVersion();
 
   const resetForm = useCallback(() => {
     setName('');
@@ -80,6 +82,7 @@ export default function PlaybookSheet({ isOpen, onClose, session, playbook, onSa
       setError(`Save failed: ${dbError.message}`);
       return;
     }
+    bump('playbooks');
     setSaved(true);
     setTimeout(() => { handleClose(); onSaved?.(); }, 800);
   };
@@ -101,6 +104,7 @@ export default function PlaybookSheet({ isOpen, onClose, session, playbook, onSa
       setConfirmDelete(false);
       return;
     }
+    bump('playbooks', 'plans');
     handleClose();
     onSaved?.();
   };

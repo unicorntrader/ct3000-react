@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { pnlBase, fmtPnl, fmtShort, fmtSymbol } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
+import { useDataVersion, useInitialLoadTracker } from '../lib/DataVersionContext';
 import PrivacyValue from '../components/PrivacyValue';
 import LoadError from '../components/LoadError';
 import {
@@ -143,13 +144,19 @@ export default function PerformanceScreen({ session }) {
   const [reflectionSaved, setReflectionSaved] = useState(false);
   const [reflectionLoaded, setReflectionLoaded] = useState(false);
 
+  // Cross-screen data invalidation — refetch silently when watched tables
+  // are mutated elsewhere. See lib/DataVersionContext for the key map.
+  const [tradesV] = useDataVersion('trades');
+  const loadTracker = useInitialLoadTracker(reloadKey);
+
   useEffect(() => {
     if (!userId) return;
     // Load closed trades for the period + this week's reflection row.
     // adherence_score is read directly off each logical_trade (written by
     // api/rebuild.js). We no longer load planned_trades here — with matched
     // plans locked in the UI, the stored adherence can't go stale.
-    setLoading(true);
+    const isInitial = loadTracker.isInitial;
+    if (isInitial) setLoading(true);
     setLoadError(null);
     (async () => {
       try {
@@ -185,14 +192,16 @@ export default function PerformanceScreen({ session }) {
         Sentry.withScope((scope) => {
           scope.setTag('screen', 'performance');
           scope.setTag('step', 'load');
+          scope.setTag('load_kind', isInitial ? 'initial' : 'silent-refetch');
           Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
         });
-        setLoadError(err?.message || 'Could not load performance data.');
+        if (isInitial) setLoadError(err?.message || 'Could not load performance data.');
       } finally {
-        setLoading(false);
+        if (isInitial) setLoading(false);
+        loadTracker.markLoaded();
       }
     })();
-  }, [userId, weekKey, reloadKey]);
+  }, [userId, weekKey, reloadKey, tradesV]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSaveReflection = useCallback(async () => {
     if (!userId || reflectionSaving) return;

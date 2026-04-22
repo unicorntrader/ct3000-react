@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtPrice, fmtDate, fmtSymbol } from '../lib/formatters';
+import { useDataVersion, useInitialLoadTracker, useBumpDataVersion } from '../lib/DataVersionContext';
 import LoadError from '../components/LoadError';
 
 // Full-page review workflow — replaces the old ReviewSheet bottom drawer.
@@ -91,6 +92,12 @@ export default function ReviewScreen({ session }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [saving, setSaving] = useState(false);
 
+  // Cross-screen data invalidation — refetch silently when watched tables
+  // are mutated elsewhere. See lib/DataVersionContext for the key map.
+  const [tradesV, plansV] = useDataVersion('trades', 'plans');
+  const bump = useBumpDataVersion();
+  const loadTracker = useInitialLoadTracker(reloadKey);
+
   const current = trades[step] || null;
   const total = trades.length;
   const done = total > 0 && step >= total;
@@ -104,7 +111,8 @@ export default function ReviewScreen({ session }) {
 
   const loadReviewTrades = useCallback(async () => {
     if (!session?.user?.id) return;
-    setLoading(true);
+    const isInitial = loadTracker.isInitial;
+    if (isInitial) setLoading(true);
     setLoadError(null);
     setStep(0);
     setSelected(null);
@@ -152,15 +160,17 @@ export default function ReviewScreen({ session }) {
       Sentry.withScope((scope) => {
         scope.setTag('screen', 'review');
         scope.setTag('step', 'load');
+        scope.setTag('load_kind', isInitial ? 'initial' : 'silent-refetch');
         Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
       });
-      setLoadError(err?.message || 'Could not load trades to review.');
+      if (isInitial) setLoadError(err?.message || 'Could not load trades to review.');
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
+      loadTracker.markLoaded();
     }
-  }, [session]);
+  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadReviewTrades(); }, [loadReviewTrades, reloadKey]);
+  useEffect(() => { loadReviewTrades(); }, [loadReviewTrades, reloadKey, tradesV, plansV]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleExit = useCallback(() => navigate('/'), [navigate]);
 
@@ -178,6 +188,7 @@ export default function ReviewScreen({ session }) {
       alert(`Could not save match: ${error.message}`);
       return;
     }
+    bump('trades');
     setSelected(null);
     setStep(s => s + 1);
   }, [current, selected, saving, session]);
@@ -196,6 +207,7 @@ export default function ReviewScreen({ session }) {
       alert(`Could not save: ${error.message}`);
       return;
     }
+    bump('trades');
     setSelected(null);
     setStep(s => s + 1);
   }, [current, saving, session]);

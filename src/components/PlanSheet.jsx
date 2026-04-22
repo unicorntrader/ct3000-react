@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { currencySymbol, fmtPrice, fmtPnl, fmtDate, pnlBase } from '../lib/formatters';
 import { usePrivacy } from '../lib/PrivacyContext';
+import { useBumpDataVersion } from '../lib/DataVersionContext';
 
 // PlanSheet's background loads (base currency, user symbols, matched count,
 // securities search, historical trades) all run on sheet open. They enrich
@@ -52,6 +53,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [baseCurrency, setBaseCurrency] = useState('USD');
+  const bump = useBumpDataVersion();
 
   const [debouncedSymbol, setDebouncedSymbol] = useState('');
   const [histTrades, setHistTrades] = useState([]);
@@ -434,6 +436,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
       setError(`Save failed: ${dbError.message} (code: ${dbError.code})`);
       return;
     }
+    bump('plans');
     setSaved(true);
     setTimeout(() => { handleClose(); onSaved?.(); }, 1200);
   };
@@ -456,6 +459,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
       setConfirmDelete(false);
       return;
     }
+    bump('plans');
     handleClose();
     onSaved?.();
   };

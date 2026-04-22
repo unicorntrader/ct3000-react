@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPrice, fmtPnl, fmtDate, fmtDateLong, fmtSymbol } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
+import { useDataVersion, useInitialLoadTracker } from '../lib/DataVersionContext';
 import PrivacyValue from '../components/PrivacyValue';
 import LoadError from '../components/LoadError';
 
@@ -37,9 +38,16 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
   const [matchView, setMatchView] = useState('planning');
 
   const userId = session?.user?.id;
+
+  // Cross-screen data invalidation — refetch silently when watched tables
+  // are mutated elsewhere. See lib/DataVersionContext for the key map.
+  const [plansV, playbooksV] = useDataVersion('plans', 'playbooks');
+  const loadTracker = useInitialLoadTracker(reloadKey);
+
   useEffect(() => {
     if (!userId) return;
-    setLoading(true);
+    const isInitial = loadTracker.isInitial;
+    if (isInitial) setLoading(true);
     setLoadError(null);
     const load = async () => {
       try {
@@ -72,15 +80,17 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
         Sentry.withScope((scope) => {
           scope.setTag('screen', 'plans');
           scope.setTag('step', 'load');
+          scope.setTag('load_kind', isInitial ? 'initial' : 'silent-refetch');
           Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
         });
-        setLoadError(err?.message || 'Could not load plans.');
+        if (isInitial) setLoadError(err?.message || 'Could not load plans.');
       } finally {
-        setLoading(false);
+        if (isInitial) setLoading(false);
+        loadTracker.markLoaded();
       }
     };
     load();
-  }, [userId, refreshKey, reloadKey]);
+  }, [userId, refreshKey, reloadKey, plansV, playbooksV]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Deep-link: HomeScreen's active-plan rows navigate here with
   // `state.openPlanId`. Once plans have loaded, find that plan and open

@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react'
 import { supabase } from './lib/supabaseClient'
 import { PrivacyProvider } from './lib/PrivacyContext'
 import { BaseCurrencyProvider } from './lib/BaseCurrencyContext'
+import { DataVersionProvider } from './lib/DataVersionContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import AuthScreen from './components/AuthScreen'
 import PaywallScreen from './screens/PaywallScreen'
@@ -322,11 +323,13 @@ export default function App() {
       <ErrorBoundary>
         <PrivacyProvider>
           <BaseCurrencyProvider userId={session.user.id}>
-            <AppShell
-              session={session}
-              subscription={subscription}
-              onSubscriptionRefresh={() => fetchSubscription(session.user.id)}
-            />
+            <DataVersionProvider>
+              <AppShell
+                session={session}
+                subscription={subscription}
+                onSubscriptionRefresh={() => fetchSubscription(session.user.id)}
+              />
+            </DataVersionProvider>
           </BaseCurrencyProvider>
         </PrivacyProvider>
       </ErrorBoundary>

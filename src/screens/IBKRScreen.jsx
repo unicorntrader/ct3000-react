@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
+import { useDataVersion, useInitialLoadTracker, useBumpDataVersion } from '../lib/DataVersionContext';
 import LoadError from '../components/LoadError';
 
 // Wrap a sync/rebuild step's error with a "which step failed" tag so the
@@ -37,9 +38,17 @@ export default function IBKRScreen({ session }) {
   const [reloadKey, setReloadKey] = useState(0);
 
   const userId = session?.user?.id;
+
+  // Cross-screen data invalidation — refetch silently when watched tables
+  // are mutated elsewhere. See lib/DataVersionContext for the key map.
+  const [ibkrCredsV] = useDataVersion('ibkrCreds');
+  const bump = useBumpDataVersion();
+  const loadTracker = useInitialLoadTracker(reloadKey);
+
   useEffect(() => {
     if (!userId) return;
-    setLoading(true);
+    const isInitial = loadTracker.isInitial;
+    if (isInitial) setLoading(true);
     setLoadError(null);
     (async () => {
       try {
@@ -63,14 +72,16 @@ export default function IBKRScreen({ session }) {
         Sentry.withScope((scope) => {
           scope.setTag('screen', 'ibkr');
           scope.setTag('step', 'load-credentials');
+          scope.setTag('load_kind', isInitial ? 'initial' : 'silent-refetch');
           Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
         });
-        setLoadError(err?.message || 'Could not load IBKR connection.');
+        if (isInitial) setLoadError(err?.message || 'Could not load IBKR connection.');
       } finally {
-        setLoading(false);
+        if (isInitial) setLoading(false);
+        loadTracker.markLoaded();
       }
     })();
-  }, [userId, reloadKey]);
+  }, [userId, reloadKey, ibkrCredsV]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSaveCredentials = async () => {
     if (!token || !queryId) {
@@ -97,6 +108,7 @@ export default function IBKRScreen({ session }) {
     if (error) {
       setSaveError(error.message);
     } else {
+      bump('ibkrCreds');
       setConnected(true);
       setMaskedToken(tokenMasked);
       setMaskedQueryId(queryIdMasked);
@@ -113,6 +125,7 @@ export default function IBKRScreen({ session }) {
       .eq('user_id', session.user.id);
 
     if (!error) {
+      bump('ibkrCreds', 'trades', 'positions');
       setConnected(false);
       setMaskedToken('');
       setMaskedQueryId('');
@@ -141,10 +154,12 @@ export default function IBKRScreen({ session }) {
     setSyncError(null);
     const result = await rebuildLogicalTrades();
     if (result?.startsWith('__warn__')) {
+      bump('trades');
       setSyncResult({ rebuilt: true, warning: result.slice(8) });
     } else if (result) {
       setSyncError(`Rebuild failed: ${result}`);
     } else {
+      bump('trades');
       setSyncResult({ rebuilt: true });
     }
     setRebuilding(false);
@@ -295,6 +310,8 @@ export default function IBKRScreen({ session }) {
         setSyncError(`Trades synced but logical trade build failed: ${rebuildResult}`);
         return;
       }
+
+      bump('trades', 'positions', 'ibkrCreds');
 
       setSyncResult({
         tradeCount: result.trades.length,

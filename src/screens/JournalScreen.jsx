@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { fmtPnl, fmtDate, fmtSymbol } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
+import { useDataVersion, useInitialLoadTracker, useBumpDataVersion } from '../lib/DataVersionContext';
 import PrivacyValue from '../components/PrivacyValue';
 import ShareModal from '../components/ShareModal';
 import TradeInlineDetail from '../components/TradeInlineDetail';
@@ -224,13 +225,20 @@ export default function JournalScreen({ session }) {
     if (activeSection === 'playbooks') loadPlaybooks();
   }, [activeSection, loadPlaybooks, playbooksReloadKey]);
 
+  // Cross-screen data invalidation — refetch silently when watched tables
+  // are mutated elsewhere. See lib/DataVersionContext for the key map.
+  const [tradesV, plansV, playbooksV] = useDataVersion('trades', 'plans', 'playbooks');
+  const bump = useBumpDataVersion();
+  const loadTracker = useInitialLoadTracker(reloadKey);
+
   // Server-side date scoping — push the date range into the Supabase query
   // so we don't fetch the user's entire trade history on every load.
   // Symbol / direction / asset filters stay client-side (symbol autocomplete
   // needs the full result set within the date window).
   useEffect(() => {
     if (!userId) return;
-    setLoading(true);
+    const isInitial = loadTracker.isInitial;
+    if (isInitial) setLoading(true);
     setLoadError(null);
 
     // Compute the date boundary from the current dateRange state
@@ -267,15 +275,17 @@ export default function JournalScreen({ session }) {
         Sentry.withScope((scope) => {
           scope.setTag('screen', 'journal');
           scope.setTag('step', 'load-trades');
+          scope.setTag('load_kind', isInitial ? 'initial' : 'silent-refetch');
           Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
         });
-        setLoadError(err?.message || 'Could not load trades.');
+        if (isInitial) setLoadError(err?.message || 'Could not load trades.');
       } finally {
-        setLoading(false);
+        if (isInitial) setLoading(false);
+        loadTracker.markLoaded();
       }
     };
     load();
-  }, [userId, dateRange, customFrom, customTo, reloadKey]);
+  }, [userId, dateRange, customFrom, customTo, reloadKey, tradesV, plansV, playbooksV]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTradeUpdated = (updatedTrade) => {
     setTrades(prev => prev.map(t => t.id === updatedTrade.id ? updatedTrade : t));
@@ -315,6 +325,7 @@ export default function JournalScreen({ session }) {
       alert(`Could not mark trades off-plan: ${error.message}`);
       return;
     }
+    bump('trades');
     // Optimistically patch the local trade list with the updated rows
     if (updatedRows?.length) {
       const byId = new Map(updatedRows.map(r => [r.id, r]));

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { useBumpDataVersion } from '../lib/DataVersionContext'
 import { fmtPrice, fmtPnl, fmtDateLong, fmtSymbol } from '../lib/formatters'
 
 // Rendered inline underneath a trade row in the Smart Journal table. Same
@@ -37,6 +38,7 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
   const [notes, setNotes] = useState(trade?.review_notes || '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const bump = useBumpDataVersion()
 
   // Refs so the keyboard effect can call the latest handler without having it
   // in its deps (and without needing to live below the early return).
@@ -150,6 +152,7 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
       alert(`Could not save notes: ${error.message}`)
       return
     }
+    bump('trades')
     setSaved(true)
     if (updated && onSaved) onSaved(updated)
     // Keep the "Saved" confirmation visible longer so the user actually sees it
@@ -185,6 +188,7 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
       alert(`Could not reset match: ${error.message}`)
       return
     }
+    bump('trades')
     if (updated && onSaved) onSaved(updated)
   }
 
