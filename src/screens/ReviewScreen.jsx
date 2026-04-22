@@ -191,7 +191,7 @@ export default function ReviewScreen({ session }) {
     bump('trades');
     setSelected(null);
     setStep(s => s + 1);
-  }, [current, selected, saving, session]);
+  }, [current, selected, saving, session, bump]);
 
   const handleNoPlan = useCallback(async () => {
     if (!current || saving) return;
@@ -210,7 +210,7 @@ export default function ReviewScreen({ session }) {
     bump('trades');
     setSelected(null);
     setStep(s => s + 1);
-  }, [current, saving, session]);
+  }, [current, saving, session, bump]);
 
   const handleSkip = useCallback(() => {
     setSelected(null);
