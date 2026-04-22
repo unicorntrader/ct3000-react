@@ -36,6 +36,37 @@ export default function SettingsScreen({ session }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState(null);
+
+  // Open Stripe's customer portal — the only self-service path to update
+  // payment method, change plan, cancel, or download invoices. Errors are
+  // rendered inline (comped users don't have a billing record; network
+  // errors happen); success = same-window redirect to Stripe.
+  const handleManageBilling = async () => {
+    setPortalLoading(true);
+    setPortalError(null);
+    try {
+      const { data: { session: s } } = await supabase.auth.getSession();
+      if (!s) throw new Error('Not authenticated');
+      const res = await fetch('/api/billing-portal', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${s.access_token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not open billing portal');
+      window.location.href = data.url;
+    } catch (err) {
+      console.error('[settings] portal failed:', err.message);
+      Sentry.withScope((scope) => {
+        scope.setTag('screen', 'settings');
+        scope.setTag('step', 'billing-portal');
+        Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
+      });
+      setPortalError(err.message);
+      setPortalLoading(false);
+    }
+  };
 
   // Cross-screen data invalidation — refetch silently when watched tables
   // are mutated elsewhere. See lib/DataVersionContext for the key map.
@@ -126,6 +157,39 @@ export default function SettingsScreen({ session }) {
         <Row label="Email">
           <span className="text-sm text-gray-500 truncate max-w-48">{session?.user?.email || '—'}</span>
         </Row>
+      </Section>
+
+      {/* ── Subscription ──
+          Stripe Customer Portal is the single self-service surface for
+          payment method, invoices, plan changes, and cancellation. Comped
+          users (invite redemption) don't have a customer record — the
+          endpoint returns a clear error and we render it inline. */}
+      <Section title="Subscription">
+        <button
+          type="button"
+          onClick={handleManageBilling}
+          disabled={portalLoading}
+          className="w-full px-5 py-4 flex items-center justify-between gap-4 hover:bg-gray-50 transition-colors text-left disabled:opacity-60 disabled:cursor-wait"
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-gray-900">Manage subscription</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Update payment method, view invoices, cancel, or change plan
+            </p>
+          </div>
+          {portalLoading ? (
+            <div className="w-4 h-4 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin shrink-0" />
+          ) : (
+            <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          )}
+        </button>
+        {portalError && (
+          <div className="px-5 py-3 bg-red-50 text-xs text-red-700 border-t border-red-100">
+            {portalError}
+          </div>
+        )}
       </Section>
 
       {/* ── Support ── */}
