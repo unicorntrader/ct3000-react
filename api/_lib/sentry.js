@@ -1,7 +1,7 @@
 // Thin Sentry wrapper for Vercel serverless functions.
 //
 // Usage in any api/* handler:
-//   const { captureServerError } = require('./lib/sentry');
+//   const { captureServerError } = require('./_lib/sentry');
 //   ...
 //   try { ... } catch (err) {
 //     await captureServerError(err, { userId, step: 'flex-fetch', route: 'sync' });

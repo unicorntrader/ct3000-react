@@ -1,6 +1,6 @@
 const https = require('https');
 const { createClient } = require('@supabase/supabase-js');
-const { captureServerError } = require('./lib/sentry');
+const { captureServerError } = require('./_lib/sentry');
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://ct3000-react.vercel.app';
 const BASE_URL = 'https://gdcdyn.interactivebrokers.com/Universal/servlet';

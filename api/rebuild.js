@@ -1,7 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
-const { buildLogicalTrades } = require('./lib/logicalTradeBuilder');
-const { computeAdherenceScore } = require('./lib/adherenceScore');
-const { captureServerError } = require('./lib/sentry');
+const { buildLogicalTrades } = require('./_lib/logicalTradeBuilder');
+const { computeAdherenceScore } = require('./_lib/adherenceScore');
+const { captureServerError } = require('./_lib/sentry');
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://ct3000-react.vercel.app';
 

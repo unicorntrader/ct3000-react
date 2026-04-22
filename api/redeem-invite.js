@@ -1,4 +1,4 @@
-const supabaseAdmin = require('./lib/supabaseAdmin')
+const supabaseAdmin = require('./_lib/supabaseAdmin')
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })

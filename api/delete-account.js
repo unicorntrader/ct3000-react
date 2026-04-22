@@ -1,6 +1,6 @@
 const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
-const { captureServerError } = require('./lib/sentry');
+const { captureServerError } = require('./_lib/sentry');
 
 /**
  * Permanent account deletion with GDPR-style full wipe.

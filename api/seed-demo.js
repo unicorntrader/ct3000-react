@@ -1,4 +1,4 @@
-const supabaseAdmin = require('./lib/supabaseAdmin')
+const supabaseAdmin = require('./_lib/supabaseAdmin')
 
 function daysAgo(n) {
   const d = new Date()
