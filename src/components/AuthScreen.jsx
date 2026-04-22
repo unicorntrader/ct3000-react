@@ -57,8 +57,16 @@ export default function AuthScreen() {
       const { data, error: signUpError } = await supabase.auth.signUp({ email, password })
       if (signUpError) { setError(signUpError.message); setLoading(false); return }
       if (!data.session) {
-        // Email confirmation is enabled — direct users to disable it
-        setError('Account created but no session returned. Disable "Confirm email" in Supabase Auth → Settings, then try again.')
+        // No session after signUp means Supabase's "Confirm email" setting is
+        // ON — the user has to click a link in their email before they can
+        // sign in. We design around this being OFF (immediate session so the
+        // user flows straight into Stripe checkout), but if someone flips it
+        // back on in the dashboard this branch catches the fallback.
+        //
+        // TODO: if we later decide we want email verification as a product
+        // feature, replace this with a proper "check your inbox" screen +
+        // the email-confirmed callback handler on the /auth/callback route.
+        setMessage('Check your email — we sent you a confirmation link to finish signing up.')
         setLoading(false)
         return
       }
