@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import * as Sentry from '@sentry/react'
 import { supabase } from './lib/supabaseClient'
 import { PrivacyProvider } from './lib/PrivacyContext'
@@ -66,6 +66,49 @@ function AppShell({ session, subscription, onSubscriptionRefresh }) {
   // ibkr_connected=true and deletes the is_demo rows.
   const showDemoBanner = subscription?.demo_seeded && !subscription?.ibkr_connected
 
+  // ── Keep-alive navigation ────────────────────────────────────────────────
+  // Default React Router behaviour is to unmount the previous route element
+  // on every navigation. That triggers each screen's useEffect -> setLoading
+  // -> fetch -> spinner on every tab switch, even for tabs already visited
+  // in this session. We want first-visit cost (one spinner) + instant
+  // returns with state preserved.
+  //
+  // The mechanism: render every visited screen once and keep it mounted,
+  // toggling CSS display between block and none as the user navigates.
+  // React state, scroll position, open expand sections, draft form text —
+  // all preserved. URL and back/forward behaviour are unaffected because
+  // we still live inside React Router and read the pathname from
+  // useLocation. The Routes block below continues to handle /signup and
+  // unknown-path redirects.
+  //
+  // Trade-off: data fetched on first visit isn't refreshed on return.
+  // Known-stale-after-cross-screen-mutation cases (e.g. Home pipeline count
+  // after resolving a trade on Journal) are not addressed here — follow-up
+  // commit will add targeted silent refetch via a DataVersion context.
+  const location = useLocation()
+  const SCREENS = useMemo(() => [
+    { path: '/',            element: <HomeScreen session={session} /> },
+    { path: '/plans',       element: <PlansScreen session={session} onNewPlan={() => setPlanSheetOpen(true)} onEditPlan={(plan) => { setEditingPlan(plan); setPlanSheetOpen(true) }} refreshKey={planRefreshKey} /> },
+    { path: '/daily',       element: <DailyViewScreen session={session} /> },
+    { path: '/journal',     element: <JournalScreen session={session} /> },
+    { path: '/performance', element: <PerformanceScreen session={session} /> },
+    { path: '/ibkr',        element: <IBKRScreen session={session} /> },
+    { path: '/settings',    element: <SettingsScreen session={session} /> },
+    { path: '/review',      element: <ReviewScreen session={session} /> },
+  // PlansScreen receives closures and refreshKey, so it needs to re-key
+  // whenever those change. Other screens are stable across renders.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [session, planRefreshKey])
+
+  const knownPaths = useMemo(() => new Set(SCREENS.map(s => s.path)), [SCREENS])
+  const [visited, setVisited] = useState(() =>
+    knownPaths.has(location.pathname) ? new Set([location.pathname]) : new Set()
+  )
+  useEffect(() => {
+    if (!knownPaths.has(location.pathname)) return
+    setVisited(prev => prev.has(location.pathname) ? prev : new Set(prev).add(location.pathname))
+  }, [location.pathname, knownPaths])
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header onMenuOpen={() => setSidebarOpen(true)} />
@@ -73,25 +116,30 @@ function AppShell({ session, subscription, onSubscriptionRefresh }) {
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onSignOut={handleSignOut} session={session} />
       <PlanSheet session={session} isOpen={planSheetOpen} plan={editingPlan} onClose={() => { setPlanSheetOpen(false); setEditingPlan(null) }} onSaved={() => setPlanRefreshKey(k => k + 1)} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6">
+        {/* Keep-alive layer: every visited screen stays mounted, only the
+            active one is visible. First visit to a screen mounts it lazily;
+            subsequent visits are instant with preserved state. */}
+        {SCREENS.map(({ path, element }) =>
+          !visited.has(path) ? null : (
+            <div key={path} style={{ display: location.pathname === path ? 'block' : 'none' }}>
+              {element}
+            </div>
+          )
+        )}
+        {/* Redirect handling — /signup is the admin invite route and the
+            wildcard catches anything else. We only emit a <Navigate> when
+            the pathname ISN'T one of our known screens, otherwise we'd
+            clobber the keep-alive layer above by rendering a redirect on
+            every tick. /signup context: see prior comment — invite link
+            from ct3000-admin; logged-out users never hit this (App returns
+            AuthScreen directly), only logged-in users who clicked an
+            invite and can't redeem without signing out. */}
         <Routes>
-          <Route path="/"            element={<HomeScreen session={session} />} />
-          <Route path="/plans"       element={<PlansScreen session={session} onNewPlan={() => setPlanSheetOpen(true)} onEditPlan={(plan) => { setEditingPlan(plan); setPlanSheetOpen(true) }} refreshKey={planRefreshKey} />} />
-          <Route path="/daily"       element={<DailyViewScreen session={session} />} />
-          <Route path="/journal"     element={<JournalScreen session={session} />} />
-          <Route path="/performance" element={<PerformanceScreen session={session} />} />
-          <Route path="/ibkr"        element={<IBKRScreen session={session} />} />
-          <Route path="/settings"    element={<SettingsScreen session={session} />} />
-          <Route path="/review"      element={<ReviewScreen session={session} />} />
-          {/* /signup is the route ct3000-admin uses for invite links
-              (https://.../signup?invite=TOKEN). Logged-out users never hit this
-              route — App.jsx returns <AuthScreen /> directly when session is null,
-              and AuthScreen reads ?invite= from window.location.search regardless
-              of path. This route only matters when a user is ALREADY logged in and
-              clicks an invite link: they can't redeem it without signing out first,
-              so we just send them home. Explicit route avoids relying on the
-              catch-all wildcard's accidental behavior. */}
-          <Route path="/signup"      element={<Navigate to="/" replace />} />
-          <Route path="*"            element={<Navigate to="/" replace />} />
+          <Route path="/signup" element={<Navigate to="/" replace />} />
+          <Route
+            path="*"
+            element={knownPaths.has(location.pathname) ? null : <Navigate to="/" replace />}
+          />
         </Routes>
       </main>
       <MobileNav />
