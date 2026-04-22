@@ -22,6 +22,8 @@ import PerformanceScreen from './screens/PerformanceScreen'
 import IBKRScreen from './screens/IBKRScreen'
 import SettingsScreen from './screens/SettingsScreen'
 import ReviewScreen from './screens/ReviewScreen'
+import TermsScreen from './screens/TermsScreen'
+import PrivacyScreen from './screens/PrivacyScreen'
 
 // Captured once at module load — URL params don't change during the session
 const CHECKOUT_SUCCESS = new URLSearchParams(window.location.search).get('checkout') === 'success'
@@ -296,6 +298,13 @@ export default function App() {
   }, [pollingUserId])
 
   // ── Render ────────────────────────────────────────────────────────────────────
+
+  // Public legal pages — accessible without auth so a prospect (or a
+  // search engine) can read them before signing up. Checked BEFORE the
+  // auth gate so logged-out users get the content instead of the login
+  // screen, and logged-in users get it instead of the dashboard.
+  if (window.location.pathname === '/terms')   return <TermsScreen />
+  if (window.location.pathname === '/privacy') return <PrivacyScreen />
 
   // Auth or subscription still loading
   if (session === undefined || (session !== null && subscription === undefined)) {

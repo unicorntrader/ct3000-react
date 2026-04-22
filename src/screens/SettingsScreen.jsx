@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { useDataVersion, useInitialLoadTracker } from '../lib/DataVersionContext';
@@ -220,6 +221,31 @@ export default function SettingsScreen({ session }) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
           </svg>
         </a>
+      </Section>
+
+      {/* ── Legal ──
+          Links to public Terms and Privacy routes. Both pages live outside
+          the auth gate so they're also linked from AuthScreen / the signup
+          flow — here for users who want to re-read after signup. */}
+      <Section title="Legal">
+        <Link
+          to="/terms"
+          className="px-5 py-4 flex items-center justify-between gap-4 hover:bg-gray-50 transition-colors"
+        >
+          <p className="text-sm font-medium text-gray-900">Terms of Service</p>
+          <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </Link>
+        <Link
+          to="/privacy"
+          className="px-5 py-4 flex items-center justify-between gap-4 hover:bg-gray-50 transition-colors"
+        >
+          <p className="text-sm font-medium text-gray-900">Privacy Policy</p>
+          <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </Link>
       </Section>
 
       {/* ── About ──

@@ -1,5 +1,21 @@
 import React, { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
+
+// Small shared footer with Terms / Privacy links. Shown on every public
+// AuthScreen mode (landing, signup, login, invite). Links are absolute
+// <Link> elements because the pages are top-level React routes outside
+// AppShell -- useLocation navigation works whether or not the user is
+// logged in.
+function LegalFooter() {
+  return (
+    <p className="text-center text-[11px] text-gray-400 mt-6">
+      <Link to="/terms" className="hover:text-gray-600 transition-colors">Terms</Link>
+      <span className="mx-2 text-gray-200">·</span>
+      <Link to="/privacy" className="hover:text-gray-600 transition-colors">Privacy</Link>
+    </p>
+  )
+}
 
 const FEATURES = [
   'Sync every execution from IBKR automatically — trades, positions, P&L.',
@@ -156,11 +172,20 @@ export default function AuthScreen() {
             <button type="submit" disabled={loading} className={btnPrimary}>
               {loading ? 'Please wait…' : 'Create account'}
             </button>
+            {/* Same inline agreement as the regular signup — invite is
+                still account creation, so consent to the Terms applies. */}
+            <p className="text-center text-[11px] text-gray-400 leading-relaxed">
+              By creating an account you agree to our{' '}
+              <Link to="/terms" className="text-gray-600 hover:text-gray-800 underline">Terms of Service</Link>
+              {' '}and{' '}
+              <Link to="/privacy" className="text-gray-600 hover:text-gray-800 underline">Privacy Policy</Link>.
+            </p>
           </form>
           <p className="text-center text-sm text-gray-400 mt-6">
             Already have an account?{' '}
             <button onClick={() => reset('login')} className="text-blue-600 font-medium hover:underline">Log in</button>
           </p>
+          <LegalFooter />
         </div>
       </div>
     )
@@ -214,6 +239,7 @@ export default function AuthScreen() {
 
           {error && <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-600 mt-4">{error}</div>}
 
+          <LegalFooter />
         </div>
       </div>
     )
@@ -242,6 +268,16 @@ export default function AuthScreen() {
             <button type="submit" disabled={loading} className={btnPrimary}>
               {loading ? 'Please wait…' : 'Sign up & go to checkout'}
             </button>
+            {/* Inline signup agreement — industry-standard "browsewrap"-ish
+                pattern. No checkbox: clicking the submit button is the
+                consent event, the text makes the terms visible at the moment
+                of consent. Legally sufficient for most SaaS in the EU. */}
+            <p className="text-center text-[11px] text-gray-400 leading-relaxed">
+              By signing up you agree to our{' '}
+              <Link to="/terms" className="text-gray-600 hover:text-gray-800 underline">Terms of Service</Link>
+              {' '}and{' '}
+              <Link to="/privacy" className="text-gray-600 hover:text-gray-800 underline">Privacy Policy</Link>.
+            </p>
           </form>
           <p className="text-center text-sm text-gray-400 mt-6">
             Already have an account?{' '}
@@ -250,6 +286,7 @@ export default function AuthScreen() {
           <div className="text-center mt-3">
             <button onClick={() => reset('landing')} className="text-xs text-gray-300 hover:text-gray-500 transition-colors">← Back</button>
           </div>
+          <LegalFooter />
         </div>
       </div>
     )
@@ -282,6 +319,7 @@ export default function AuthScreen() {
             <button onClick={() => reset('reset')} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">Forgot password?</button>
             <button onClick={() => reset('landing')} className="text-xs text-gray-300 hover:text-gray-500 transition-colors">← Back</button>
           </div>
+          <LegalFooter />
         </div>
       </div>
     )
