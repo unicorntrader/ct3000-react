@@ -476,6 +476,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
   // Cross-screen data invalidation — refetch silently when watched tables
   // are mutated elsewhere. See lib/DataVersionContext for the key map.
   const [tradesV, notesV] = useDataVersion('trades', 'notes');
+  const bump = useBumpDataVersion();
   const loadTracker = useInitialLoadTracker(reloadKey);
 
   useEffect(() => {
@@ -546,11 +547,29 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
   }, [userId, refreshKey, dvWindow, reloadKey, tradesV, notesV]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleResolve = async (tradeId, newStatus) => {
-    await supabase
+    // .eq('user_id') on the update so RLS + service-side filter both agree.
+    // The previous version fired-and-forgot without checking for errors;
+    // that meant a failed update would silently leave the UI optimistically
+    // updated while the row on the server was unchanged.
+    const { error } = await supabase
       .from('logical_trades')
       .update({ matching_status: newStatus })
-      .eq('id', tradeId);
+      .eq('id', tradeId)
+      .eq('user_id', userId);
+    if (error) {
+      console.error('[daily] resolve failed:', error.message);
+      Sentry.withScope((scope) => {
+        scope.setTag('screen', 'daily');
+        scope.setTag('step', 'resolve-trade');
+        Sentry.captureException(error);
+      });
+      alert(`Could not update trade: ${error.message}`);
+      return;
+    }
     setTrades(prev => prev.map(t => t.id === tradeId ? { ...t, matching_status: newStatus } : t));
+    // Bump trades so Home pipeline count, Journal filters, Performance
+    // stats, and Review queue all silently refresh next time they're shown.
+    bump('trades');
   };
 
   const { exitMap, openOrderIds } = useMemo(() => buildExitInfo(trades, rawTrades), [trades, rawTrades]);
