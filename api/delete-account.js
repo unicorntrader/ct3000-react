@@ -92,6 +92,13 @@ module.exports = async function handler(req, res) {
     // ── Capture feedback FIRST ────────────────────────────────────────────
     // If the wipe fails halfway, we still have the user's why-I-left note
     // on record. Failure here is non-fatal — we log and continue.
+    //
+    // TODO (pre-public-launch, GDPR): drop `email` and `stripe_customer_id`
+    // from the insert below (and the matching columns from the
+    // account_deletions table). A user who asked to be deleted should be
+    // anonymous in the churn log. Keep only deleted_at + feedback text.
+    // Retained for now while we're in private beta and want to spot churn
+    // signals ("who did we lose?").
     const { error: feedbackErr } = await supabaseAdmin
       .from('account_deletions')
       .insert({
