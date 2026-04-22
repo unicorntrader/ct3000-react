@@ -53,7 +53,8 @@ module.exports = async function handler(req, res) {
   })
   if (subErr) {
     console.error('[redeem-invite] subscription insert error:', subErr.message)
-    return res.status(500).json({ error: 'Account created but subscription setup failed. Please contact support.' })
+    // SUPPORT EMAIL: update when support@cotraderapp.com mailbox is live.
+    return res.status(500).json({ error: 'Account created but subscription setup failed. Please email thinker@philoinvestor.com.' })
   }
 
   // Mark invite as redeemed

@@ -264,8 +264,9 @@ module.exports = async function handler(req, res) {
     const MAX_PERIOD_DAYS = 35;
     const period = parseFlexPeriod(xml);
     if (!period) {
+      // SUPPORT EMAIL: update when support@cotraderapp.com mailbox is live.
       const msg = 'Could not read the Flex Query window from IBKR\'s response (no fromDate/toDate on the <FlexStatement> header). ' +
-        'This usually means an unexpected XML format — please contact support.';
+        'This usually means an unexpected XML format — please email thinker@philoinvestor.com with your Flex Query ID.';
       console.log('[sync] rejected: could not parse Flex period from header');
       return res.status(400).json({ success: false, error: msg });
     }

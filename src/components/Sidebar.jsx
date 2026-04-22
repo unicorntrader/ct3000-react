@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { currencySymbol } from '../lib/formatters';
+import { APP_VERSION, supportMailto } from '../lib/constants';
 
 export default function Sidebar({ isOpen, onClose, onSignOut, session }) {
   const navigate = useNavigate();
@@ -145,6 +146,19 @@ export default function Sidebar({ isOpen, onClose, onSignOut, session }) {
           >
             Log out
           </button>
+
+          {/* Footer — support link + version stamp. Version here (and in
+              Settings → About) so users pasting it into a support email
+              gives us instant triage context. */}
+          <div className="flex items-center justify-between pt-3 text-[11px] text-gray-400">
+            <a
+              href={supportMailto('CT3000 — Need help')}
+              className="hover:text-gray-600 transition-colors"
+            >
+              Contact support
+            </a>
+            <span className="font-mono">{APP_VERSION}</span>
+          </div>
         </div>
       </div>
     </>

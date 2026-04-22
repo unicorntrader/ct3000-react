@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
 import { useDataVersion, useInitialLoadTracker } from '../lib/DataVersionContext';
+import { SUPPORT_EMAIL, APP_VERSION, supportMailto } from '../lib/constants';
 import LoadError from '../components/LoadError';
 
 function Section({ title, children }) {
@@ -26,16 +27,6 @@ function Row({ label, hint, children }) {
       </div>
       <div className="shrink-0">{children}</div>
     </div>
-  );
-}
-
-function ComingSoonRow({ label }) {
-  return (
-    <Row label={label}>
-      <span className="text-xs text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full font-medium">
-        Coming soon
-      </span>
-    </Row>
   );
 }
 
@@ -137,24 +128,44 @@ export default function SettingsScreen({ session }) {
         </Row>
       </Section>
 
-      {/* ── Display ── */}
-      <Section title="Display">
-        <ComingSoonRow label="Theme" />
-        <ComingSoonRow label="Default date range" />
-        <ComingSoonRow label="Timezone" />
+      {/* ── Support ── */}
+      <Section title="Support">
+        <a
+          href={supportMailto('CT3000 — Need help')}
+          className="px-5 py-4 flex items-center justify-between gap-4 hover:bg-gray-50 transition-colors"
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-gray-900">Contact support</p>
+            <p className="text-xs text-gray-400 mt-0.5 truncate">{SUPPORT_EMAIL}</p>
+          </div>
+          <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+          </svg>
+        </a>
+        <a
+          href={supportMailto('CT3000 — Bug report', 'What happened:\n\nWhat I expected:\n\nSteps to reproduce:\n\n')}
+          className="px-5 py-4 flex items-center justify-between gap-4 hover:bg-gray-50 transition-colors"
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-gray-900">Report a bug</p>
+            <p className="text-xs text-gray-400 mt-0.5">Opens your email with a template</p>
+          </div>
+          <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+          </svg>
+        </a>
       </Section>
 
-      {/* ── Notifications ── */}
-      <Section title="Notifications">
-        <ComingSoonRow label="Daily P&L summary" />
-        <ComingSoonRow label="Trade review reminders" />
-      </Section>
-
-      {/* ── Data ── */}
-      <Section title="Data">
-        <ComingSoonRow label="Auto-sync schedule" />
-        <ComingSoonRow label="Export trades (CSV)" />
-        <ComingSoonRow label="Position sizing defaults" />
+      {/* ── About ──
+          App version sits here (and on the sidebar footer) so users pasting
+          it into a support email gives us instant triage context. Bump the
+          APP_VERSION constant in lib/constants.js on meaningful releases. */}
+      <Section title="About">
+        <Row label="App version" hint="Include this when you email support">
+          <span className="text-xs text-gray-500 font-mono bg-gray-100 px-2.5 py-1 rounded">
+            {APP_VERSION}
+          </span>
+        </Row>
       </Section>
     </div>
   );

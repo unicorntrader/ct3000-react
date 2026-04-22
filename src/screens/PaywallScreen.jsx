@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { supportMailto } from '../lib/constants';
 
 export default function PaywallScreen({ timedOut = false }) {
   const [loading, setLoading] = useState(false);
@@ -49,7 +50,13 @@ export default function PaywallScreen({ timedOut = false }) {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
           {timedOut && (
             <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-sm text-amber-700 mb-4">
-              Your payment was received but account activation is taking longer than expected. Try refreshing in a minute, or contact support.
+              Your payment was received but account activation is taking longer than expected. Try refreshing in a minute, or{' '}
+              <a
+                href={supportMailto('Account activation stuck after payment')}
+                className="underline font-medium hover:text-amber-900"
+              >
+                email support
+              </a>.
             </div>
           )}
           <h2 className="text-xl font-semibold text-gray-900 mb-1">Subscribe to CT3000</h2>
