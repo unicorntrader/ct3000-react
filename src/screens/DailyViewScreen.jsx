@@ -345,15 +345,19 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{fmtSymbol({ symbol: row.symbol, asset_category: row.assetCategory })}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
-                      <span className="inline-flex items-center gap-1">
+                      <span className="inline-flex items-center gap-1.5">
                         {row.isOrphan ? <span className="text-gray-400">N/A</span> : fmtPrice(row.entry, row.currency)}
-                        {row.entry == null && row.sourceNotes && (
-                          <span
-                            title={row.sourceNotes}
-                            className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-[10px] font-semibold cursor-help leading-none"
-                            aria-label={row.sourceNotes}
-                          >
-                            i
+                        {row.entry == null && (
+                          <span className="relative group inline-flex items-center">
+                            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-[10px] font-semibold leading-none cursor-help">
+                              i
+                            </span>
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 w-64 p-2.5 rounded-md bg-gray-900 text-white text-xs font-normal normal-case tracking-normal leading-snug shadow-lg"
+                            >
+                              {row.sourceNotes || 'This position was opened before your earliest imported trade, so the entry price and open date aren\'t known. The P&L is accurate — it comes straight from IBKR.'}
+                            </span>
                           </span>
                         )}
                       </span>
