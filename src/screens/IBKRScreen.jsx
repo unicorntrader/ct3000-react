@@ -180,7 +180,14 @@ export default function IBKRScreen({ session }) {
       }
       const xml = await res.text();
       const blob = new Blob([xml], { type: 'application/xml' });
-      window.open(URL.createObjectURL(blob), '_blank');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ibkr-flex-${new Date().toISOString().replace(/[:.]/g, '-')}.xml`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
       alert(`Debug XML failed: ${err.message}`);
     } finally {
