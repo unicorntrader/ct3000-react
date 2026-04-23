@@ -404,7 +404,7 @@ export default function HomeScreen({ session }) {
           })()}
         </div>
 
-        <div>
+        <div className="order-first lg:order-none">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-700">Active plans</h3>
             <button onClick={() => navigate('/plans')} className="text-xs text-blue-600 font-medium hover:underline">View all &rarr;</button>
