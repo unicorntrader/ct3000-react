@@ -6,7 +6,8 @@
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/sync.js":    { "maxDuration": 60 },
-    "api/rebuild.js": { "maxDuration": 60 }
+    "api/sync.js":            { "maxDuration": 60 },
+    "api/rebuild.js":         { "maxDuration": 60 },
+    "api/debug-flex-xml.js":  { "maxDuration": 60 }
   }
 }
