@@ -345,7 +345,18 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{fmtSymbol({ symbol: row.symbol, asset_category: row.assetCategory })}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
-                      {row.isOrphan ? <span className="text-gray-400">N/A</span> : fmtPrice(row.entry, row.currency)}
+                      <span className="inline-flex items-center gap-1">
+                        {row.isOrphan ? <span className="text-gray-400">N/A</span> : fmtPrice(row.entry, row.currency)}
+                        {row.entry == null && row.sourceNotes && (
+                          <span
+                            title={row.sourceNotes}
+                            className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-[10px] font-semibold cursor-help leading-none"
+                            aria-label={row.sourceNotes}
+                          >
+                            i
+                          </span>
+                        )}
+                      </span>
                     </td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
                       {row.tradeStatus === 'open' ? '—' : fmtPrice(row.exit, row.currency)}
@@ -624,6 +635,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
           status: t.matching_status || 'needs_review',
           tradeStatus: t.status,
           plannedTradeId: t.planned_trade_id || null,
+          sourceNotes: t.source_notes || null,
         };
       });
 

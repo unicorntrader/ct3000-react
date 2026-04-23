@@ -292,7 +292,7 @@ function buildLogicalTrades(rawTrades, userId) {
           is_reversal: false,
           matching_status: 'needs_review',
           planned_trade_id: null,
-          source_notes: 'Opened before the 30-day sync window — entry price and open date unknown. P&L from IBKR.',
+          source_notes: 'This position was opened before your earliest imported trade, so the entry price and open date aren\'t known. The P&L is accurate — it comes straight from IBKR.',
         };
         logicalTrades.push(orphan);
       } else {
@@ -359,9 +359,10 @@ function buildLogicalTrades(rawTrades, userId) {
           // accounts for both the known and pre-window portions.
           lastClosedLt.total_realized_pnl = totalPnl;
           lastClosedLt.source_notes =
-            `Includes ${orphanQty} share${orphanQty !== 1 ? 's' : ''} ` +
-            `from a position opened before the 30-day sync window. ` +
-            `Entry price unknown for the pre-window portion.`;
+            `${orphanQty} of these share${orphanQty !== 1 ? 's were' : ' was'} ` +
+            `opened before your earliest imported trade. The entry price ` +
+            `for that portion isn't known, but the P&L is accurate — ` +
+            `it comes straight from IBKR.`;
         }
         // If closingQty > 0 AND lastClosedLt is null (no LT was closed
         // this pass), that's the pure-orphan case already handled by
