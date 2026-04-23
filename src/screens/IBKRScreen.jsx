@@ -31,6 +31,7 @@ export default function IBKRScreen({ session }) {
   const [lastSyncAt, setLastSyncAt] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+  const [fetchingXml, setFetchingXml] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
   const [syncError, setSyncError] = useState(null);
   const [saveError, setSaveError] = useState(null);
@@ -163,6 +164,28 @@ export default function IBKRScreen({ session }) {
       setSyncResult({ rebuilt: true });
     }
     setRebuilding(false);
+  };
+
+  const handleDebugXml = async () => {
+    setFetchingXml(true);
+    try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const res = await fetch('/api/debug-flex-xml', {
+        headers: { 'Authorization': `Bearer ${currentSession.access_token}` },
+      });
+      if (!res.ok) {
+        const msg = await res.text();
+        alert(`Debug XML failed: ${res.status} — ${msg.slice(0, 200)}`);
+        return;
+      }
+      const xml = await res.text();
+      const blob = new Blob([xml], { type: 'application/xml' });
+      window.open(URL.createObjectURL(blob), '_blank');
+    } catch (err) {
+      alert(`Debug XML failed: ${err.message}`);
+    } finally {
+      setFetchingXml(false);
+    }
   };
 
   const handleSync = async () => {
@@ -447,6 +470,16 @@ export default function IBKRScreen({ session }) {
               </svg>
               <span>{rebuilding ? 'Rebuilding...' : 'Rebuild'}</span>
             </button>
+            {session?.user?.email === 'antonis@protopapas.net' && (
+              <button
+                onClick={handleDebugXml}
+                disabled={syncing || rebuilding || fetchingXml}
+                className="border border-gray-200 text-gray-700 font-medium py-3 px-4 rounded-xl text-sm hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+                title="Open the raw IBKR Flex XML in a new tab"
+              >
+                <span>{fetchingXml ? 'Fetching...' : 'Raw XML'}</span>
+              </button>
+            )}
           </div>
 
           {syncResult && (
