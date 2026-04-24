@@ -591,7 +591,12 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                   const isBadHistory = histTrades.length >= 2 && totalPnl < 0 && losses > wins;
 
                   return (
-                    <div className="mt-2">
+                    <div className="mt-3">
+                      {/* Label tells the user what the strip is. Today these
+                          are same-ticker trades; future iterations can add
+                          same-strategy / similar-volatility matches under
+                          this same heading without a UI rewrite. */}
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Relevant trades</p>
                       <button
                         type="button"
                         onClick={() => setHistExpanded(x => !x)}

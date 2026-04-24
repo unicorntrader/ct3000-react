@@ -404,11 +404,6 @@ export default function HomeScreen({ session }) {
             return (
               <>
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-                  {/* Column header so the right-hand number is clearly labeled */}
-                  <div className="flex items-center justify-between px-5 py-2 border-b border-gray-100 bg-gray-50 rounded-t-xl">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Position</p>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Unrealized P&amp;L</p>
-                  </div>
                   <div className="divide-y divide-gray-50">
                     {visible.map(pos => {
                       const isLong = (pos.position || 0) >= 0;
