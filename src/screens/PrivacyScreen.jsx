@@ -13,8 +13,9 @@ import { SUPPORT_EMAIL } from '../lib/constants';
  *   Supabase, Vercel, Stripe, Sentry, IBKR. If any subprocessor
  *   changes, update this file.
  *
- *   TODO (pre-public-launch): build the 90-day cleanup job for
- *   account_deletions so the retention promise below actually holds.
+ *   The 90-day churn-metadata scrub promised in §7 is implemented in
+ *   api/cron-anonymize-churn.js (weekly cron). account_deletions.email
+ *   and stripe_customer_id are nulled out after 90 days.
  * ---------------------------------------------------------------------
  */
 export default function PrivacyScreen() {
