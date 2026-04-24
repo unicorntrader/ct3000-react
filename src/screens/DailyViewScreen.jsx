@@ -399,7 +399,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
                       <span className="inline-flex items-center gap-1.5">
-                        {row.isOrphan ? <span className="text-gray-400">N/A</span> : fmtPrice(row.entry, row.currency)}
+                        {fmtPrice(row.entry, row.currency)}
                         {row.entry == null && (
                           <InfoBadge
                             text={row.sourceNotes || 'This position was opened before your earliest imported trade, so the entry price and open date aren\'t known. The P&L is accurate — it comes straight from IBKR.'}
