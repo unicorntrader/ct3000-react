@@ -140,16 +140,28 @@ export default function IBKRScreen({ session }) {
 
   // Calls the server-side rebuild endpoint.
   // Returns null on success, an error string on failure, or '__warn__...' for warnings.
+  // Wraps the network call in try/catch so a dropped connection or malformed
+  // response surfaces as a readable error instead of crashing the caller
+  // (which is part of the Sync Now flow that must degrade gracefully).
   const rebuildLogicalTrades = async () => {
-    const { data: { session: currentSession } } = await supabase.auth.getSession();
-    const res = await fetch('/api/rebuild', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${currentSession.access_token}` },
-    });
-    const data = await res.json();
-    if (!data.success) return data.error || 'Rebuild failed';
-    if (data.warnings?.length) return `__warn__${data.warnings.join('; ')}`;
-    return null;
+    try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const res = await fetch('/api/rebuild', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${currentSession.access_token}` },
+      });
+      const rawText = await res.text();
+      let data;
+      try { data = JSON.parse(rawText); }
+      catch {
+        return `HTTP ${res.status} — non-JSON response: ${rawText.slice(0, 200)}`;
+      }
+      if (!data.success) return data.error || `Rebuild failed (HTTP ${res.status})`;
+      if (data.warnings?.length) return `__warn__${data.warnings.join('; ')}`;
+      return null;
+    } catch (err) {
+      return err?.message || 'Network error while rebuilding';
+    }
   };
 
   const handleRebuild = async () => {

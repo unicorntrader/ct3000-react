@@ -37,6 +37,10 @@ function Logo() {
 }
 
 async function createCheckoutSession(accessToken) {
+  // Parse the body as text first so a non-JSON error page (eg. a Vercel
+  // routing error, 502 Bad Gateway, CORS preflight failure) surfaces as a
+  // readable error message instead of crashing the signup flow when
+  // res.json() throws on unexpected input.
   const res = await fetch('/api/create-checkout-session', {
     method: 'POST',
     headers: {
@@ -44,8 +48,13 @@ async function createCheckoutSession(accessToken) {
       'Authorization': `Bearer ${accessToken}`,
     },
   })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || 'Failed to start checkout')
+  const rawText = await res.text()
+  let data = null
+  try { data = JSON.parse(rawText) }
+  catch {
+    throw new Error(`HTTP ${res.status} — non-JSON response: ${rawText.slice(0, 200)}`)
+  }
+  if (!res.ok) throw new Error(data.error || `Failed to start checkout (HTTP ${res.status})`)
   return data.url
 }
 

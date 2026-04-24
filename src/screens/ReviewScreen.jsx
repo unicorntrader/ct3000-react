@@ -19,12 +19,16 @@ function TradeCard({ trade }) {
   const isClosed = trade.status === 'closed';
   const isWin = pnl > 0;
   const closingQty = trade.total_closing_quantity || trade.total_opening_quantity || 0;
-  // Derive exit price from entry + realized P&L (same math the drawer uses)
-  let exit = null;
-  if (isClosed && trade.avg_entry_price != null && closingQty > 0) {
+  // Prefer builder-stored avg_exit_price (correct for orphans too). Fall back
+  // to reverse-engineering from entry + native P&L for legacy rows that
+  // predate the column. Reverse-engineering MUST divide by (qty * multiplier)
+  // so options / futures (multiplier 100+) do not come out 100x off.
+  const multiplier = parseFloat(trade.multiplier) || 1;
+  let exit = trade.avg_exit_price ?? null;
+  if (exit == null && isClosed && trade.avg_entry_price != null && closingQty > 0) {
     exit = trade.direction === 'LONG'
-      ? trade.avg_entry_price + (pnl / closingQty)
-      : trade.avg_entry_price - (pnl / closingQty);
+      ? trade.avg_entry_price + (pnl / (closingQty * multiplier))
+      : trade.avg_entry_price - (pnl / (closingQty * multiplier));
   }
   const dateIso = isClosed ? trade.closed_at : trade.opened_at;
 
