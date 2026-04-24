@@ -551,6 +551,32 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
     return m;
   }, [trades]);
 
+  // Index LTs by conid for fast fallback lookup when the LTE join didn't
+  // resolve a raw trade -> LT mapping (e.g., data synced before FIFO was
+  // run, demo data, edge cases). Matches the old getExecs behaviour.
+  const ltsByConid = useMemo(() => {
+    const m = {};
+    for (const t of trades) {
+      if (t.conid == null) continue;
+      if (!m[t.conid]) m[t.conid] = [];
+      m[t.conid].push(t);
+    }
+    return m;
+  }, [trades]);
+
+  const resolveLt = (rawTrade, ms) => {
+    const viaLte = tradeToLt[rawTrade.id];
+    if (viaLte && ltById[viaLte]) return viaLte;
+    // Fallback: match by conid + time within an LT's open window.
+    const candidates = ltsByConid[rawTrade.conid] || [];
+    for (const lt of candidates) {
+      const startMs = lt.opened_at ? new Date(lt.opened_at).getTime() : 0;
+      const endMs   = lt.closed_at ? new Date(lt.closed_at).getTime() : Date.now();
+      if (ms >= startMs && ms <= endMs) return lt.id;
+    }
+    return null;
+  };
+
   const days = useMemo(() => {
     const assetMatch = (cat) => {
       if (cat === 'STK') return assetFilters.STK;
@@ -563,14 +589,14 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
     // all of the user's activity on that LT on that day.
     const groups = new Map();
     for (const t of rawTrades) {
-      const ltId = tradeToLt[t.id];
+      const ms = parseTradeTime(t.date_time);
+      if (ms == null) continue;
+      const ltId = resolveLt(t, ms);
       if (!ltId) continue;
       const lt = ltById[ltId];
       if (!lt) continue;
       if (!assetMatch(lt.asset_category)) continue;
       if (search && !(lt.symbol || '').toLowerCase().includes(search.toLowerCase())) continue;
-      const ms = parseTradeTime(t.date_time);
-      if (ms == null) continue;
       const dateKey = new Date(ms).toISOString().slice(0, 10);
       const key = `${ltId}|${dateKey}`;
       let g = groups.get(key);
