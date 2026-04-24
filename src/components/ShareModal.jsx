@@ -44,14 +44,14 @@ export default function ShareModal({ row, plannedStop, onClose }) {
     : null;
 
   // Prices and percentages are never masked — only dollar P&L is sensitive
-  const entryDisplay = row.entry != null ? fmtPrice(row.entry, currency) : 'N/A';
-  const exitDisplay  = avgExit != null   ? fmtPrice(avgExit, currency)   : 'N/A';
-  const pnlDisplay   = isPrivate ? MASK : (pnl != null ? fmtPnl(pnl, currency) : 'N/A');
-  const pctDisplay   = pctReturn != null ? `${Number(pctReturn) > 0 ? '+' : ''}${pctReturn}%` : 'N/A';
+  const entryDisplay = row.entry != null ? fmtPrice(row.entry, currency) : '—';
+  const exitDisplay  = avgExit != null   ? fmtPrice(avgExit, currency)   : '—';
+  const pnlDisplay   = isPrivate ? MASK : (pnl != null ? fmtPnl(pnl, currency) : '—');
+  const pctDisplay   = pctReturn != null ? `${Number(pctReturn) > 0 ? '+' : ''}${pctReturn}%` : '—';
   const rDisplay     = rMultiple != null ? `${rMultiple}R` : null;
 
   const handleShareOnX = () => {
-    const p = isPrivate ? MASK : (pnl != null ? fmtPnl(pnl, currency) : 'N/A');
+    const p = isPrivate ? MASK : (pnl != null ? fmtPnl(pnl, currency) : '—');
     let text = `${displaySymbol} ${dirLabel} ${outcomeEmoji}\nEntry: ${entryDisplay} → Exit: ${exitDisplay}\nP&L: ${p} (${pctDisplay})`;
     if (rMultiple != null) text += `\nR: ${rMultiple}R`;
     text += '\n#CT3000';

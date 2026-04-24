@@ -299,7 +299,7 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
                     { label: 'Stop', value: fmtPrice(plan.planned_stop_loss, plan.currency || baseCurrency), color: 'text-red-500', mask: false },
                     { label: 'Risk', value: fmtPnl(risk, plan.currency || baseCurrency), color: 'text-red-500', mask: true },
                     { label: 'Reward', value: fmtPnl(reward, plan.currency || baseCurrency), color: 'text-green-600', mask: true },
-                    { label: 'R:R', value: rr ?? 'N/A', color: 'text-blue-600', mask: false },
+                    { label: 'R:R', value: rr ?? '—', color: 'text-blue-600', mask: false },
                   ].map(f => (
                     <div key={f.label} className="text-center bg-gray-50 rounded-lg py-2">
                       <p className="text-xs text-gray-400 mb-1">{f.label}</p>

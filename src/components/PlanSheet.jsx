@@ -666,7 +666,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                                 </span>
                                 <span className="text-gray-600">{fmtPrice(t.avg_entry_price, tCurrency)}</span>
                                 <span className="text-gray-300">→</span>
-                                <span className="text-gray-600">{exit != null ? fmtPrice(exit, tCurrency) : 'N/A'}</span>
+                                <span className="text-gray-600">{exit != null ? fmtPrice(exit, tCurrency) : '—'}</span>
                                 {adhRounded != null && (
                                   <span
                                     className={`px-1.5 py-0.5 rounded font-semibold shrink-0 ${adhColour}`}
