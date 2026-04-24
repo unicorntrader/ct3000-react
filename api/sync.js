@@ -1,6 +1,7 @@
 const https = require('https');
 const { createClient } = require('@supabase/supabase-js');
 const { captureServerError } = require('./_lib/sentry');
+const { requireActiveSubscription } = require('./_lib/requireActiveSubscription');
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://ct3000-react.vercel.app';
 const BASE_URL = 'https://gdcdyn.interactivebrokers.com/Universal/servlet';
@@ -215,6 +216,16 @@ module.exports = async function handler(req, res) {
   if (authError || !user) {
     console.log('[sync] auth failed:', authError?.message);
     return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  // Paywall gate. App.jsx already blocks the UI for inactive subscriptions,
+  // but a direct POST here with a still-valid JWT would bypass that. Mirror
+  // the isActive() logic server-side so expired trials and cancelled subs
+  // cannot keep consuming IBKR quota + our compute.
+  const sub = await requireActiveSubscription(user.id, supabaseAdmin);
+  if (!sub.ok) {
+    console.log('[sync] blocked — subscription:', sub.reason, 'userId:', user.id);
+    return res.status(402).json({ success: false, error: sub.reason });
   }
 
   // Resolve IBKR credentials:

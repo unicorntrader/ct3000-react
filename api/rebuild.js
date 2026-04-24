@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { rebuildForUser } = require('./_lib/rebuildForUser');
 const { captureServerError } = require('./_lib/sentry');
+const { requireActiveSubscription } = require('./_lib/requireActiveSubscription');
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://ct3000-react.vercel.app';
 
@@ -28,6 +29,13 @@ module.exports = async function handler(req, res) {
   }
 
   const userId = user.id;
+
+  // Paywall gate -- see comment in api/sync.js.
+  const sub = await requireActiveSubscription(userId, supabaseAdmin);
+  if (!sub.ok) {
+    console.log('[rebuild] blocked — subscription:', sub.reason, 'userId:', userId);
+    return res.status(402).json({ success: false, error: sub.reason });
+  }
 
   try {
     const { count, warnings } = await rebuildForUser(userId, supabaseAdmin);

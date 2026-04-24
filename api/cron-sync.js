@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { performUserSync } = require('./_lib/performUserSync');
 const { captureServerError } = require('./_lib/sentry');
+const { requireActiveSubscription } = require('./_lib/requireActiveSubscription');
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -38,9 +39,19 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: fetchError.message });
   }
 
-  const results = { attempted: 0, succeeded: 0, failed: 0, failures: [] };
+  const results = { attempted: 0, succeeded: 0, failed: 0, skipped: 0, failures: [] };
 
   for (const { user_id: userId } of (users || [])) {
+    // Paywall gate -- skip users whose subscription lapsed. Keeps the cron
+    // from silently burning IBKR quota + our compute on accounts that
+    // stopped paying. See requireActiveSubscription for the exact policy
+    // (mirrors src/App.jsx isActive + honours is_comped).
+    const sub = await requireActiveSubscription(userId, supabaseAdmin);
+    if (!sub.ok) {
+      results.skipped++;
+      console.log(`[cron-sync] skip userId=${userId} — ${sub.reason}`);
+      continue;
+    }
     results.attempted++;
     const startedAt = Date.now();
     try {
@@ -65,6 +76,6 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  console.log(`[cron-sync] done — attempted=${results.attempted} ok=${results.succeeded} failed=${results.failed}`);
+  console.log(`[cron-sync] done — attempted=${results.attempted} ok=${results.succeeded} failed=${results.failed} skipped=${results.skipped}`);
   return res.status(200).json(results);
 };
