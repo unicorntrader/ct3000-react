@@ -101,6 +101,18 @@ async function rebuildForUser(userId, supabaseAdmin) {
   }
 
   for (const lt of logical) {
+    // Always explicitly set user_reviewed. buildLogicalTrades doesn't set
+    // it, so without this the object has no such key -- and because
+    // PostgREST batch inserts use the union of keys across rows, a single
+    // preserved row with user_reviewed=true forces NULL into every other
+    // row's user_reviewed slot instead of letting the DEFAULT false apply.
+    // That violates the NOT NULL constraint added in
+    // 20260417_collapse_matching_status_to_3_states.sql and the whole
+    // insert 500s. Default explicitly here; the preserve branch below
+    // flips it to true when we need to carry a user's decision across
+    // rebuilds.
+    lt.user_reviewed = false;
+
     if (!lt.opening_ib_order_id) continue;
     const key = `${lt.opening_ib_order_id}:${lt.conid ?? ''}`;
     const p = preservedByKey.get(key);
