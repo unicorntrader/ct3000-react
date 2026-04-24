@@ -802,7 +802,12 @@ export default function PerformanceScreen({ session }) {
           open at once). Cards without `why`/`action` fields silently skip the
           chevron, so older callout shapes still render cleanly. */}
       {callouts.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+        <div>
+          <div className="flex items-baseline justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-700">Callouts</h3>
+            <p className="text-xs text-gray-400">{callouts.length} signal{callouts.length !== 1 ? 's' : ''}</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
           {callouts.map((c, i) => {
             // Editorial-card style: white bg, neutral body text, only the
             // 4px left accent bar + icon + section labels carry the color
@@ -875,6 +880,7 @@ export default function PerformanceScreen({ session }) {
               </div>
             );
           })}
+          </div>
         </div>
       )}
 
