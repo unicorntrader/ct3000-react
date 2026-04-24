@@ -123,3 +123,52 @@ list.
   currently `thinker@philoinvestor.com`. Flip to
   `support@cotraderapp.com` once the mailbox + ticket service is
   wired. Single string change propagates everywhere.
+
+## Security hardening (deferred from 2026-04-24 audit)
+
+Items surfaced during the 2026-04-24 security audit that were
+consciously benched rather than fixed. Each is low actual risk today
+given the other mitigations already in place.
+
+- **Move IBKR credentials save to a server endpoint.** Today
+  `IBKRScreen.jsx:101-110` upserts the raw `ibkr_token` and
+  `query_id_30d` directly from the browser via the anon client.
+  The read side is already hardened (REVOKE SELECT on those columns
+  for authenticated role, shipped in `20260424_revoke_ibkr_secret_columns.sql`),
+  so a compromised tab can no longer exfiltrate stored tokens from
+  the DB. What's still open is the save event itself: for the few
+  seconds between "click Save" and "upsert completes", the raw token
+  sits in browser memory. Attack requires a compromised tab *at the
+  exact moment* the user is typing a fresh token — very narrow.
+  Proper fix: add `POST /api/save-ibkr-credentials`, browser POSTs
+  `{ token, queryId }` over HTTPS, server writes via service_role.
+
+- **Rate-limit `/api/sync` and `/api/rebuild`.** JWT auth means a
+  single user with a compromised or shared JWT can spam the endpoints.
+  Each sync hits IBKR's Flex API which has per-token rate limits; a
+  tight loop could get the whole app IP blocked. Simplest guard:
+  server-side "last successful sync was < 60s ago → 429".
+
+- **Teach `isActive()` about `is_comped`.** `src/App.jsx:32-42`
+  gates the UI on `subscription_status` only. Today comped users get
+  `subscription_status='active'` set by `redeem-invite.js`, so the
+  check passes. If that setter misfires, comped users hit the
+  paywall. The server-side gate (`requireActiveSubscription`) now
+  honours `is_comped` — App.jsx should too, belt-and-braces.
+
+- **Debug endpoint admin allowlist.** `api/debug-flex-xml.js:12`
+  hardcodes `ALLOWED_EMAIL = 'antonis@protopapas.net'`. Fine today
+  but wants to live in `app_settings.admin_emails` or an env var
+  before adding more admin users.
+
+- **`fast-xml-parser` CVE (GHSA-gh4j-gqv2-49f6).** Current pinned
+  version < 5.7.0 has an XML-comment/CDATA injection issue in
+  `XMLBuilder`. We only use the parser, not the builder, so real
+  exposure is near-zero. Bump to `^5.7.0` at next dependency-sweep.
+
+- **Stale entry above:** the "90-day cleanup cron on
+  `account_deletions`" item under "Pre-public-launch infrastructure"
+  is done. Shipped as `api/cron-anonymize-churn.js` (commit
+  `8a056efb`) plus a one-time backfill
+  (`20260424_backfill_anonymize_account_deletions.sql`). Remove when
+  next editing this section.
