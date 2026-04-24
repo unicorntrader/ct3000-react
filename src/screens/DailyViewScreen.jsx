@@ -790,18 +790,18 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
           </button>
           <div className="flex items-center gap-2">
             {[
-              { key: 'STK', label: 'S',  wrap: 'w-8 justify-center', onCls: 'bg-gray-100 text-gray-600 border-gray-200', offCls: 'bg-white text-gray-300 border-gray-200' },
-              { key: 'FX',  label: 'FX', wrap: 'px-2',                onCls: 'bg-blue-100 text-blue-700 border-blue-200', offCls: 'bg-white text-gray-300 border-gray-200' },
-              { key: 'OPT', label: 'O',  wrap: 'w-8 justify-center', onCls: 'bg-purple-100 text-purple-700 border-purple-200', offCls: 'bg-white text-gray-300 border-gray-200' },
-            ].map(({ key, label, wrap, onCls, offCls }) => {
+              { key: 'STK', label: 'Stocks',  onCls: 'bg-gray-100 text-gray-700 border-gray-200',     offCls: 'bg-white text-gray-400 border-gray-200' },
+              { key: 'FX',  label: 'FX',      onCls: 'bg-blue-100 text-blue-700 border-blue-200',     offCls: 'bg-white text-gray-400 border-gray-200' },
+              { key: 'OPT', label: 'Options', onCls: 'bg-purple-100 text-purple-700 border-purple-200', offCls: 'bg-white text-gray-400 border-gray-200' },
+            ].map(({ key, label, onCls, offCls }) => {
               const active = assetFilters[key];
               return (
                 <button
                   key={key}
                   onClick={() => setAssetFilters(f => ({ ...f, [key]: !f[key] }))}
                   aria-pressed={active}
-                  title={active ? `Hide ${label === 'S' ? 'stocks' : label === 'FX' ? 'FX' : 'options'}` : `Show ${label === 'S' ? 'stocks' : label === 'FX' ? 'FX' : 'options'}`}
-                  className={`inline-flex items-center ${wrap} h-8 rounded text-xs font-bold border transition-colors ${active ? onCls : offCls}`}
+                  title={active ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+                  className={`inline-flex items-center px-2.5 h-8 rounded text-xs font-semibold border transition-colors ${active ? onCls : offCls}`}
                 >
                   {label}
                 </button>
