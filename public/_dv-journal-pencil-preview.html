@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DV Journal Pencil — Preview</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: #f5f7fa; }
+  .pencil-icon { width: 14px; height: 14px; }
+</style>
+</head>
+<body class="p-8">
+<div class="max-w-5xl mx-auto space-y-10">
+
+<h1 class="text-xl font-bold text-gray-800 mb-2">Daily View — Journal entry placements</h1>
+<p class="text-sm text-gray-500 mb-6">Three options for collapsing the "How was your day?" block. Click the pencil on each to test the interaction.</p>
+
+<!-- ============================================================ -->
+<!-- OPTION A: Pencil next to Daily P&L in the header            -->
+<!-- ============================================================ -->
+<div>
+  <div class="mb-2 text-xs font-semibold tracking-wide uppercase text-blue-600">Option A — Pencil in the day header, near Daily P&L</div>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden" id="blockA">
+    <div class="flex items-start justify-between px-6 py-4 border-b border-gray-100">
+      <div>
+        <h3 class="text-lg font-semibold text-gray-900">Wednesday, April 8, 2026</h3>
+        <p class="text-sm text-gray-500 mt-0.5">2 trades · 0W, 1L</p>
+      </div>
+      <div class="flex items-start gap-3">
+        <button onclick="toggleEditor('A')" title="Add journal entry"
+          class="mt-1 p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors relative">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          <span id="dotA" class="hidden absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+        </button>
+        <div class="text-right">
+          <p class="text-2xl font-bold text-red-500">-€1,066</p>
+          <p class="text-sm text-gray-400">Daily P&L</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Inline editor, hidden by default -->
+    <div id="editorA" class="hidden px-6 py-4 bg-blue-50 border-b border-blue-100">
+      <div class="flex items-center justify-between mb-2">
+        <h4 class="text-sm font-semibold text-gray-700">Daily journal</h4>
+        <button onclick="toggleEditor('A')" class="text-xs text-gray-500 hover:text-gray-700">✕ Close</button>
+      </div>
+      <textarea id="textA" rows="3" placeholder="What went well? What did you miss? Any patterns you noticed today..." class="w-full text-sm border border-blue-200 rounded-lg p-3 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"></textarea>
+      <div class="flex items-center justify-between mt-2">
+        <p class="text-xs text-gray-400">Visible in Daily View and Journal.</p>
+        <button onclick="saveJournal('A')" class="text-xs bg-blue-600 text-white px-4 py-1.5 rounded-lg font-medium hover:bg-blue-700">Save journal</button>
+      </div>
+    </div>
+
+    <!-- Saved note preview (shown after save) -->
+    <div id="noteA" class="hidden px-6 py-3 bg-blue-50 border-b border-blue-100">
+      <p class="text-sm text-gray-700 leading-relaxed" id="noteTextA"></p>
+    </div>
+
+    <!-- Mock trade table -->
+    <div class="px-6 py-4 text-xs text-gray-400 italic">(2 COUR rows here)</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- OPTION B: Pencil inline in the meta line                     -->
+<!-- ============================================================ -->
+<div>
+  <div class="mb-2 text-xs font-semibold tracking-wide uppercase text-blue-600">Option B — Pencil inline in the meta line</div>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden" id="blockB">
+    <div class="flex items-start justify-between px-6 py-4 border-b border-gray-100">
+      <div>
+        <h3 class="text-lg font-semibold text-gray-900">Wednesday, April 8, 2026</h3>
+        <p class="text-sm text-gray-500 mt-0.5 flex items-center gap-1.5">
+          <span>2 trades · 0W, 1L · </span>
+          <button onclick="toggleEditor('B')" class="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            <span id="labelB">Add journal</span>
+          </button>
+        </p>
+      </div>
+      <div class="text-right">
+        <p class="text-2xl font-bold text-red-500">-€1,066</p>
+        <p class="text-sm text-gray-400">Daily P&L</p>
+      </div>
+    </div>
+
+    <div id="editorB" class="hidden px-6 py-4 bg-blue-50 border-b border-blue-100">
+      <div class="flex items-center justify-between mb-2">
+        <h4 class="text-sm font-semibold text-gray-700">Daily journal</h4>
+        <button onclick="toggleEditor('B')" class="text-xs text-gray-500 hover:text-gray-700">✕ Close</button>
+      </div>
+      <textarea id="textB" rows="3" placeholder="What went well? What did you miss? Any patterns you noticed today..." class="w-full text-sm border border-blue-200 rounded-lg p-3 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"></textarea>
+      <div class="flex items-center justify-between mt-2">
+        <p class="text-xs text-gray-400">Visible in Daily View and Journal.</p>
+        <button onclick="saveJournal('B')" class="text-xs bg-blue-600 text-white px-4 py-1.5 rounded-lg font-medium hover:bg-blue-700">Save journal</button>
+      </div>
+    </div>
+
+    <div id="noteB" class="hidden px-6 py-3 bg-blue-50 border-b border-blue-100">
+      <p class="text-sm text-gray-700 leading-relaxed" id="noteTextB"></p>
+    </div>
+
+    <div class="px-6 py-4 text-xs text-gray-400 italic">(2 COUR rows here)</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- OPTION C: Single-line "Journal" footer link                  -->
+<!-- ============================================================ -->
+<div>
+  <div class="mb-2 text-xs font-semibold tracking-wide uppercase text-blue-600">Option C — Thin footer strip with pencil link</div>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden" id="blockC">
+    <div class="flex items-start justify-between px-6 py-4 border-b border-gray-100">
+      <div>
+        <h3 class="text-lg font-semibold text-gray-900">Wednesday, April 8, 2026</h3>
+        <p class="text-sm text-gray-500 mt-0.5">2 trades · 0W, 1L</p>
+      </div>
+      <div class="text-right">
+        <p class="text-2xl font-bold text-red-500">-€1,066</p>
+        <p class="text-sm text-gray-400">Daily P&L</p>
+      </div>
+    </div>
+
+    <div class="px-6 py-4 text-xs text-gray-400 italic">(2 COUR rows here)</div>
+
+    <!-- Footer strip -->
+    <div id="footerC" class="px-6 py-2.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
+      <p class="text-xs text-gray-500" id="footerTextC">No journal entry for this day</p>
+      <button onclick="toggleEditor('C')" class="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+        <span id="labelC">Write</span>
+      </button>
+    </div>
+
+    <div id="editorC" class="hidden px-6 py-4 bg-blue-50 border-t border-blue-100">
+      <div class="flex items-center justify-between mb-2">
+        <h4 class="text-sm font-semibold text-gray-700">Daily journal</h4>
+        <button onclick="toggleEditor('C')" class="text-xs text-gray-500 hover:text-gray-700">✕ Close</button>
+      </div>
+      <textarea id="textC" rows="3" placeholder="What went well? What did you miss? Any patterns you noticed today..." class="w-full text-sm border border-blue-200 rounded-lg p-3 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"></textarea>
+      <div class="flex items-center justify-between mt-2">
+        <p class="text-xs text-gray-400">Visible in Daily View and Journal.</p>
+        <button onclick="saveJournal('C')" class="text-xs bg-blue-600 text-white px-4 py-1.5 rounded-lg font-medium hover:bg-blue-700">Save journal</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+const savedNotes = { A: '', B: '', C: '' };
+
+function toggleEditor(k) {
+  const editor = document.getElementById('editor' + k);
+  const hidden = editor.classList.contains('hidden');
+  editor.classList.toggle('hidden', !hidden);
+  if (hidden) {
+    // Opening -- prefill textarea if a note exists
+    document.getElementById('text' + k).value = savedNotes[k];
+    document.getElementById('text' + k).focus();
+  }
+}
+
+function saveJournal(k) {
+  const text = document.getElementById('text' + k).value.trim();
+  savedNotes[k] = text;
+  document.getElementById('editor' + k).classList.add('hidden');
+
+  if (k === 'A' || k === 'B') {
+    // Show collapsed note preview below header
+    const noteEl = document.getElementById('note' + k);
+    const textEl = document.getElementById('noteText' + k);
+    if (text) {
+      textEl.textContent = text;
+      noteEl.classList.remove('hidden');
+    } else {
+      noteEl.classList.add('hidden');
+    }
+  }
+
+  if (k === 'A') {
+    document.getElementById('dotA').classList.toggle('hidden', !text);
+  }
+  if (k === 'B') {
+    document.getElementById('labelB').textContent = text ? 'Edit journal' : 'Add journal';
+  }
+  if (k === 'C') {
+    const footerText = document.getElementById('footerTextC');
+    const labelC = document.getElementById('labelC');
+    if (text) {
+      footerText.textContent = text.length > 80 ? text.slice(0, 80) + '…' : text;
+      footerText.classList.remove('italic', 'text-gray-500');
+      footerText.classList.add('text-gray-700');
+      labelC.textContent = 'Edit';
+    } else {
+      footerText.textContent = 'No journal entry for this day';
+      labelC.textContent = 'Write';
+    }
+  }
+}
+</script>
+</body>
+</html>

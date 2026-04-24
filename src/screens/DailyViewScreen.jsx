@@ -78,6 +78,67 @@ function AssetBadge({ category }) {
 
 const COL_SPAN = 9; // TYPE SYMBOL DIR BOUGHT SOLD P&L STATUS share chevron
 
+// Collapse fills into one row per ib_order_id. Fills with no order id (rare:
+// pre-migration manual entries) stay as-is -- each gets its own row. Within
+// an order we show the earliest fill time, weighted-avg price, total qty,
+// and sum of commissions -- a trader's-eye view instead of a fills log.
+const aggregateByOrder = (fills) => {
+  const rows = [];
+  const byOrder = new Map();
+  for (const f of fills) {
+    if (!f.ib_order_id) {
+      rows.push({ kind: 'fill', f });
+      continue;
+    }
+    let bucket = byOrder.get(f.ib_order_id);
+    if (!bucket) {
+      bucket = { kind: 'order', orderId: f.ib_order_id, fills: [] };
+      byOrder.set(f.ib_order_id, bucket);
+      rows.push(bucket);
+    }
+    bucket.fills.push(f);
+  }
+  return rows
+    .map((r) => {
+      if (r.kind === 'fill') {
+        const f = r.f;
+        return {
+          _ms: f._ms,
+          price: parseFloat(f.trade_price) || 0,
+          qty: Math.abs(parseFloat(f.quantity) || 0),
+          buy_sell: f.buy_sell,
+          commission: parseFloat(f.ib_commission),
+          commissionCurrency: f.ib_commission_currency || f.currency,
+          currency: f.currency,
+          fillCount: 1,
+        };
+      }
+      let qty = 0, notional = 0, commission = 0;
+      let earliest = Infinity;
+      for (const f of r.fills) {
+        const q = Math.abs(parseFloat(f.quantity) || 0);
+        const p = parseFloat(f.trade_price) || 0;
+        qty += q;
+        notional += q * p;
+        const c = parseFloat(f.ib_commission);
+        if (!isNaN(c)) commission += c;
+        if (f._ms != null && f._ms < earliest) earliest = f._ms;
+      }
+      const first = r.fills[0];
+      return {
+        _ms: earliest === Infinity ? null : earliest,
+        price: qty > 0 ? notional / qty : 0,
+        qty,
+        buy_sell: first.buy_sell,
+        commission,
+        commissionCurrency: first.ib_commission_currency || first.currency,
+        currency: first.currency,
+        fillCount: r.fills.length,
+      };
+    })
+    .sort((a, b) => (a._ms ?? 0) - (b._ms ?? 0));
+};
+
 function ExecSubTable({ execs }) {
   if (!execs || execs.length === 0) {
     return (
@@ -88,6 +149,8 @@ function ExecSubTable({ execs }) {
       </tr>
     );
   }
+
+  const orderRows = aggregateByOrder(execs);
 
   return (
     <tr>
@@ -102,23 +165,29 @@ function ExecSubTable({ execs }) {
               </tr>
             </thead>
             <tbody>
-              {execs.map((ex, i) => {
-                const time = ex._ms != null
-                  ? new Date(ex._ms).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+              {orderRows.map((r, i) => {
+                const time = r._ms != null
+                  ? new Date(r._ms).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
                   : '—';
-                const commission = parseFloat(ex.ib_commission);
                 return (
                   <tr key={i} className="border-t border-gray-100">
-                    <td className="py-1.5 pr-3 text-xs text-gray-600">{time}</td>
-                    <td className="py-1.5 pr-3 text-xs text-gray-800 font-medium">{fmtPrice(parseFloat(ex.trade_price), ex.currency)}</td>
-                    <td className="py-1.5 pr-3 text-xs text-gray-600"><PrivacyValue value={Math.abs(parseFloat(ex.quantity) || 0).toLocaleString()} /></td>
+                    <td className="py-1.5 pr-3 text-xs text-gray-600">
+                      {time}
+                      {r.fillCount > 1 && (
+                        <span className="ml-1.5 text-[10px] text-gray-400">
+                          {r.fillCount} fills
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1.5 pr-3 text-xs text-gray-800 font-medium">{fmtPrice(r.price, r.currency)}</td>
+                    <td className="py-1.5 pr-3 text-xs text-gray-600"><PrivacyValue value={r.qty.toLocaleString()} /></td>
                     <td className="py-1.5 pr-3">
-                      <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${ex.buy_sell === 'BUY' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
-                        {ex.buy_sell}
+                      <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${r.buy_sell === 'BUY' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                        {r.buy_sell}
                       </span>
                     </td>
                     <td className="py-1.5 text-xs text-gray-500">
-                      <PrivacyValue value={!isNaN(commission) ? fmtPnl(commission, ex.ib_commission_currency || ex.currency, 0) : '—'} />
+                      <PrivacyValue value={!isNaN(r.commission) && r.commission !== 0 ? fmtPnl(r.commission, r.commissionCurrency, 0) : '—'} />
                     </td>
                   </tr>
                 );
@@ -136,7 +205,6 @@ function DayBlock({ day, plannedTradesMap = {}, baseCurrency = 'USD', userId, on
   const [note, setNote] = useState(day.note);
   const [editingNote, setEditingNote] = useState(false);
   const [noteInput, setNoteInput] = useState(day.note || '');
-  const [journalInput, setJournalInput] = useState('');
   const [openResolve, setOpenResolve] = useState(null);
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [shareRow, setShareRow] = useState(null);
@@ -150,9 +218,17 @@ function DayBlock({ day, plannedTradesMap = {}, baseCurrency = 'USD', userId, on
     });
   };
 
-  const persistNote = async (text) => {
+  const openEditor = () => {
+    setNoteInput(note || '');
+    setEditingNote(true);
+  };
+
+  const handleSaveNote = async () => {
+    const trimmed = noteInput.trim();
+    setNote(trimmed);
+    setEditingNote(false);
     const { error } = await supabase.from('daily_notes').upsert(
-      { user_id: userId, date_key: day.dateKey, note: text, updated_at: new Date().toISOString() },
+      { user_id: userId, date_key: day.dateKey, note: trimmed, updated_at: new Date().toISOString() },
       { onConflict: 'user_id,date_key' }
     );
     if (error) {
@@ -161,21 +237,6 @@ function DayBlock({ day, plannedTradesMap = {}, baseCurrency = 'USD', userId, on
       return;
     }
     bump('notes');
-  };
-
-  const handleSaveNote = async () => {
-    const trimmed = noteInput.trim();
-    setNote(trimmed);
-    setEditingNote(false);
-    await persistNote(trimmed);
-  };
-
-  const handleSaveJournal = async () => {
-    if (!journalInput.trim()) return;
-    const trimmed = journalInput.trim();
-    setNote(trimmed);
-    setJournalInput('');
-    await persistNote(trimmed);
   };
 
   return (
@@ -213,39 +274,6 @@ function DayBlock({ day, plannedTradesMap = {}, baseCurrency = 'USD', userId, on
           <p className="text-sm text-gray-400">Daily P&L</p>
         </div>
       </div>
-
-      {note && !editingNote && (
-        <div className="px-6 py-4 bg-blue-50 border-b border-blue-100">
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="text-sm font-semibold text-gray-700">Daily Notes</h4>
-            <button
-              onClick={() => { setNoteInput(note); setEditingNote(true); }}
-              className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-800 font-medium"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-              <span>Edit</span>
-            </button>
-          </div>
-          <p className="text-sm text-gray-700 leading-relaxed">{note}</p>
-        </div>
-      )}
-
-      {editingNote && (
-        <div className="px-6 py-4 bg-blue-50 border-b border-blue-100">
-          <textarea
-            rows={3}
-            value={noteInput}
-            onChange={e => setNoteInput(e.target.value)}
-            className="w-full text-sm border border-blue-200 rounded-lg p-3 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
-          />
-          <div className="flex space-x-2 mt-2">
-            <button onClick={handleSaveNote} className="text-xs bg-blue-600 text-white px-4 py-1.5 rounded-lg font-medium hover:bg-blue-700">Save note</button>
-            <button onClick={() => setEditingNote(false)} className="text-xs border border-gray-200 px-4 py-1.5 rounded-lg text-gray-600 hover:bg-gray-50">Cancel</button>
-          </div>
-        </div>
-      )}
 
       <div className="overflow-x-auto">
         {/* table-fixed + per-column widths: without these, each day block's
@@ -370,25 +398,49 @@ function DayBlock({ day, plannedTradesMap = {}, baseCurrency = 'USD', userId, on
         </table>
       </div>
 
-      {!note && (
-        <div className="px-6 py-5 border-t border-gray-100 bg-gray-50">
-          <div className="flex items-center space-x-2 mb-3">
-            <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-            </svg>
-            <p className="text-sm font-semibold text-gray-700">How was your day?</p>
+      {editingNote ? (
+        <div className="px-6 py-4 border-t border-blue-100 bg-blue-50">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-sm font-semibold text-gray-700">Daily journal</h4>
+            <button
+              onClick={() => setEditingNote(false)}
+              className="text-xs text-gray-500 hover:text-gray-700"
+            >
+              ✕ Close
+            </button>
           </div>
           <textarea
-            value={journalInput}
-            onChange={e => setJournalInput(e.target.value)}
+            value={noteInput}
+            onChange={e => setNoteInput(e.target.value)}
             placeholder="What went well? What did you miss? Any patterns you noticed today..."
             rows={3}
-            className="w-full text-sm border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white resize-none"
+            autoFocus
+            className="w-full text-sm border border-blue-200 rounded-lg p-3 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
           />
-          <div className="flex items-center justify-between mt-3">
-            <p className="text-xs text-gray-400">This becomes your session log -- visible in Daily View and Journal.</p>
-            <button onClick={handleSaveJournal} className="bg-blue-600 text-white text-xs font-medium px-4 py-2 rounded-lg hover:bg-blue-700">Save journal</button>
+          <div className="flex items-center justify-between mt-2">
+            <p className="text-xs text-gray-400">Visible in Daily View and Journal.</p>
+            <button
+              onClick={handleSaveNote}
+              className="bg-blue-600 text-white text-xs font-medium px-4 py-1.5 rounded-lg hover:bg-blue-700"
+            >
+              Save journal
+            </button>
           </div>
+        </div>
+      ) : (
+        <div className="px-6 py-2.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between gap-3">
+          <p className={`text-xs min-w-0 truncate ${note ? 'text-gray-700' : 'text-gray-500 italic'}`}>
+            {note || 'No journal entry for this day'}
+          </p>
+          <button
+            onClick={openEditor}
+            className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap flex-shrink-0"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            <span>{note ? 'Edit' : 'Write'}</span>
+          </button>
         </div>
       )}
 
