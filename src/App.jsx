@@ -25,6 +25,7 @@ import SettingsScreen from './screens/SettingsScreen'
 import ReviewScreen from './screens/ReviewScreen'
 import TermsScreen from './screens/TermsScreen'
 import PrivacyScreen from './screens/PrivacyScreen'
+import ResetPasswordScreen from './screens/ResetPasswordScreen'
 
 // Captured once at module load — URL params don't change during the session
 const CHECKOUT_SUCCESS = new URLSearchParams(window.location.search).get('checkout') === 'success'
@@ -325,8 +326,14 @@ export default function App() {
   // screen, and logged-in users get it instead of the dashboard.
   // Also checked BEFORE maintenance — legal content is static and
   // shouldn't go dark during app-level maintenance windows.
-  if (window.location.pathname === '/terms')   return <TermsScreen />
-  if (window.location.pathname === '/privacy') return <PrivacyScreen />
+  if (window.location.pathname === '/terms')          return <TermsScreen />
+  if (window.location.pathname === '/privacy')        return <PrivacyScreen />
+  // Password-reset completion — routed BEFORE auth/subscription gates so
+  // a user arriving from the Supabase recovery email (signed out, or with
+  // only a recovery session that shouldn't bounce into the dashboard) can
+  // actually set a new password. The screen drives supabase.auth.updateUser
+  // itself.
+  if (window.location.pathname === '/reset-password') return <ResetPasswordScreen />
 
   // Maintenance check runs BEFORE auth so a DB-toggled outage gates
   // everything including the login screen. Fail-open happens inside the
