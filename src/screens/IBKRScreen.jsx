@@ -225,12 +225,17 @@ export default function IBKRScreen({ session }) {
     }
   };
 
+  // /api/sync is now server-authoritative: it fetches IBKR, parses, persists
+  // trades + positions, clears demo rows, updates credentials, rebuilds
+  // logical_trades, all in one server-side flow. The browser just POSTs a
+  // JWT and consumes a summary response (counts + warnings). No more
+  // split-brain state if the tab dies between the response and a follow-up
+  // write. See api/sync.js for the refactor rationale.
   const handleSync = async () => {
     setSyncing(true);
     setSyncResult(null);
     setSyncError(null);
     try {
-      // Credentials are fetched server-side — just send the session JWT
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       const res = await fetch('/api/sync', {
         method: 'POST',
@@ -241,145 +246,33 @@ export default function IBKRScreen({ session }) {
       });
 
       const rawText = await res.text();
-      // Debug logs removed for production — uncomment if troubleshooting sync
-      // console.log('[sync] HTTP status:', res.status);
-      // console.log('[sync] Response body:', rawText);
-
       let result;
       try { result = JSON.parse(rawText); }
       catch {
         const msg = `HTTP ${res.status} — non-JSON response: ${rawText.slice(0, 200)}`;
-        reportSyncError('flex-fetch', new Error(msg));
+        reportSyncError('sync-response', new Error(msg));
         setSyncError(msg);
         return;
       }
 
       if (!result.success) {
-        reportSyncError('flex-fetch', new Error(result.error || `HTTP ${res.status}`));
+        reportSyncError('sync-server', new Error(result.error || `HTTP ${res.status}`));
         setSyncError(`HTTP ${res.status} — ${result.error}`);
         return;
       }
 
-      const userId = session.user.id;
-
-      // Step 3: Upsert trades
-      if (result.trades.length > 0) {
-        const tradesToUpsert = result.trades
-          .filter(t => t.ibExecID)
-          .map(t => ({
-            user_id:                userId,
-            ib_exec_id:             t.ibExecID,
-            ib_order_id:            t.ibOrderID,
-            account_id:             t.accountId,
-            conid:                  t.conid,
-            symbol:                 t.symbol,
-            asset_category:         t.assetCategory,
-            buy_sell:               t.buySell,
-            open_close_indicator:   t.openCloseIndicator,
-            quantity:               t.quantity ? parseFloat(t.quantity) : null,
-            trade_price:            t.tradePrice ? parseFloat(t.tradePrice) : null,
-            date_time:              t.dateTime,
-            net_cash:               t.netCash ? parseFloat(t.netCash) : null,
-            fifo_pnl_realized:      t.fifoPnlRealized ? parseFloat(t.fifoPnlRealized) : null,
-            ib_commission:          t.ibCommission ? parseFloat(t.ibCommission) : null,
-            ib_commission_currency: t.ibCommissionCurrency,
-            currency:               t.currency,
-            fx_rate_to_base:        t.fxRateToBase ? parseFloat(t.fxRateToBase) : 1.0,
-            transaction_type:       t.transactionType,
-            notes:                  t.notes,
-            multiplier:             t.multiplier ? parseFloat(t.multiplier) : null,
-            strike:                 t.strike ? parseFloat(t.strike) : null,
-            expiry:                 t.expiry,
-            put_call:               t.putCall,
-          }));
-
-        const { error: tradesError } = await supabase
-          .from('trades')
-          .upsert(tradesToUpsert, { onConflict: 'user_id,ib_exec_id' });
-
-        if (tradesError) {
-          const msg = reportSyncError('trades-upsert', tradesError);
-          setSyncError(`Trades save failed: ${msg}`);
-          return;
-        }
-      }
-
-      // Step 4: Replace open positions
-      await supabase.from('open_positions').delete().eq('user_id', userId);
-
-      if (result.openPositions.length > 0) {
-        const positionsToInsert = result.openPositions.map(p => ({
-          user_id:         userId,
-          account_id:      p.accountId,
-          conid:           p.conid,
-          symbol:          p.symbol,
-          asset_category:  p.assetCategory,
-          position:        p.position ? parseFloat(p.position) : null,
-          avg_cost:        p.avgCost ? parseFloat(p.avgCost) : null,
-          market_value:    p.marketValue ? parseFloat(p.marketValue) : null,
-          unrealized_pnl:  p.unrealizedPnl ? parseFloat(p.unrealizedPnl) : null,
-          currency:        p.currency,
-          fx_rate_to_base: p.fxRateToBase ? parseFloat(p.fxRateToBase) : 1.0,
-          updated_at:      new Date().toISOString(),
-        }));
-
-        const { error: positionsError } = await supabase
-          .from('open_positions')
-          .insert(positionsToInsert);
-
-        if (positionsError) {
-          const msg = reportSyncError('positions-insert', positionsError);
-          setSyncError(`Positions save failed: ${msg}`);
-          return;
-        }
-      }
-
-      // Step 5: Update last_sync_at, account_id, base_currency
-      const accountId = result.trades[0]?.accountId || result.openPositions[0]?.accountId;
-      const now = new Date().toISOString();
-      const credPayload = {
-        last_sync_at: now,
-        ...(accountId && { account_id: accountId }),
-        ...(result.baseCurrency && { base_currency: result.baseCurrency }),
-      };
-      const { error: credUpdateError } = await supabase
-        .from('user_ibkr_credentials')
-        .update(credPayload)
-        .eq('user_id', userId);
-
-      if (credUpdateError) {
-        const msg = reportSyncError('credentials-update', credUpdateError);
-        console.error('Failed to update credentials after sync:', msg);
-        setSyncError(`Credentials update failed: ${msg}`);
-        return;
-      }
-
-      setLastSyncAt(now);
-
-      // Step 6 & 7: Build logical trades + run plan matcher.
-      // `rebuildLogicalTrades` returns null on success, a string error message
-      // on failure, or `__warn__...` for non-fatal warnings (e.g. trades missing
-      // FX rate). Warnings are surfaced to the user but don't count as failures
-      // and don't go to Sentry — they're expected for new raw data.
-      let rebuildWarning = null;
-      const rebuildResult = await rebuildLogicalTrades();
-      if (rebuildResult?.startsWith('__warn__')) {
-        rebuildWarning = rebuildResult.slice(8);
-      } else if (rebuildResult) {
-        reportSyncError('logical-rebuild', new Error(rebuildResult));
-        setSyncError(`Trades synced but logical trade build failed: ${rebuildResult}`);
-        return;
-      }
-
+      // Server already updated last_sync_at; refresh local cached value and
+      // bump data versions so other screens silently refetch.
+      setLastSyncAt(new Date().toISOString());
       bump('trades', 'positions', 'ibkrCreds');
 
+      const warnings = result.rebuildWarnings || [];
       setSyncResult({
-        tradeCount: result.trades.length,
-        openPositionCount: result.openPositions.length,
-        demoCleared: result.demoCleared,
-        ...(rebuildWarning ? { warning: rebuildWarning } : {}),
+        tradeCount: result.tradeCount,
+        openPositionCount: result.openPositionCount,
+        logicalCount: result.logicalCount,
+        ...(warnings.length ? { warning: warnings.join('; ') } : {}),
       });
-
     } catch (err) {
       reportSyncError('unhandled', err);
       setSyncError(err.message);
@@ -556,17 +449,15 @@ export default function IBKRScreen({ session }) {
                   <p className="text-sm font-semibold text-green-800 mb-2">Sync successful</p>
                   <p className="text-sm text-green-700">{syncResult.tradeCount} trades saved to database</p>
                   <p className="text-sm text-green-700">{syncResult.openPositionCount} open positions updated</p>
+                  {typeof syncResult.logicalCount === 'number' && (
+                    <p className="text-sm text-green-700">{syncResult.logicalCount} logical trades rebuilt</p>
+                  )}
                   <p className="text-xs text-green-600 mt-2 italic">
                     Note: IBKR Flex Queries are batch reports — new executions typically appear 10–30 minutes after the fill, and same-day trades may only settle after 4pm ET. If a recent trade is missing, wait a bit and sync again.
                   </p>
                   {syncResult.warning && (
                     <p className="text-xs text-amber-700 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                       ⚠ {syncResult.warning}
-                    </p>
-                  )}
-                  {syncResult.demoCleared && (
-                    <p className="text-xs text-amber-700 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                      Demo data cleared — your real IBKR trades are now loaded.
                     </p>
                   )}
                 </>

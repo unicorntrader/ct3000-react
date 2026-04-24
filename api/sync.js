@@ -2,6 +2,26 @@ const https = require('https');
 const { createClient } = require('@supabase/supabase-js');
 const { captureServerError } = require('./_lib/sentry');
 const { requireActiveSubscription } = require('./_lib/requireActiveSubscription');
+const { performUserSync } = require('./_lib/performUserSync');
+
+// /api/sync is now a thin HTTP wrapper around performUserSync -- the same
+// shared core the nightly cron uses. All IBKR fetch, parse, persistence,
+// demo cleanup, credential update, and logical-trade rebuild happen
+// server-side in one flow. The browser receives only a summary
+// (counts + warnings + base currency), never raw trades to persist.
+//
+// Why it changed: the previous version returned trades/positions to the
+// browser, which then did its own upserts/deletes. A client crash, network
+// blip, or tab close between the 200 OK and the final DB write left the
+// user with partial state (credentials updated, demo cleared, but no
+// trades). The refactor makes the unit of work atomic: either the server
+// finishes everything or it reports failure.
+//
+// Test mode path (token + queryId in the body) is preserved -- during
+// initial IBKR connect, the user hasn't saved creds yet and we want to
+// verify them end-to-end before persisting. That path still fetches and
+// parses but does NOT persist; it returns the counts so the UI can show
+// "Connection works! N trades found".
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://ct3000-react.vercel.app';
 const BASE_URL = 'https://gdcdyn.interactivebrokers.com/Universal/servlet';
@@ -24,12 +44,8 @@ function httpsGet(url) {
   });
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// Extract a human-readable error from an IBKR Flex failure payload.
-// IBKR returns <Status>Fail</Status> + <ErrorCode> + <ErrorMessage> on errors.
 function extractIBKRError(xml) {
   const status = xml.match(/<Status>([^<]+)<\/Status>/)?.[1] || 'unknown';
   const errorCode = xml.match(/<ErrorCode>([^<]+)<\/ErrorCode>/)?.[1];
@@ -44,61 +60,29 @@ async function sendRequest(token, queryId) {
   const url = `${SEND_URL}?t=${token}&q=${queryId}&v=3`;
   const xml = await httpsGet(url);
   const status = xml.match(/<Status>([^<]+)<\/Status>/)?.[1];
-  if (status && status !== 'Success') {
-    throw new Error(extractIBKRError(xml));
-  }
+  if (status && status !== 'Success') throw new Error(extractIBKRError(xml));
   const refMatch = xml.match(/<ReferenceCode>(\d+)<\/ReferenceCode>/);
-  if (!refMatch) {
-    throw new Error(`IBKR sendRequest returned no ReferenceCode. Status=${status || 'unknown'}. Response snippet: ${xml.substring(0, 300)}`);
-  }
+  if (!refMatch) throw new Error(`IBKR sendRequest returned no ReferenceCode. Status=${status || 'unknown'}. Snippet: ${xml.substring(0, 300)}`);
   return refMatch[1];
 }
 
 async function getStatement(refCode, token, maxRetries = 10, waitMs = 3000) {
   const url = `${GET_URL}?q=${refCode}&t=${token}&v=3`;
-
   for (let i = 0; i < maxRetries; i++) {
     const xml = await httpsGet(url);
-
     if (xml.includes('<FlexStatementResponse')) {
-      const statusMatch = xml.match(/<Status>([^<]+)<\/Status>/);
-      const status = statusMatch?.[1];
-
-      if (status === 'Success' || status === 'Complete') {
-        return xml;
-      }
-
-      // Non-success response with Warn status = still processing; keep polling.
-      // Any other status (Fail, etc.) is terminal -- surface it immediately.
-      if (status && status !== 'Warn') {
-        throw new Error(extractIBKRError(xml));
-      }
-
-      console.log(`Attempt ${i + 1}: Status=${status}, waiting...`);
+      const status = xml.match(/<Status>([^<]+)<\/Status>/)?.[1];
+      if (status === 'Success' || status === 'Complete') return xml;
+      if (status && status !== 'Warn') throw new Error(extractIBKRError(xml));
       await sleep(waitMs);
       continue;
     }
-
-    if (xml.includes('<FlexQueryResponse') || xml.includes('<FlexStatement ')) {
-      return xml;
-    }
-
+    if (xml.includes('<FlexQueryResponse') || xml.includes('<FlexStatement ')) return xml;
     throw new Error(`Unexpected response on attempt ${i + 1}: ${xml.substring(0, 300)}`);
   }
-
   throw new Error(`Timed out waiting for IBKR statement after ${maxRetries} attempts (${(maxRetries * waitMs) / 1000}s)`);
 }
 
-function parseBaseCurrency(xml) {
-  const m = xml.match(/<AccountInformation[^>]+currency="([^"]+)"/);
-  return m ? m[1] : null;
-}
-
-// Read the Flex Query's configured window from the <FlexStatement> header.
-// IBKR emits e.g. <FlexStatement accountId="..." fromDate="20260318" toDate="20260418" ...>
-// Returns { fromDate, toDate, days } or null if the attributes aren't present.
-// Used to reject queries wider than our product contract (30 days) up front
-// with a clear error, instead of silently filtering trades after the fact.
 function parseFlexPeriod(xml) {
   const stmt = xml.match(/<FlexStatement\s[^>]+>/);
   if (!stmt) return null;
@@ -112,95 +96,20 @@ function parseFlexPeriod(xml) {
   return { fromDate: isoFrom, toDate: isoTo, days };
 }
 
-// IBKR emits trade timestamps in a compact "YYYYMMDD;HHMMSS" format.
-// Convert to 19-char ISO "YYYY-MM-DDTHH:MM:SS" here at parse time so:
-//   - downstream code (builders, UI) deals in one format, not two
-//   - trades.date_time is ready to be migrated from varchar(20) to timestamptz
-//     without breaking old rows
-// 19 chars fits the current varchar(20) column; the USING clause on the
-// migration will coerce any historical rows still in IBKR compact format.
-function ibkrDateToIso(dt) {
-  if (!dt) return null;
-  const [date, time] = dt.split(';');
-  if (!date || date.length < 8) return null;
-  const d = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
-  const t = (time && time.length >= 6)
-    ? `${time.slice(0, 2)}:${time.slice(2, 4)}:${time.slice(4, 6)}`
-    : '00:00:00';
-  return `${d}T${t}`;
-}
-
-function parseTrades(xml) {
-  const trades = [];
-  const tradeRegex = /<Trade\s([^>]+)\/>/g;
-  let match;
-  while ((match = tradeRegex.exec(xml)) !== null) {
-    const attrs = match[1];
-    const get = (field) => {
-      const m = attrs.match(new RegExp(`${field}="([^"]*)"`));
-      return m ? m[1] : null;
-    };
-    trades.push({
-      ibExecID:             get('ibExecID'),
-      ibOrderID:            get('ibOrderID'),
-      accountId:            get('accountId'),
-      conid:                get('conid'),
-      symbol:               get('symbol'),
-      assetCategory:        get('assetCategory'),
-      buySell:              get('buySell'),
-      openCloseIndicator:   get('openCloseIndicator'),
-      quantity:             get('quantity'),
-      tradePrice:           get('tradePrice'),
-      dateTime:             ibkrDateToIso(get('dateTime')),
-      netCash:              get('netCash'),
-      fifoPnlRealized:      get('fifoPnlRealized'),
-      ibCommission:         get('ibCommission'),
-      ibCommissionCurrency: get('ibCommissionCurrency'),
-      currency:             get('currency'),
-      fxRateToBase:         get('fxRateToBase'),
-      transactionType:      get('transactionType'),
-      notes:                get('notes'),
-      multiplier:           get('multiplier'),
-      strike:               get('strike'),
-      expiry:               get('expiry'),
-      putCall:              get('putCall'),
-    });
-  }
-  return trades;
-}
-
-function parseOpenPositions(xml) {
-  const positions = [];
-  const posRegex = /<OpenPosition\s([^>]+)\/>/g;
-  let match;
-  while ((match = posRegex.exec(xml)) !== null) {
-    const attrs = match[1];
-    const get = (field) => {
-      const m = attrs.match(new RegExp(`${field}="([^"]*)"`));
-      return m ? m[1] : null;
-    };
-    positions.push({
-      accountId:     get('accountId'),
-      conid:         get('conid'),
-      symbol:        get('symbol'),
-      assetCategory: get('assetCategory'),
-      position:      get('position'),
-      avgCost:       get('avgCost') || get('openPrice'),
-      marketValue:   get('marketValue') || get('positionValue'),
-      unrealizedPnl: get('unrealizedPnl') || get('fifoPnlUnrealized'),
-      currency:      get('currency'),
-      fxRateToBase:  get('fxRateToBase'),
-    });
-  }
-  return positions;
+// Count trades + positions in the XML for the test-mode response without
+// replicating the full parser. Matches the regex shape performUserSync
+// uses so counts agree across paths.
+function countEntities(xml) {
+  const tradeCount = (xml.match(/<Trade\s[^>]+\/>/g) || []).length;
+  const positionCount = (xml.match(/<OpenPosition\s[^>]+\/>/g) || []).length;
+  const baseCurrency = xml.match(/<AccountInformation[^>]+currency="([^"]+)"/)?.[1] || null;
+  return { tradeCount, positionCount, baseCurrency };
 }
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  console.log('[sync] method:', req.method, '| origin:', req.headers.origin, '| host:', req.headers.host);
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: `Method not allowed: ${req.method}` });
@@ -218,114 +127,82 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 
-  // Paywall gate. App.jsx already blocks the UI for inactive subscriptions,
-  // but a direct POST here with a still-valid JWT would bypass that. Mirror
-  // the isActive() logic server-side so expired trials and cancelled subs
-  // cannot keep consuming IBKR quota + our compute.
+  // Paywall gate. App.jsx blocks the UI for inactive subscriptions, but a
+  // direct POST here with a still-valid JWT would bypass that. Mirror the
+  // isActive() logic server-side.
   const sub = await requireActiveSubscription(user.id, supabaseAdmin);
   if (!sub.ok) {
     console.log('[sync] blocked — subscription:', sub.reason, 'userId:', user.id);
     return res.status(402).json({ success: false, error: sub.reason });
   }
 
-  // Resolve IBKR credentials:
-  // - Test mode: token + queryId supplied in request body (before they are saved)
-  // - Normal sync: look up from DB server-side (token never sent to client)
-  let token, queryId;
   const body = req.body || {};
-
-  if (body.token && body.queryId) {
-    token = body.token;
-    queryId = body.queryId;
-  } else {
-    const { data: creds, error: credsError } = await supabaseAdmin
-      .from('user_ibkr_credentials')
-      .select('ibkr_token, query_id_30d')
-      .eq('user_id', user.id)
-      .single();
-
-    if (credsError || !creds) {
-      return res.status(400).json({ error: 'No IBKR credentials found. Please connect your account first.' });
-    }
-    token = creds.ibkr_token;
-    queryId = creds.query_id_30d;
-  }
-
-  if (!token || !queryId) {
-    return res.status(400).json({ error: 'Missing token or queryId.' });
-  }
+  const isTestMode = !!(body.token && body.queryId);
 
   try {
-    console.log('[sync] Step 1: Sending request to IBKR for user:', user.id);
-    const refCode = await sendRequest(token, queryId);
-    console.log('[sync] Reference code:', refCode);
+    // ── Test mode: verify user-supplied credentials against IBKR without
+    //    persisting. Used during initial connect -- the UI hasn't stored
+    //    the token in user_ibkr_credentials yet.
+    if (isTestMode) {
+      console.log('[sync] test mode — userId:', user.id);
+      const refCode = await sendRequest(body.token, body.queryId);
+      const xml = await getStatement(refCode, body.token);
 
-    console.log('[sync] Step 2: Fetching statement...');
-    const xml = await getStatement(refCode, token);
-    console.log('[sync] XML length:', xml.length);
-
-    console.log('[sync] Step 3: Parsing...');
-
-    // Our product contract is a rolling 30-day sync. Read fromDate/toDate
-    // from the <FlexStatement> header and reject anything wider. Buffer of
-    // 5 days accounts for IBKR's inclusive/exclusive counting — a correctly
-    // configured "Last 30 Calendar Days" query reports 30-31 days. If the
-    // header is missing we reject too: we'd rather fail loud than ship bad
-    // data on a silently-broken parser.
-    const MAX_PERIOD_DAYS = 35;
-    const period = parseFlexPeriod(xml);
-    if (!period) {
-      // SUPPORT EMAIL: update when support@cotraderapp.com mailbox is live.
-      const msg = 'Could not read the Flex Query window from IBKR\'s response (no fromDate/toDate on the <FlexStatement> header). ' +
-        'This usually means an unexpected XML format — please email thinker@philoinvestor.com with your Flex Query ID.';
-      console.log('[sync] rejected: could not parse Flex period from header');
-      return res.status(400).json({ success: false, error: msg });
+      const MAX_PERIOD_DAYS = 35;
+      const period = parseFlexPeriod(xml);
+      if (!period) {
+        return res.status(400).json({
+          success: false,
+          error: 'Could not read the Flex Query window from IBKRs response (no fromDate/toDate on the <FlexStatement> header). Please email support with your Flex Query ID.',
+        });
+      }
+      if (period.days > MAX_PERIOD_DAYS) {
+        return res.status(400).json({
+          success: false,
+          error: `Your IBKR Flex Query covers ${period.days} days (${period.fromDate} → ${period.toDate}). CT3000 syncs a rolling 30-day window. Please reconfigure your Flex Query to "Last 30 Calendar Days" and sync again.`,
+          flexPeriodDays: period.days,
+        });
+      }
+      const counts = countEntities(xml);
+      return res.status(200).json({
+        success: true,
+        mode: 'test',
+        tradeCount: counts.tradeCount,
+        openPositionCount: counts.positionCount,
+        baseCurrency: counts.baseCurrency,
+      });
     }
-    if (period.days > MAX_PERIOD_DAYS) {
-      const msg = `Your IBKR Flex Query covers ${period.days} days (${period.fromDate} → ${period.toDate}). ` +
-        `CT3000 syncs a rolling 30-day window. Please reconfigure your Flex Query in IBKR to ` +
-        `"Last 30 Calendar Days" (Flex Queries → edit → Period) and sync again.`;
-      console.log('[sync] rejected: flex period too long —', period.days, 'days');
-      return res.status(400).json({ success: false, error: msg, flexPeriodDays: period.days });
-    }
-    console.log(`[sync] Flex period: ${period.fromDate} → ${period.toDate} (${period.days} days)`);
 
-    const trades = parseTrades(xml);
-    const openPositions = parseOpenPositions(xml);
-    const baseCurrency = parseBaseCurrency(xml);
-
-    const acctInfoSnippet = xml.match(/<AccountInformation[^>]{0,200}/)?.[0] || 'NO <AccountInformation> TAG FOUND';
-    console.log('[sync] AccountInformation snippet:', acctInfoSnippet);
-    console.log(`[sync] Parsed ${trades.length} trades, ${openPositions.length} open positions, baseCurrency=${baseCurrency}`);
-
-    // Clear demo data and mark ibkr_connected before returning
-    const [ltDel, posDel, planDel, pbDel] = await Promise.all([
-      supabaseAdmin.from('logical_trades').delete().eq('user_id', user.id).eq('is_demo', true),
-      supabaseAdmin.from('open_positions').delete().eq('user_id', user.id).eq('is_demo', true),
-      supabaseAdmin.from('planned_trades').delete().eq('user_id', user.id).eq('is_demo', true),
-      supabaseAdmin.from('playbooks').delete().eq('user_id', user.id).eq('is_demo', true),
-    ]);
-    await supabaseAdmin
-      .from('user_subscriptions')
-      .update({ ibkr_connected: true })
-      .eq('user_id', user.id);
-
-    const demoCleared = ![ltDel, posDel, planDel, pbDel].some(r => r.error);
-    console.log('[sync] demo rows cleared, ibkr_connected set');
-
+    // ── Normal sync: server-authoritative. performUserSync reads the stored
+    //    IBKR credentials via service_role, fetches Flex, parses, upserts
+    //    trades, replaces open_positions, clears demo rows, sets
+    //    ibkr_connected, updates last_sync_at, and rebuilds logical_trades.
+    //    Everything happens server-side; a browser disconnect after the
+    //    response does not leave the DB half-written.
+    console.log('[sync] normal sync — userId:', user.id);
+    const result = await performUserSync(user.id, supabaseAdmin);
     return res.status(200).json({
       success: true,
-      tradeCount: trades.length,
-      openPositionCount: openPositions.length,
-      trades,
-      openPositions,
-      baseCurrency,
-      demoCleared,
+      mode: 'sync',
+      tradeCount: result.tradeCount,
+      openPositionCount: result.positionCount,
+      logicalCount: result.logicalCount,
+      rebuildWarnings: result.rebuildWarnings || [],
     });
-
   } catch (err) {
     console.error('[sync] error:', err.message);
-    await captureServerError(err, { userId: user?.id, route: 'sync' });
+    await captureServerError(err, { userId: user?.id, route: 'sync', mode: isTestMode ? 'test' : 'sync' });
+    // Record failure state for the UI to surface on non-test flows. Test
+    // mode fails loudly but doesn't dirty the credentials row.
+    if (!isTestMode && user?.id) {
+      await supabaseAdmin
+        .from('user_ibkr_credentials')
+        .update({
+          last_sync_error: (err.message || '').slice(0, 500),
+          last_sync_failed_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id);
+    }
     return res.status(500).json({ success: false, error: err.message });
   }
 };
