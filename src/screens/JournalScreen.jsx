@@ -874,14 +874,14 @@ export default function JournalScreen({ session }) {
                       <td className="hidden md:table-cell px-6 py-4">
                         {isOpen ? null : trade.review_notes ? (
                           <span
-                            className="inline-flex items-center gap-1.5 text-xs text-green-600 font-medium"
+                            className="inline-flex items-center gap-1.5 text-xs text-green-600 font-medium whitespace-nowrap"
                             title={trade.review_notes}
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
                             Journalled
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                          <span className="inline-flex items-center gap-1.5 text-xs text-gray-400 whitespace-nowrap">
                             <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block" />
                             Add notes
                           </span>
