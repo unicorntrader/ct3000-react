@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
-import { pnlBase, fmtPrice, fmtPnl, fmtSymbol } from '../lib/formatters';
+import { fmtPrice, fmtPnl, fmtSymbol } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import { useDataVersion, useInitialLoadTracker, useBumpDataVersion } from '../lib/DataVersionContext';
 import PrivacyValue from '../components/PrivacyValue';
@@ -49,66 +49,17 @@ const parseTradeTime = (dt) => {
   return isNaN(ms) ? null : ms;
 };
 
-const calcDuration = (openedAt, closedAt) => {
-  // Open position: we know when it opened but not when (or if) it closes.
-  // Show "Open" instead of "—" so the trader does not have to cross-check
-  // the Exit column to realise the trade is still live.
-  if (openedAt && !closedAt) return 'Open';
-  if (!openedAt || !closedAt) return '—';
-  const diffMs = new Date(closedAt) - new Date(openedAt);
-  if (diffMs < 0) return '—';
-  const hours = diffMs / (1000 * 60 * 60);
-  if (hours < 1) return 'Intraday';
-  if (hours < 24) return 'Day';
-  return 'Swing';
-};
-
-// Build exit price map + set of order IDs that have real opening trades.
-const buildExitInfo = (logicalTrades, rawTrades) => {
-  const closing = rawTrades
-    .filter(t => (t.open_close_indicator || '').includes('C'))
-    .map(t => ({ ...t, _ms: parseTradeTime(t.date_time) }))
-    .filter(t => t._ms != null);
-
-  const exitMap = {};
-  for (const lt of logicalTrades) {
-    if (lt.status !== 'closed') continue;
-    const opp = lt.direction === 'LONG' ? 'SELL' : 'BUY';
-    const startMs = lt.opened_at ? new Date(lt.opened_at).getTime() : 0;
-    const endMs   = lt.closed_at ? new Date(lt.closed_at).getTime() : Infinity;
-    const matches = closing.filter(t =>
-      t.symbol === lt.symbol &&
-      t.buy_sell === opp &&
-      t._ms >= startMs &&
-      t._ms <= endMs
-    );
-    if (matches.length === 0) continue;
-    const totalQty = matches.reduce((s, t) => s + Math.abs(parseFloat(t.quantity) || 0), 0);
-    const totalVal = matches.reduce((s, t) =>
-      s + Math.abs(parseFloat(t.quantity) || 0) * (parseFloat(t.trade_price) || 0), 0);
-    if (totalQty > 0) exitMap[lt.id] = totalVal / totalQty;
+// Weighted average price across a set of fills.
+const weightedAvg = (fills) => {
+  let qty = 0;
+  let val = 0;
+  for (const f of fills) {
+    const q = Math.abs(parseFloat(f.quantity) || 0);
+    const p = parseFloat(f.trade_price) || 0;
+    qty += q;
+    val += q * p;
   }
-
-  const openOrderIds = new Set(
-    rawTrades
-      .filter(t => (t.open_close_indicator || '').includes('O'))
-      .map(t => t.ib_order_id)
-      .filter(Boolean)
-  );
-
-  return { exitMap, openOrderIds };
-};
-
-const getDisplayPrices = (trade, exitMap, openOrderIds) => {
-  if (trade.status === 'open') {
-    return { entry: trade.avg_entry_price, exit: null, isOrphan: false };
-  }
-  const exitFromRaw = exitMap[trade.id] ?? null;
-  const isOrphan = !openOrderIds.has(trade.opening_ib_order_id);
-  if (isOrphan) {
-    return { entry: null, exit: exitFromRaw, isOrphan: true };
-  }
-  return { entry: trade.avg_entry_price, exit: exitFromRaw, isOrphan: false };
+  return qty > 0 ? val / qty : null;
 };
 
 function AssetBadge({ category }) {
@@ -125,14 +76,14 @@ function AssetBadge({ category }) {
   return <span className="inline-flex items-center justify-center h-6 px-1 rounded text-xs font-bold bg-gray-100 text-gray-500">{label}</span>;
 }
 
-const COL_SPAN = 11; // TYPE SYMBOL DIR ENTRY EXIT QTY DURATION P&L STATUS share chevron
+const COL_SPAN = 9; // TYPE SYMBOL DIR BOUGHT SOLD P&L STATUS share chevron
 
-function ExecSubTable({ execs, orphanQty = 0, orphanSide = null }) {
-  if ((!execs || execs.length === 0) && orphanQty === 0) {
+function ExecSubTable({ execs }) {
+  if (!execs || execs.length === 0) {
     return (
       <tr>
         <td colSpan={COL_SPAN} className="px-6 py-3 bg-gray-50 border-t border-gray-100">
-          <p className="text-xs text-gray-400 italic pl-6">No raw executions found for this trade.</p>
+          <p className="text-xs text-gray-400 italic pl-6">No raw executions found for this day.</p>
         </td>
       </tr>
     );
@@ -151,23 +102,7 @@ function ExecSubTable({ execs, orphanQty = 0, orphanSide = null }) {
               </tr>
             </thead>
             <tbody>
-              {orphanQty > 0 && (
-                // Synthetic row for the pre-window portion. Not a real execution
-                // (we don't have it in the trades table), so styled muted + italic
-                // and labelled with "Before window" instead of a timestamp.
-                <tr className="border-t border-gray-100 first:border-0 bg-amber-50/40">
-                  <td className="py-1.5 pr-3 text-xs text-amber-700 italic">Before window</td>
-                  <td className="py-1.5 pr-3 text-xs text-gray-400 italic">—</td>
-                  <td className="py-1.5 pr-3 text-xs text-gray-700 italic"><PrivacyValue value={Math.round(orphanQty).toLocaleString()} /></td>
-                  <td className="py-1.5 pr-3">
-                    <span className={`text-xs font-medium px-1.5 py-0.5 rounded italic ${orphanSide === 'BUY' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
-                      {orphanSide || '—'}
-                    </span>
-                  </td>
-                  <td className="py-1.5 text-xs text-gray-400 italic">—</td>
-                </tr>
-              )}
-              {(execs || []).map((ex, i) => {
+              {execs.map((ex, i) => {
                 const time = ex._ms != null
                   ? new Date(ex._ms).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
                   : '—';
@@ -197,7 +132,7 @@ function ExecSubTable({ execs, orphanQty = 0, orphanSide = null }) {
 }
 
 
-function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, baseCurrency = 'USD', userId, onReviewOpen }) {
+function DayBlock({ day, plannedTradesMap = {}, baseCurrency = 'USD', userId, onReviewOpen }) {
   const [note, setNote] = useState(day.note);
   const [editingNote, setEditingNote] = useState(false);
   const [noteInput, setNoteInput] = useState(day.note || '');
@@ -241,20 +176,6 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
     setNote(trimmed);
     setJournalInput('');
     await persistNote(trimmed);
-  };
-
-  // Get all executions for a logical trade by conid + date window
-  const getExecs = (row) => {
-    const { conid, openedAt, closedAt } = row;
-    if (!conid) return [];
-    const startMs = openedAt ? new Date(openedAt).getTime() : 0;
-    const endMs = closedAt ? new Date(closedAt).getTime() : Date.now();
-    return rawTradesWithIso.filter(t =>
-      t.conid === conid &&
-      t._ms != null &&
-      t._ms >= startMs &&
-      t._ms <= endMs
-    );
   };
 
   return (
@@ -329,25 +250,23 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
       <div className="overflow-x-auto">
         {/* table-fixed + per-column widths: without these, each day block's
             table auto-sizes columns to its own content, so a day with
-            "NVDA 160P 6 Apr" in the Symbol column pushes Duration / P&L /
-            Status to different x-offsets than a day with just "NVDA". The
-            Symbol column is intentionally left unwidthed so it flexes to
-            soak up remaining space; everything else is pinned. */}
+            "NVDA 160P 6 Apr" in the Symbol column pushes P&L / Status to
+            different x-offsets than a day with just "NVDA". The Symbol
+            column is intentionally left unwidthed so it flexes to soak up
+            remaining space; everything else is pinned. */}
         <table className="w-full table-fixed">
           <thead className="bg-gray-50">
             <tr>
               {[
-                { label: 'Type',     hide: true,  w: 'w-14' },
-                { label: 'Symbol',   hide: false, w: ''      },
-                { label: 'Dir',      hide: false, w: 'w-20' },
-                { label: 'Entry',    hide: true,  w: 'w-24' },
-                { label: 'Exit',     hide: true,  w: 'w-24' },
-                { label: 'Qty',      hide: true,  w: 'w-20' },
-                { label: 'Duration', hide: true,  w: 'w-24' },
-                { label: 'P&L',      hide: false, w: 'w-28' },
-                { label: 'Status',   hide: false, w: 'w-36' },
-                { label: '',         hide: true,  w: 'w-12' },
-                { label: '',         hide: false, w: 'w-10' },
+                { label: 'Type',   hide: true,  w: 'w-14' },
+                { label: 'Symbol', hide: false, w: ''      },
+                { label: 'Dir',    hide: false, w: 'w-20' },
+                { label: 'Bought', hide: true,  w: 'w-40' },
+                { label: 'Sold',   hide: true,  w: 'w-40' },
+                { label: 'P&L',    hide: false, w: 'w-28' },
+                { label: 'Status', hide: false, w: 'w-36' },
+                { label: '',       hide: true,  w: 'w-12' },
+                { label: '',       hide: false, w: 'w-10' },
               ].map((col, i) => (
                 <th key={i} className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${col.hide ? 'hidden sm:table-cell' : ''} ${col.w}`}>{col.label}</th>
               ))}
@@ -359,10 +278,17 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
               // were auto-resolved (no plan candidates existed).
               const needsAction = row.status === 'needs_review';
               const isExpanded = expandedRows.has(row.id);
-              const execs = getExecs(row);
               const isFX = row.assetCategory === 'FXCFD' || row.assetCategory === 'CASH';
-              const rowPnl = isFX ? row.pnl : row.nativePnl;
+              const rowPnl = isFX ? row.realizedPnlBase : row.realizedPnlNative;
               const rowPnlCurrency = isFX ? baseCurrency : row.currency;
+              const hasRealized = row.hasClosesToday;
+
+              const boughtCell = row.buyQty > 0
+                ? <><PrivacyValue value={Math.round(row.buyQty).toLocaleString()} /> @ {fmtPrice(row.buyAvgPrice, row.currency)}</>
+                : '—';
+              const soldCell = row.sellQty > 0
+                ? <><PrivacyValue value={Math.round(row.sellQty).toLocaleString()} /> @ {fmtPrice(row.sellAvgPrice, row.currency)}</>
+                : '—';
 
               return (
                 <React.Fragment key={row.id}>
@@ -375,16 +301,10 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     </td>
                     <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{fmtSymbol({ symbol: row.symbol, asset_category: row.assetCategory })}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
-                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
-                      {fmtPrice(row.entry, row.currency)}
-                    </td>
-                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
-                      {row.tradeStatus === 'open' ? '—' : fmtPrice(row.exit, row.currency)}
-                    </td>
-                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900"><PrivacyValue value={row.qty != null ? Number(row.qty).toLocaleString() : '—'} /></td>
-                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-500">{row.duration}</td>
-                    <td className={`px-4 py-3.5 text-sm font-medium ${(rowPnl || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {row.tradeStatus === 'open' ? '—' : <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency, 0)} />}
+                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">{boughtCell}</td>
+                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">{soldCell}</td>
+                    <td className={`px-4 py-3.5 text-sm font-medium ${hasRealized ? ((rowPnl || 0) >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'}`}>
+                      {hasRealized ? <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency, 0)} /> : '—'}
                     </td>
                     <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center space-x-2">
@@ -402,7 +322,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                       </div>
                     </td>
                     <td className="hidden sm:table-cell px-2 py-3.5" onClick={e => e.stopPropagation()}>
-                      {row.tradeStatus === 'closed' && (
+                      {row.isCloseDay && (
                         <button
                           onClick={(e) => { e.stopPropagation(); setShareRow(row); }}
                           title="Share on X"
@@ -424,27 +344,14 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     </td>
                   </tr>
 
-                  {isExpanded && (() => {
-                    // If row.qty (total opening quantity on the logical trade)
-                    // is larger than what we see from in-window SELL/BUY opens,
-                    // the delta is pre-window -- show it as a synthetic row so
-                    // the user understands where the missing shares came from.
-                    const openQty = execs
-                      .filter(e => (e.open_close_indicator || '').includes('O'))
-                      .reduce((s, e) => s + Math.abs(parseFloat(e.quantity) || 0), 0);
-                    const orphanQty = Math.max(0, (row.qty || 0) - openQty);
-                    const orphanSide = row.direction === 'LONG' ? 'BUY'
-                                     : row.direction === 'SHORT' ? 'SELL'
-                                     : null;
-                    return <ExecSubTable execs={execs} orphanQty={orphanQty} orphanSide={orphanSide} />;
-                  })()}
+                  {isExpanded && <ExecSubTable execs={row.fills} />}
 
                   {needsAction && openResolve === row.id && (
                     <tr className="bg-amber-50">
                       <td colSpan={COL_SPAN} className="px-6 py-3">
                         <div className="bg-white rounded-xl p-4 border border-purple-200">
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                            Resolve {fmtSymbol({ symbol: row.symbol, asset_category: row.assetCategory })} &middot; <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency, 0)} />
+                            Resolve {fmtSymbol({ symbol: row.symbol, asset_category: row.assetCategory })}
                           </p>
                           <p className="text-sm text-gray-500 mb-3">
                             Multiple plans matched this trade. Open the Review wizard to pick one.
@@ -485,14 +392,32 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
         </div>
       )}
 
-      {shareRow && (
-        <ShareModal
-          row={shareRow}
-          plannedStop={plannedTradesMap[shareRow.plannedTradeId]?.planned_stop_loss ?? null}
-          baseCurrency={baseCurrency}
-          onClose={() => setShareRow(null)}
-        />
-      )}
+      {shareRow && (() => {
+        // ShareModal renders a whole closed trade's P&L, entry/exit, qty, etc.
+        // A day-row only holds that day's activity -- when the user hits
+        // Share on the close-day row, synthesize the LT-level fields
+        // ShareModal expects (entry, exit, qty, closingQty, nativePnl).
+        const lt = shareRow.parentLt;
+        const shareShape = {
+          symbol: lt.symbol,
+          direction: lt.direction,
+          assetCategory: lt.asset_category,
+          currency: lt.currency,
+          entry: lt.avg_entry_price ?? null,
+          exit: lt.avg_exit_price ?? null,
+          qty: lt.total_opening_quantity ?? null,
+          closingQty: lt.total_closing_quantity ?? null,
+          nativePnl: lt.total_realized_pnl,
+        };
+        return (
+          <ShareModal
+            row={shareShape}
+            plannedStop={plannedTradesMap[lt.planned_trade_id]?.planned_stop_loss ?? null}
+            baseCurrency={baseCurrency}
+            onClose={() => setShareRow(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -504,6 +429,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
   const baseCurrency = useBaseCurrency();
   const [trades, setTrades] = useState([]);
   const [rawTrades, setRawTrades] = useState([]);
+  const [tradeToLt, setTradeToLt] = useState({});
   const [plannedTradesMap, setPlannedTradesMap] = useState({});
   const [dailyNotes, setDailyNotes] = useState({});
   const [loading, setLoading] = useState(true);
@@ -524,7 +450,6 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
   // Cross-screen data invalidation — refetch silently when watched tables
   // are mutated elsewhere. See lib/DataVersionContext for the key map.
   const [tradesV, notesV] = useDataVersion('trades', 'notes');
-  const bump = useBumpDataVersion();
   const loadTracker = useInitialLoadTracker(reloadKey);
 
   useEffect(() => {
@@ -545,14 +470,13 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
             .from('logical_trades')
             .select('*')
             .eq('user_id', userId)
-            // Include a trade if it was opened OR closed within the window.
-            // Matters for (a) trades that opened months ago but closed in-window
-            // and (b) orphan trades with opened_at=null (pre-window opens).
-            .or(`opened_at.gte.${isoDate},closed_at.gte.${isoDate}`)
+            // Fetch (a) any LT active now (so scale-ins on an old open position
+            // are linkable) and (b) any LT whose open OR close falls in window.
+            .or(`status.eq.open,opened_at.gte.${isoDate},closed_at.gte.${isoDate}`)
             .order('opened_at', { ascending: false, nullsFirst: false }),
           supabase
             .from('trades')
-            .select('ib_exec_id, ib_order_id, conid, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, ib_commission_currency, currency')
+            .select('id, ib_exec_id, ib_order_id, conid, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, ib_commission_currency, currency, fifo_pnl_realized')
             .eq('user_id', userId)
             .gte('date_time', ibkrDate),
           supabase
@@ -569,8 +493,35 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
         if (rawRes.error) throw rawRes.error;
         if (plansRes.error) throw plansRes.error;
         if (notesRes.error) throw notesRes.error;
+
+        // Second round: resolve which LT each raw trade belongs to. The join
+        // table is RLS-scoped via logical_trades.user_id so no .eq('user_id')
+        // is needed (and there isn't one to filter on anyway).
+        const tradeIds = (rawRes.data || []).map(t => t.id).filter(Boolean);
+        let lteRows = [];
+        if (tradeIds.length > 0) {
+          const lteRes = await supabase
+            .from('logical_trade_executions')
+            .select('trade_id, logical_trade_id, quantity_applied')
+            .in('trade_id', tradeIds);
+          if (lteRes.error) throw lteRes.error;
+          lteRows = lteRes.data || [];
+        }
+        // A single trade can map to multiple LTs (the rare "flip" case: one
+        // sell closes LT_A and opens LT_B). Attribute the trade to whichever
+        // LT has the largest quantity_applied -- good enough for the 99% case.
+        const perTrade = {};
+        for (const lte of lteRows) {
+          const prev = perTrade[lte.trade_id];
+          const q = parseFloat(lte.quantity_applied) || 0;
+          if (!prev || q > prev.q) perTrade[lte.trade_id] = { ltId: lte.logical_trade_id, q };
+        }
+        const tToLt = {};
+        for (const [tradeId, entry] of Object.entries(perTrade)) tToLt[tradeId] = entry.ltId;
+
         setTrades(logicalRes.data || []);
         setRawTrades(rawRes.data || []);
+        setTradeToLt(tToLt);
         const map = {};
         for (const p of (plansRes.data || [])) map[p.id] = p;
         setPlannedTradesMap(map);
@@ -594,39 +545,11 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
     load();
   }, [userId, refreshKey, dvWindow, reloadKey, tradesV, notesV]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleResolve = async (tradeId, newStatus) => {
-    // .eq('user_id') on the update so RLS + service-side filter both agree.
-    // The previous version fired-and-forgot without checking for errors;
-    // that meant a failed update would silently leave the UI optimistically
-    // updated while the row on the server was unchanged.
-    const { error } = await supabase
-      .from('logical_trades')
-      .update({ matching_status: newStatus })
-      .eq('id', tradeId)
-      .eq('user_id', userId);
-    if (error) {
-      console.error('[daily] resolve failed:', error.message);
-      Sentry.withScope((scope) => {
-        scope.setTag('screen', 'daily');
-        scope.setTag('step', 'resolve-trade');
-        Sentry.captureException(error);
-      });
-      alert(`Could not update trade: ${error.message}`);
-      return;
-    }
-    setTrades(prev => prev.map(t => t.id === tradeId ? { ...t, matching_status: newStatus } : t));
-    // Bump trades so Home pipeline count, Journal filters, Performance
-    // stats, and Review queue all silently refresh next time they're shown.
-    bump('trades');
-  };
-
-  const { exitMap, openOrderIds } = useMemo(() => buildExitInfo(trades, rawTrades), [trades, rawTrades]);
-
-  // Pre-parse all raw trade timestamps once; passed to DayBlock for exec drill-down
-  const rawTradesWithIso = useMemo(() =>
-    rawTrades.map(t => ({ ...t, _ms: parseTradeTime(t.date_time) })),
-    [rawTrades]
-  );
+  const ltById = useMemo(() => {
+    const m = {};
+    for (const t of trades) m[t.id] = t;
+    return m;
+  }, [trades]);
 
   const days = useMemo(() => {
     const assetMatch = (cat) => {
@@ -635,55 +558,92 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
       if (cat === 'FXCFD' || cat === 'CASH') return assetFilters.FX;
       return true;
     };
-    const filtered = trades.filter(t =>
-      (!search || t.symbol?.toLowerCase().includes(search.toLowerCase())) &&
-      assetMatch(t.asset_category)
-    );
 
-
-    const grouped = new Map();
-    for (const t of filtered) {
-      const anchor = (t.status === 'closed' ? t.closed_at : t.opened_at) || t.opened_at;
-      if (!anchor) continue;
-      const dateKey = anchor.slice(0, 10);
-      if (!grouped.has(dateKey)) grouped.set(dateKey, []);
-      grouped.get(dateKey).push(t);
+    // Build (ltId, dateKey) groups from raw trades. Each group = one day-row:
+    // all of the user's activity on that LT on that day.
+    const groups = new Map();
+    for (const t of rawTrades) {
+      const ltId = tradeToLt[t.id];
+      if (!ltId) continue;
+      const lt = ltById[ltId];
+      if (!lt) continue;
+      if (!assetMatch(lt.asset_category)) continue;
+      if (search && !(lt.symbol || '').toLowerCase().includes(search.toLowerCase())) continue;
+      const ms = parseTradeTime(t.date_time);
+      if (ms == null) continue;
+      const dateKey = new Date(ms).toISOString().slice(0, 10);
+      const key = `${ltId}|${dateKey}`;
+      let g = groups.get(key);
+      if (!g) {
+        g = { ltId, dateKey, lt, fills: [] };
+        groups.set(key, g);
+      }
+      g.fills.push({ ...t, _ms: ms });
     }
 
-    let result = Array.from(grouped.entries()).map(([dateKey, dayTrades]) => {
-      const closed = dayTrades.filter(t => t.status === 'closed');
-      const wins = closed.filter(t => pnlBase(t) > 0).length;
-      const losses = closed.filter(t => pnlBase(t) <= 0).length;
-      const totalPnl = closed.reduce((sum, t) => sum + pnlBase(t), 0);
-      const needsReview = dayTrades.filter(t => t.matching_status === 'needs_review').length;
+    // Materialise each group into a day-row.
+    const rowsByDate = new Map();
+    for (const g of groups.values()) {
+      const { lt, fills, dateKey } = g;
+      fills.sort((a, b) => a._ms - b._ms);
+      const buys  = fills.filter(f => f.buy_sell === 'BUY');
+      const sells = fills.filter(f => f.buy_sell === 'SELL');
+      const buyQty  = buys.reduce((s, f) => s + Math.abs(parseFloat(f.quantity) || 0), 0);
+      const sellQty = sells.reduce((s, f) => s + Math.abs(parseFloat(f.quantity) || 0), 0);
+      // Realised P&L = sum of fifo_pnl_realized on closing fills today.
+      // Closing = opposite side of the LT's direction (SELL for LONG, BUY for
+      // SHORT). open_close_indicator from IBKR is also checked for safety.
+      const closingFills = fills.filter(f => (f.open_close_indicator || '').includes('C'));
+      const realizedPnlNative = closingFills.reduce((s, f) => s + (parseFloat(f.fifo_pnl_realized) || 0), 0);
+      const fxRate = parseFloat(lt.fx_rate_to_base) || 1;
+      const realizedPnlBase = realizedPnlNative * fxRate;
 
-      const rows = dayTrades.map(t => {
-        const { entry, exit, isOrphan } = getDisplayPrices(t, exitMap, openOrderIds);
-        return {
-          id: t.id,
-          conid: t.conid,
-          openedAt: t.opened_at,
-          closedAt: t.closed_at,
-          assetCategory: t.asset_category,
-          currency: t.currency,
-          symbol: t.symbol,
-          direction: t.direction,
-          entry,
-          exit,
-          isOrphan,
-          qty: t.total_opening_quantity,
-          closingQty: t.total_closing_quantity,
-          nativePnl: t.total_realized_pnl,
-          duration: calcDuration(t.opened_at, t.closed_at),
-          pnl: pnlBase(t),
-          status: t.matching_status || 'needs_review',
-          tradeStatus: t.status,
-          plannedTradeId: t.planned_trade_id || null,
-          sourceNotes: t.source_notes || null,
-        };
-      });
+      const row = {
+        id: `${lt.id}_${dateKey}`,
+        parentLt: lt,
+        dateKey,
+        symbol: lt.symbol,
+        direction: lt.direction,
+        currency: lt.currency,
+        assetCategory: lt.asset_category,
+        buyQty,
+        buyAvgPrice: buyQty > 0 ? weightedAvg(buys) : null,
+        sellQty,
+        sellAvgPrice: sellQty > 0 ? weightedAvg(sells) : null,
+        realizedPnlNative,
+        realizedPnlBase,
+        // A row has realised P&L to show if any closing fills landed today.
+        // This covers both LONG (closing fill = SELL) and SHORT (closing = BUY)
+        // -- keying off just sellQty would miss SHORT closes.
+        hasClosesToday: closingFills.length > 0,
+        isCloseDay: lt.status === 'closed' && (lt.closed_at || '').slice(0, 10) === dateKey,
+        status: lt.matching_status || 'needs_review',
+        fills,
+      };
+      if (!rowsByDate.has(dateKey)) rowsByDate.set(dateKey, []);
+      rowsByDate.get(dateKey).push(row);
+    }
 
-      return { dateKey, dateLabel: fmtDateLabel(dateKey), rows, trades: dayTrades.length, wins, losses, pnl: totalPnl, needsReview, note: dailyNotes[dateKey] || null };
+    let result = Array.from(rowsByDate.entries()).map(([dateKey, rows]) => {
+      const totalPnl = rows.reduce((sum, r) => sum + (r.realizedPnlBase || 0), 0);
+      const closedRows = rows.filter(r => r.hasClosesToday);
+      const wins = closedRows.filter(r => (r.realizedPnlBase || 0) > 0).length;
+      const losses = closedRows.filter(r => (r.realizedPnlBase || 0) < 0).length;
+      // needsReview counts unique LTs active today that still need review.
+      const needsReviewLts = new Set(
+        rows.filter(r => r.status === 'needs_review').map(r => r.parentLt.id)
+      );
+      return {
+        dateKey,
+        dateLabel: fmtDateLabel(dateKey),
+        rows,
+        trades: rows.length,
+        wins,
+        losses,
+        pnl: totalPnl,
+        needsReview: needsReviewLts.size,
+        note: dailyNotes[dateKey] || null,
+      };
     });
 
     result = result.filter(d => dateFilter === 'all' || d.dateKey === dateFilter);
@@ -693,15 +653,16 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
     );
 
     return result;
-  }, [trades, search, dateFilter, sortAsc, exitMap, openOrderIds, dailyNotes, assetFilters]);
+  }, [rawTrades, tradeToLt, ltById, search, dateFilter, sortAsc, dailyNotes, assetFilters]);
 
-  const uniqueDates = useMemo(() =>
-    [...new Set(trades.map(t => {
-      const anchor = (t.status === 'closed' ? t.closed_at : t.opened_at) || t.opened_at;
-      return anchor?.slice(0, 10);
-    }).filter(Boolean))].sort().reverse(),
-    [trades]
-  );
+  const uniqueDates = useMemo(() => {
+    const set = new Set();
+    for (const t of rawTrades) {
+      const ms = parseTradeTime(t.date_time);
+      if (ms != null) set.add(new Date(ms).toISOString().slice(0, 10));
+    }
+    return [...set].sort().reverse();
+  }, [rawTrades]);
 
   const totalNeedsReview = useMemo(() =>
     trades.filter(t => t.matching_status === 'needs_review').length,
@@ -833,7 +794,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
       ) : (
         <>
           {days.map(day => (
-            <DayBlock key={day.dateKey} day={day} rawTradesWithIso={rawTradesWithIso} onResolve={handleResolve} plannedTradesMap={plannedTradesMap} baseCurrency={baseCurrency} userId={session.user.id} onReviewOpen={onReviewOpen} />
+            <DayBlock key={day.dateKey} day={day} plannedTradesMap={plannedTradesMap} baseCurrency={baseCurrency} userId={session.user.id} onReviewOpen={onReviewOpen} />
           ))}
           <button
             type="button"
