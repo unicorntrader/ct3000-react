@@ -66,7 +66,7 @@ export default function HomeScreen({ session }) {
           // 5 days should see ALL pending trades, not just last 30 days.
           supabase
             .from('logical_trades')
-            .select('id, matching_status, planned_trade_id, review_notes')
+            .select('id, matching_status, planned_trade_id, review_notes, closed_at')
             .eq('user_id', userId)
             .eq('status', 'closed'),
           // Which plans already have a trade (closed OR open) matched to them.
@@ -165,10 +165,24 @@ export default function HomeScreen({ session }) {
   const isResolved = (t) =>
     t.matching_status === 'matched' || t.matching_status === 'off_plan';
 
-  const pipelineNeedMatching = pipelineTrades.filter(isUnresolved).length;
-  const pipelineNeedNotes = pipelineTrades.filter(t => isResolved(t) && !t.review_notes).length;
-  const pipelineFullyDone = pipelineTrades.filter(t => isResolved(t) && t.review_notes).length;
-  const pipelineTotal = pipelineNeedMatching + pipelineNeedNotes + pipelineFullyDone;
+  // Staleness: unresolved/unjournalled trades older than this cutoff fall off
+  // the main "current work" cards so old backlog does not make the pipeline
+  // feel unwinnable. They are still counted and surfaced in a footer row —
+  // nothing silently disappears, the user just sees "here is what is current
+  // vs here is what is old". 14 days picked as "roughly one trading week past",
+  // tune if it turns out to be too aggressive / too lax.
+  const STALE_DAYS = 14;
+  const staleCutoffMs = Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000;
+  const isStale = (t) => t.closed_at && new Date(t.closed_at).getTime() < staleCutoffMs;
+
+  const needMatchingAll = pipelineTrades.filter(isUnresolved);
+  const needNotesAll    = pipelineTrades.filter(t => isResolved(t) && !t.review_notes);
+
+  const pipelineNeedMatching = needMatchingAll.filter(t => !isStale(t)).length;
+  const pipelineNeedNotes    = needNotesAll.filter(t => !isStale(t)).length;
+  const pipelineFullyDone    = pipelineTrades.filter(t => isResolved(t) && t.review_notes).length;
+  const pipelineStale        = needMatchingAll.filter(isStale).length + needNotesAll.filter(isStale).length;
+  const pipelineTotal        = pipelineNeedMatching + pipelineNeedNotes + pipelineFullyDone;
 
   // Active plans = plans not yet linked to any logical_trade. Sorted by most
   // recently created so the newest idea is at the top.
@@ -359,6 +373,24 @@ export default function HomeScreen({ session }) {
               <p className="text-[11px] text-green-600 mt-1">View all →</p>
             </button>
           </div>
+
+          {pipelineStale > 0 && (
+            // Trades older than 14 days that are still unresolved/unjournalled.
+            // Rolled off the main cards so backlog does not make the pipeline
+            // feel permanently red, but still visible + clickable for anyone
+            // who wants to circle back.
+            <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+              <p className="text-xs text-gray-400">
+                + <span className="font-semibold text-gray-500">{pipelineStale}</span> older trade{pipelineStale !== 1 ? 's' : ''} pending review (older than 14 days)
+              </p>
+              <button
+                onClick={() => navigate('/review')}
+                className="text-xs font-medium text-gray-500 hover:text-gray-800 whitespace-nowrap"
+              >
+                View all →
+              </button>
+            </div>
+          )}
         </div>
       )}
 
