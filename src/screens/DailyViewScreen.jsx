@@ -501,6 +501,10 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
   const [sortAsc, setSortAsc] = useState(false);
+  // Asset-class filters. Default all on — the UI reads "hide X" more naturally
+  // than "only show X". Each toggle mirrors the AssetBadge used in the Type
+  // column, so the filter pill and the row badge use the same visual language.
+  const [assetFilters, setAssetFilters] = useState({ STK: true, FX: true, OPT: true });
 
   // Default window: last 30 days. Prevents fetching entire trade history.
   // Raw trades use IBKR's YYYYMMDD;HHMMSS format, so string comparison works.
@@ -614,8 +618,15 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
   );
 
   const days = useMemo(() => {
+    const assetMatch = (cat) => {
+      if (cat === 'STK') return assetFilters.STK;
+      if (cat === 'OPT') return assetFilters.OPT;
+      if (cat === 'FXCFD' || cat === 'CASH') return assetFilters.FX;
+      return true;
+    };
     const filtered = trades.filter(t =>
-      !search || t.symbol?.toLowerCase().includes(search.toLowerCase())
+      (!search || t.symbol?.toLowerCase().includes(search.toLowerCase())) &&
+      assetMatch(t.asset_category)
     );
 
 
@@ -671,7 +682,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
     );
 
     return result;
-  }, [trades, search, dateFilter, sortAsc, exitMap, openOrderIds, dailyNotes]);
+  }, [trades, search, dateFilter, sortAsc, exitMap, openOrderIds, dailyNotes, assetFilters]);
 
   const uniqueDates = useMemo(() =>
     [...new Set(trades.map(t => {
@@ -772,9 +783,29 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
             </svg>
             <span>{sortAsc ? 'Oldest first' : 'Newest first'}</span>
           </button>
-          {(search || dateFilter !== 'all') && (
+          <div className="flex items-center gap-2">
+            {[
+              { key: 'STK', label: 'S',  wrap: 'w-8 justify-center', onCls: 'bg-gray-100 text-gray-600 border-gray-200', offCls: 'bg-white text-gray-300 border-gray-200' },
+              { key: 'FX',  label: 'FX', wrap: 'px-2',                onCls: 'bg-blue-100 text-blue-700 border-blue-200', offCls: 'bg-white text-gray-300 border-gray-200' },
+              { key: 'OPT', label: 'O',  wrap: 'w-8 justify-center', onCls: 'bg-purple-100 text-purple-700 border-purple-200', offCls: 'bg-white text-gray-300 border-gray-200' },
+            ].map(({ key, label, wrap, onCls, offCls }) => {
+              const active = assetFilters[key];
+              return (
+                <button
+                  key={key}
+                  onClick={() => setAssetFilters(f => ({ ...f, [key]: !f[key] }))}
+                  aria-pressed={active}
+                  title={active ? `Hide ${label === 'S' ? 'stocks' : label === 'FX' ? 'FX' : 'options'}` : `Show ${label === 'S' ? 'stocks' : label === 'FX' ? 'FX' : 'options'}`}
+                  className={`inline-flex items-center ${wrap} h-8 rounded text-xs font-bold border transition-colors ${active ? onCls : offCls}`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          {(search || dateFilter !== 'all' || !assetFilters.STK || !assetFilters.FX || !assetFilters.OPT) && (
             <button
-              onClick={() => { setSearch(''); setDateFilter('all'); }}
+              onClick={() => { setSearch(''); setDateFilter('all'); setAssetFilters({ STK: true, FX: true, OPT: true }); }}
               className="text-xs font-medium text-gray-500 hover:text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-50"
             >
               Clear
