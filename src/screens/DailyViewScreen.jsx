@@ -281,8 +281,13 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
           </p>
         </div>
         <div className="text-right">
-          <p className={`text-2xl font-bold ${day.pnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-            <PrivacyValue value={fmtPnl(day.pnl, baseCurrency, 0)} />
+          {/* Zero P&L on a day with no closed trades (e.g. only an open
+              position was logged) should read neutral — a green "+€0" looks
+              like a win. Only colour and sign when there's a real number. */}
+          <p className={`text-2xl font-bold ${
+            day.pnl > 0 ? 'text-green-600' : day.pnl < 0 ? 'text-red-500' : 'text-gray-400'
+          }`}>
+            <PrivacyValue value={day.pnl === 0 ? '—' : fmtPnl(day.pnl, baseCurrency, 0)} />
           </p>
           <p className="text-sm text-gray-400">Daily P&L</p>
         </div>
