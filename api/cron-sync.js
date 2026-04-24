@@ -29,7 +29,8 @@ module.exports = async function handler(req, res) {
     .from('user_ibkr_credentials')
     .select('user_id')
     .not('ibkr_token', 'is', null)
-    .not('query_id_30d', 'is', null);
+    .not('query_id_30d', 'is', null)
+    .eq('auto_sync_enabled', true);
 
   if (fetchError) {
     console.error('[cron-sync] failed to list users:', fetchError.message);

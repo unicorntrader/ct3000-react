@@ -32,6 +32,8 @@ export default function IBKRScreen({ session }) {
   const [syncing, setSyncing] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
   const [fetchingXml, setFetchingXml] = useState(false);
+  const [autoSync, setAutoSync] = useState(true);
+  const [togglingAutoSync, setTogglingAutoSync] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
   const [syncError, setSyncError] = useState(null);
   const [saveError, setSaveError] = useState(null);
@@ -55,7 +57,7 @@ export default function IBKRScreen({ session }) {
       try {
         const { data, error } = await supabase
           .from('user_ibkr_credentials')
-          .select('token_masked, query_id_masked, last_sync_at')
+          .select('token_masked, query_id_masked, last_sync_at, auto_sync_enabled')
           .eq('user_id', userId)
           .single();
         // PGRST116 = no rows = "not connected yet", expected for new users.
@@ -65,6 +67,7 @@ export default function IBKRScreen({ session }) {
           setMaskedToken(data.token_masked || '');
           setMaskedQueryId(data.query_id_masked || '');
           setLastSyncAt(data.last_sync_at);
+          setAutoSync(data.auto_sync_enabled ?? true);
         } else {
           setConnected(false);
         }
@@ -164,6 +167,21 @@ export default function IBKRScreen({ session }) {
       setSyncResult({ rebuilt: true });
     }
     setRebuilding(false);
+  };
+
+  const handleToggleAutoSync = async () => {
+    const next = !autoSync;
+    setTogglingAutoSync(true);
+    setAutoSync(next); // optimistic
+    const { error } = await supabase
+      .from('user_ibkr_credentials')
+      .update({ auto_sync_enabled: next })
+      .eq('user_id', userId);
+    if (error) {
+      setAutoSync(!next); // revert
+      alert(`Could not update auto-sync: ${error.message}`);
+    }
+    setTogglingAutoSync(false);
   };
 
   const handleDebugXml = async () => {
@@ -447,11 +465,32 @@ export default function IBKRScreen({ session }) {
                 Update
               </button>
             </div>
-            <div className="px-5 py-4 flex items-center justify-between">
-              <div>
+            <div className="px-5 py-4 flex items-center justify-between gap-4">
+              <div className="min-w-0">
                 <p className="text-sm font-medium text-gray-900">Auto-sync</p>
-                <p className="text-xs text-gray-400 mt-0.5">Use "Sync now" to pull the latest trades</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {autoSync
+                    ? 'Runs nightly ~10pm ET. You can still use "Sync now" any time.'
+                    : 'Off — use "Sync now" to pull the latest trades.'}
+                </p>
               </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoSync}
+                aria-label="Toggle auto-sync"
+                onClick={handleToggleAutoSync}
+                disabled={togglingAutoSync}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                  autoSync ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${
+                    autoSync ? 'translate-x-5' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
             </div>
           </div>
 
