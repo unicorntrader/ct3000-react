@@ -51,6 +51,10 @@ const parseTradeTime = (dt) => {
 };
 
 const calcDuration = (openedAt, closedAt) => {
+  // Open position: we know when it opened but not when (or if) it closes.
+  // Show "Open" instead of "—" so the trader does not have to cross-check
+  // the Exit column to realise the trade is still live.
+  if (openedAt && !closedAt) return 'Open';
   if (!openedAt || !closedAt) return '—';
   const diffMs = new Date(closedAt) - new Date(openedAt);
   if (diffMs < 0) return '—';
