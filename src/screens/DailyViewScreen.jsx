@@ -232,7 +232,7 @@ function ExecSubTable({ execs, orphanQty = 0, orphanSide = null }) {
                       </span>
                     </td>
                     <td className="py-1.5 text-xs text-gray-500">
-                      <PrivacyValue value={!isNaN(commission) ? fmtPnl(commission, ex.currency, 0) : '—'} />
+                      <PrivacyValue value={!isNaN(commission) ? fmtPnl(commission, ex.ib_commission_currency || ex.currency, 0) : '—'} />
                     </td>
                   </tr>
                 );
@@ -593,7 +593,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
             .order('opened_at', { ascending: false, nullsFirst: false }),
           supabase
             .from('trades')
-            .select('ib_exec_id, ib_order_id, conid, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, currency')
+            .select('ib_exec_id, ib_order_id, conid, symbol, trade_price, quantity, buy_sell, open_close_indicator, date_time, ib_commission, ib_commission_currency, currency')
             .eq('user_id', userId)
             .gte('date_time', ibkrDate),
           supabase
