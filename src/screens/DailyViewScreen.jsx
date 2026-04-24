@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
@@ -127,58 +126,6 @@ function AssetBadge({ category }) {
 }
 
 const COL_SPAN = 11; // TYPE SYMBOL DIR ENTRY EXIT QTY DURATION P&L STATUS share chevron
-
-// Tooltip-on-an-info-badge. Renders the floating bubble through a portal to
-// document.body so it escapes the `overflow-hidden` on the day card and the
-// `overflow-x-auto` on the table wrapper -- both of those clip anything
-// positioned-absolute inside the table cell, regardless of z-index.
-function InfoBadge({ text }) {
-  const ref = useRef(null);
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-
-  const show = () => {
-    const rect = ref.current?.getBoundingClientRect();
-    if (!rect) return;
-    setPos({ top: rect.top, left: rect.left + rect.width / 2 });
-    setOpen(true);
-  };
-  const hide = () => setOpen(false);
-
-  return (
-    <>
-      <span
-        ref={ref}
-        tabIndex={0}
-        role="button"
-        aria-label={text}
-        onMouseEnter={show}
-        onMouseLeave={hide}
-        onFocus={show}
-        onBlur={hide}
-        className="inline-flex items-center justify-center h-5 px-1.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-semibold tracking-wide uppercase leading-none cursor-help border border-amber-300 hover:bg-amber-200 transition-colors"
-      >
-        Why?
-      </span>
-      {open && createPortal(
-        <div
-          role="tooltip"
-          style={{
-            position: 'fixed',
-            top: pos.top - 8,
-            left: pos.left,
-            transform: 'translate(-50%, -100%)',
-            zIndex: 9999,
-          }}
-          className="pointer-events-none w-64 p-2.5 rounded-md bg-gray-900 text-white text-xs font-normal leading-snug shadow-lg"
-        >
-          {text}
-        </div>,
-        document.body
-      )}
-    </>
-  );
-}
 
 function ExecSubTable({ execs, orphanQty = 0, orphanSide = null }) {
   if ((!execs || execs.length === 0) && orphanQty === 0) {
@@ -418,14 +365,7 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     <td className="px-4 py-3.5 text-sm font-medium text-gray-900">{fmtSymbol({ symbol: row.symbol, asset_category: row.assetCategory })}</td>
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
-                      <span className="inline-flex items-center gap-1.5">
-                        {fmtPrice(row.entry, row.currency)}
-                        {row.entry == null && (
-                          <InfoBadge
-                            text={row.sourceNotes || 'This position was opened before your earliest imported trade, so the entry price and open date aren\'t known. The P&L is accurate — it comes straight from IBKR.'}
-                          />
-                        )}
-                      </span>
+                      {fmtPrice(row.entry, row.currency)}
                     </td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">
                       {row.tradeStatus === 'open' ? '—' : fmtPrice(row.exit, row.currency)}
