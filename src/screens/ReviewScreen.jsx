@@ -38,7 +38,7 @@ function TradeCard({ trade }) {
         <div className="flex items-center flex-wrap gap-2">
           <span className="text-lg font-semibold text-gray-900">{fmtSymbol(trade)}</span>
           <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-            trade.direction === 'LONG' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'
+            trade.direction === 'LONG' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
           }`}>
             {trade.direction}
           </span>

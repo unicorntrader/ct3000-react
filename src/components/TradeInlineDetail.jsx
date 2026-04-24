@@ -205,7 +205,7 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
           <div className="flex items-center flex-wrap gap-2 mb-4">
             <span className="text-base font-semibold text-gray-900">{fmtSymbol(trade)}</span>
             <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-              trade.direction === 'LONG' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'
+              trade.direction === 'LONG' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
             }`}>
               {trade.direction}
             </span>

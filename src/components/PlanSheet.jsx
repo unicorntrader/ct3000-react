@@ -673,7 +673,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                             return (
                               <div key={t.id} className="flex items-center gap-2 px-3 py-2 text-xs border-b border-gray-50 last:border-0 bg-white">
                                 <span className="text-gray-400 w-12 shrink-0">{fmtDate(t.closed_at)}</span>
-                                <span className={`px-1.5 py-0.5 rounded font-medium shrink-0 ${isLong ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-500'}`}>
+                                <span className={`px-1.5 py-0.5 rounded font-medium shrink-0 ${isLong ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
                                   {t.direction}
                                 </span>
                                 <span className="text-gray-600">{fmtPrice(t.avg_entry_price, tCurrency)}</span>
