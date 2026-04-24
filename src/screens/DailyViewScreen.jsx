@@ -564,25 +564,25 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
     return m;
   }, [trades]);
 
-  const resolveLt = (rawTrade, ms) => {
-    const viaLte = tradeToLt[rawTrade.id];
-    if (viaLte && ltById[viaLte]) return viaLte;
-    // Fallback: match by conid + time within an LT's open window.
-    const candidates = ltsByConid[rawTrade.conid] || [];
-    for (const lt of candidates) {
-      const startMs = lt.opened_at ? new Date(lt.opened_at).getTime() : 0;
-      const endMs   = lt.closed_at ? new Date(lt.closed_at).getTime() : Date.now();
-      if (ms >= startMs && ms <= endMs) return lt.id;
-    }
-    return null;
-  };
-
   const days = useMemo(() => {
     const assetMatch = (cat) => {
       if (cat === 'STK') return assetFilters.STK;
       if (cat === 'OPT') return assetFilters.OPT;
       if (cat === 'FXCFD' || cat === 'CASH') return assetFilters.FX;
       return true;
+    };
+
+    const resolveLt = (rawTrade, ms) => {
+      const viaLte = tradeToLt[rawTrade.id];
+      if (viaLte && ltById[viaLte]) return viaLte;
+      // Fallback: match by conid + time within an LT's open window.
+      const candidates = ltsByConid[rawTrade.conid] || [];
+      for (const lt of candidates) {
+        const startMs = lt.opened_at ? new Date(lt.opened_at).getTime() : 0;
+        const endMs   = lt.closed_at ? new Date(lt.closed_at).getTime() : Date.now();
+        if (ms >= startMs && ms <= endMs) return lt.id;
+      }
+      return null;
     };
 
     // Build (ltId, dateKey) groups from raw trades. Each group = one day-row:
@@ -679,7 +679,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
     );
 
     return result;
-  }, [rawTrades, tradeToLt, ltById, search, dateFilter, sortAsc, dailyNotes, assetFilters]);
+  }, [rawTrades, tradeToLt, ltById, ltsByConid, search, dateFilter, sortAsc, dailyNotes, assetFilters]);
 
   const uniqueDates = useMemo(() => {
     const set = new Set();
