@@ -2,6 +2,7 @@
 
 const https = require('https');
 const { rebuildForUser } = require('./rebuildForUser');
+const { ibkrDateToUtcIso } = require('./exchangeTimezone');
 
 const BASE_URL = 'https://gdcdyn.interactivebrokers.com/Universal/servlet';
 const SEND_URL = `${BASE_URL}/FlexStatementService.SendRequest`;
@@ -75,15 +76,6 @@ function parseFlexPeriod(xml) {
   return { fromDate: isoFrom, toDate: isoTo, days };
 }
 
-function ibkrDateToIso(dt) {
-  if (!dt) return null;
-  const [date, time] = dt.split(';');
-  if (!date || date.length < 8) return null;
-  const d = `${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}`;
-  const t = (time && time.length >= 6) ? `${time.slice(0,2)}:${time.slice(2,4)}:${time.slice(4,6)}` : '00:00:00';
-  return `${d}T${t}`;
-}
-
 function parseTrades(xml) {
   const trades = [];
   const re = /<Trade\s([^>]+)\/>/g;
@@ -94,12 +86,17 @@ function parseTrades(xml) {
       const x = attrs.match(new RegExp(`${f}="([^"]*)"`));
       return x ? x[1] : null;
     };
+    // Resolve the exchange first so we can convert dateTime to a real UTC
+    // instant instead of treating IBKRs naive wall-clock value as UTC.
+    // See api/_lib/exchangeTimezone.js for the mapping rationale.
+    const exchange = g('exchange');
     trades.push({
       ibExecID: g('ibExecID'), ibOrderID: g('ibOrderID'), accountId: g('accountId'),
       conid: g('conid'), symbol: g('symbol'), assetCategory: g('assetCategory'),
       buySell: g('buySell'), openCloseIndicator: g('openCloseIndicator'),
       quantity: g('quantity'), tradePrice: g('tradePrice'),
-      dateTime: ibkrDateToIso(g('dateTime')),
+      exchange,
+      dateTime: ibkrDateToUtcIso(g('dateTime'), exchange),
       netCash: g('netCash'), fifoPnlRealized: g('fifoPnlRealized'),
       ibCommission: g('ibCommission'), ibCommissionCurrency: g('ibCommissionCurrency'),
       currency: g('currency'), fxRateToBase: g('fxRateToBase'),
