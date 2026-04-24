@@ -345,7 +345,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
       try {
         const { data, error } = await supabase
           .from('logical_trades')
-          .select('id, direction, opened_at, closed_at, avg_entry_price, total_closing_quantity, total_opening_quantity, total_realized_pnl, fx_rate_to_base, currency, multiplier, adherence_score')
+          .select('id, direction, opened_at, closed_at, avg_entry_price, avg_exit_price, total_closing_quantity, total_opening_quantity, total_realized_pnl, fx_rate_to_base, currency, multiplier, adherence_score')
           .eq('user_id', uid)
           .eq('symbol', debouncedSymbol)
           .eq('status', 'closed')
@@ -576,12 +576,17 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                   const longs = histTrades.filter(t => t.direction === 'LONG').length;
                   const shorts = histTrades.length - longs;
                   const totalPnl = histTrades.reduce((sum, t) => sum + pnlBase(t), 0);
-                  const totalQty = histTrades.reduce((sum, t) => sum + (t.total_closing_quantity || t.total_opening_quantity || 0), 0);
-                  const weightedEntry = histTrades.reduce((sum, t) => {
+                  // Weighted-average entry — only across trades with a KNOWN
+                  // entry. Orphans (avg_entry_price == null) used to get
+                  // counted as 0 × qty, dragging the summary to "avg entry
+                  // $0.00" when every historical trade was an orphan.
+                  const knownEntry = histTrades.filter(t => t.avg_entry_price != null);
+                  const knownQty = knownEntry.reduce((sum, t) => sum + (t.total_closing_quantity || t.total_opening_quantity || 0), 0);
+                  const weightedEntry = knownEntry.reduce((sum, t) => {
                     const q = t.total_closing_quantity || t.total_opening_quantity || 0;
-                    return sum + (t.avg_entry_price || 0) * q;
+                    return sum + t.avg_entry_price * q;
                   }, 0);
-                  const avgEntry = totalQty > 0 ? weightedEntry / totalQty : null;
+                  const avgEntry = knownQty > 0 ? weightedEntry / knownQty : null;
                   const tradeCurrency = histTrades[0]?.currency || baseCurrency;
                   // "Bad history" heuristic — fires when the trader has a
                   // losing record AND is down net on this ticker. We surface
@@ -639,11 +644,18 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
                             // price. Equities (multiplier=1) behave as
                             // before.
                             const tMult = parseFloat(t.multiplier) || 1;
-                            const exit = (t.avg_entry_price != null && q > 0 && t.total_realized_pnl != null)
-                              ? (isLong
-                                  ? t.avg_entry_price + t.total_realized_pnl / (q * tMult)
-                                  : t.avg_entry_price - t.total_realized_pnl / (q * tMult))
-                              : null;
+                            // Prefer the builder-stored avg_exit_price — it's the
+                            // real close price from the raw executions and works
+                            // even for orphans (where entry is null). Fall back
+                            // to reverse-engineering from entry + P&L for legacy
+                            // rows that predate the avg_exit_price column.
+                            const exit = t.avg_exit_price != null
+                              ? t.avg_exit_price
+                              : (t.avg_entry_price != null && q > 0 && t.total_realized_pnl != null)
+                                  ? (isLong
+                                      ? t.avg_entry_price + t.total_realized_pnl / (q * tMult)
+                                      : t.avg_entry_price - t.total_realized_pnl / (q * tMult))
+                                  : null;
                             const dur = calcDuration(t.opened_at, t.closed_at);
                             const tCurrency = t.currency || baseCurrency;
                             // Adherence pill — only shown when the trade was
