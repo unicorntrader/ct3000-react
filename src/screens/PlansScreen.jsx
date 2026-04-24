@@ -232,7 +232,7 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
       )}
 
       {plans.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-16 text-center">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-12 text-center">
           <p className="text-sm font-medium text-gray-500 mb-1">No plans yet</p>
           <p className="text-xs text-gray-400">Tap "New plan" to document your next trade setup</p>
         </div>

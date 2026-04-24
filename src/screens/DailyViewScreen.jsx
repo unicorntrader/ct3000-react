@@ -10,8 +10,8 @@ import ShareModal from '../components/ShareModal';
 import LoadError from '../components/LoadError';
 
 const statusStyles = {
-  matched:      'bg-blue-50 text-blue-600',
-  needs_review: 'bg-amber-100 text-amber-700',
+  matched:      'bg-blue-50 text-blue-700',
+  needs_review: 'bg-amber-50 text-amber-700',
   off_plan:     'bg-gray-100 text-gray-600',
 };
 
@@ -826,7 +826,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
       </div>
 
       {days.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-16 text-center">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-12 text-center">
           <p className="text-sm font-medium text-gray-500 mb-1">No trades found</p>
           <p className="text-xs text-gray-400">Sync your IBKR account to import trades</p>
         </div>

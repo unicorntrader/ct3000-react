@@ -798,7 +798,7 @@ export default function PlanSheet({ session, isOpen, onClose, onSaved, plan }) {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="w-full bg-blue-600 text-white font-semibold py-3.5 rounded-xl text-sm hover:bg-blue-700 transition-colors disabled:opacity-50"
+                className="w-full bg-blue-600 text-white font-semibold py-3 rounded-xl text-sm hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
                 {saving ? 'Saving...' : isEdit ? 'Save changes' : 'Save plan'}
               </button>

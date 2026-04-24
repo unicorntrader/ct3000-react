@@ -70,7 +70,7 @@ function BillingPortalBlocker({ onClose }) {
         <button
           type="button"
           onClick={onClose}
-          className="flex-1 border border-gray-200 text-gray-700 font-medium py-2.5 rounded-xl text-sm hover:bg-gray-50"
+          className="flex-1 border border-gray-200 text-gray-700 font-medium py-3 rounded-xl text-sm hover:bg-gray-50"
         >
           Cancel
         </button>
@@ -78,7 +78,7 @@ function BillingPortalBlocker({ onClose }) {
           type="button"
           onClick={openPortal}
           disabled={loading}
-          className="flex-1 bg-blue-600 text-white font-semibold py-2.5 rounded-xl text-sm hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2"
+          className="flex-1 bg-blue-600 text-white font-semibold py-3 rounded-xl text-sm hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2"
         >
           {loading && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
           Go to billing portal
@@ -193,7 +193,7 @@ function DeleteForm({ onClose, onDeleted }) {
           type="button"
           onClick={onClose}
           disabled={submitting}
-          className="flex-1 border border-gray-200 text-gray-700 font-medium py-2.5 rounded-xl text-sm hover:bg-gray-50 disabled:opacity-60"
+          className="flex-1 border border-gray-200 text-gray-700 font-medium py-3 rounded-xl text-sm hover:bg-gray-50 disabled:opacity-60"
         >
           Keep my account
         </button>
@@ -201,7 +201,7 @@ function DeleteForm({ onClose, onDeleted }) {
           type="button"
           onClick={handleDelete}
           disabled={!canDelete || submitting}
-          className="flex-1 bg-red-600 text-white font-semibold py-2.5 rounded-xl text-sm hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="flex-1 bg-red-600 text-white font-semibold py-3 rounded-xl text-sm hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {submitting && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
           {submitting ? 'Deleting…' : 'Delete my account'}
@@ -262,7 +262,7 @@ export default function DeleteAccountModal({ session, isOpen, onClose, onDeleted
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">Delete account</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Delete account</h3>
           <button
             onClick={onClose}
             className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600"

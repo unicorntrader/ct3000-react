@@ -40,7 +40,7 @@ function TradeCard({ trade }) {
           </span>
           {isClosed && (
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-              isWin ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'
+              isWin ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
             }`}>
               {isWin ? 'win' : 'loss'}
             </span>

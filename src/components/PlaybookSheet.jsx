@@ -181,7 +181,7 @@ export default function PlaybookSheet({ isOpen, onClose, session, playbook, onSa
                 <button
                   onClick={handleSave}
                   disabled={saving || !name.trim()}
-                  className="flex-1 bg-blue-600 text-white font-medium py-3 rounded-xl text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 bg-blue-600 text-white font-semibold py-3 rounded-xl text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create playbook'}
                 </button>

@@ -80,7 +80,7 @@ const displaySymbol = (t) =>
 // Plan pill: 1:1 with matching_status now that vocabulary is 3-state.
 function planPillFor(trade) {
   const s = trade.matching_status;
-  if (s === 'matched')      return { label: 'Planned',       cls: 'bg-blue-50 text-blue-600' };
+  if (s === 'matched')      return { label: 'Planned',       cls: 'bg-blue-50 text-blue-700' };
   if (s === 'off_plan')     return { label: 'Off-plan',      cls: 'bg-gray-100 text-gray-600' };
   // needs_review, and any unknown/legacy value as a safety default
   return { label: 'Need matching', cls: 'bg-amber-50 text-amber-700' };
@@ -721,7 +721,7 @@ export default function JournalScreen({ session }) {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-16 text-center">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-5 py-12 text-center">
           <p className="text-sm font-medium text-gray-500 mb-1">
             {trades.length === 0 ? 'No trades yet' : 'No trades match this filter'}
           </p>

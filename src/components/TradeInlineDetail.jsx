@@ -213,7 +213,7 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
               <span className="px-2 py-0.5 text-xs rounded-full font-medium bg-blue-50 text-blue-600">open</span>
             ) : (
               <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-                isWin ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'
+                isWin ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
               }`}>
                 {isWin ? 'win' : 'loss'}
               </span>
