@@ -152,9 +152,9 @@ function InfoBadge({ text }) {
         onMouseLeave={hide}
         onFocus={show}
         onBlur={hide}
-        className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-[10px] font-semibold leading-none cursor-help"
+        className="inline-flex items-center justify-center h-5 px-1.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-semibold tracking-wide uppercase leading-none cursor-help border border-amber-300 hover:bg-amber-200 transition-colors"
       >
-        i
+        Why?
       </span>
       {open && createPortal(
         <div
@@ -176,8 +176,8 @@ function InfoBadge({ text }) {
   );
 }
 
-function ExecSubTable({ execs }) {
-  if (!execs || execs.length === 0) {
+function ExecSubTable({ execs, orphanQty = 0, orphanSide = null }) {
+  if ((!execs || execs.length === 0) && orphanQty === 0) {
     return (
       <tr>
         <td colSpan={COL_SPAN} className="px-6 py-3 bg-gray-50 border-t border-gray-100">
@@ -200,13 +200,29 @@ function ExecSubTable({ execs }) {
               </tr>
             </thead>
             <tbody>
-              {execs.map((ex, i) => {
+              {orphanQty > 0 && (
+                // Synthetic row for the pre-window portion. Not a real execution
+                // (we don't have it in the trades table), so styled muted + italic
+                // and labelled with "Before window" instead of a timestamp.
+                <tr className="border-t border-gray-100 first:border-0 bg-amber-50/40">
+                  <td className="py-1.5 pr-3 text-xs text-amber-700 italic">Before window</td>
+                  <td className="py-1.5 pr-3 text-xs text-gray-400 italic">—</td>
+                  <td className="py-1.5 pr-3 text-xs text-gray-700 italic"><PrivacyValue value={Math.round(orphanQty).toLocaleString()} /></td>
+                  <td className="py-1.5 pr-3">
+                    <span className={`text-xs font-medium px-1.5 py-0.5 rounded italic ${orphanSide === 'BUY' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                      {orphanSide || '—'}
+                    </span>
+                  </td>
+                  <td className="py-1.5 text-xs text-gray-400 italic">—</td>
+                </tr>
+              )}
+              {(execs || []).map((ex, i) => {
                 const time = ex._ms != null
                   ? new Date(ex._ms).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
                   : '—';
                 const commission = parseFloat(ex.ib_commission);
                 return (
-                  <tr key={i} className="border-t border-gray-100 first:border-0">
+                  <tr key={i} className="border-t border-gray-100">
                     <td className="py-1.5 pr-3 text-xs text-gray-600">{time}</td>
                     <td className="py-1.5 pr-3 text-xs text-gray-800 font-medium">{fmtPrice(parseFloat(ex.trade_price), ex.currency)}</td>
                     <td className="py-1.5 pr-3 text-xs text-gray-600"><PrivacyValue value={Math.abs(parseFloat(ex.quantity) || 0).toLocaleString()} /></td>
@@ -453,7 +469,20 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
                     </td>
                   </tr>
 
-                  {isExpanded && <ExecSubTable execs={execs} />}
+                  {isExpanded && (() => {
+                    // If row.qty (total opening quantity on the logical trade)
+                    // is larger than what we see from in-window SELL/BUY opens,
+                    // the delta is pre-window -- show it as a synthetic row so
+                    // the user understands where the missing shares came from.
+                    const openQty = execs
+                      .filter(e => (e.open_close_indicator || '').includes('O'))
+                      .reduce((s, e) => s + Math.abs(parseFloat(e.quantity) || 0), 0);
+                    const orphanQty = Math.max(0, (row.qty || 0) - openQty);
+                    const orphanSide = row.direction === 'LONG' ? 'BUY'
+                                     : row.direction === 'SHORT' ? 'SELL'
+                                     : null;
+                    return <ExecSubTable execs={execs} orphanQty={orphanQty} orphanSide={orphanSide} />;
+                  })()}
 
                   {needsAction && openResolve === row.id && (
                     <tr className="bg-amber-50">
