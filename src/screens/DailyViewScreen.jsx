@@ -807,15 +807,15 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
                 </button>
               );
             })}
+            {(search || dateFilter !== 'all' || !assetFilters.STK || !assetFilters.FX || !assetFilters.OPT) && (
+              <button
+                onClick={() => { setSearch(''); setDateFilter('all'); setAssetFilters({ STK: true, FX: true, OPT: true }); }}
+                className="ml-auto text-xs font-medium text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100"
+              >
+                Clear
+              </button>
+            )}
           </div>
-          {(search || dateFilter !== 'all' || !assetFilters.STK || !assetFilters.FX || !assetFilters.OPT) && (
-            <button
-              onClick={() => { setSearch(''); setDateFilter('all'); setAssetFilters({ STK: true, FX: true, OPT: true }); }}
-              className="text-xs font-medium text-gray-500 hover:text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-50"
-            >
-              Clear
-            </button>
-          )}
         </div>
       </div>
 

@@ -802,7 +802,7 @@ export default function PerformanceScreen({ session }) {
           open at once). Cards without `why`/`action` fields silently skip the
           chevron, so older callout shapes still render cleanly. */}
       {callouts.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
           {callouts.map((c, i) => {
             const styles = {
               positive: 'bg-green-50 border-green-200 text-green-800',
