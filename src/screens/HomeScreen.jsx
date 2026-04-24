@@ -27,6 +27,7 @@ export default function HomeScreen({ session }) {
   const [matchedPlanIds, setMatchedPlanIds] = useState(() => new Set());
   const [logicalTrades, setLogicalTrades] = useState([]);
   const [pipelineTrades, setPipelineTrades] = useState([]);
+  const [syncFailure, setSyncFailure] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -37,7 +38,7 @@ export default function HomeScreen({ session }) {
 
   // Cross-screen data invalidation — refetch silently when any of these
   // tables have been mutated elsewhere (Sync, Rebuild, Save plan, etc).
-  const [tradesV, positionsV, plansV] = useDataVersion('trades', 'positions', 'plans');
+  const [tradesV, positionsV, plansV, ibkrCredsV] = useDataVersion('trades', 'positions', 'plans', 'ibkrCreds');
   const loadTracker = useInitialLoadTracker(reloadKey);
 
   useEffect(() => {
@@ -51,7 +52,7 @@ export default function HomeScreen({ session }) {
     setLoadError(null);
     const load = async () => {
       try {
-        const [posRes, plansRes, tradesRes, pipelineRes, matchedRes] = await Promise.all([
+        const [posRes, plansRes, tradesRes, pipelineRes, matchedRes, credsRes] = await Promise.all([
           supabase.from('open_positions').select('*').eq('user_id', userId),
           supabase.from('planned_trades').select('*').eq('user_id', userId),
           // 30-day window for KPI stats (today's P&L, win rate)
@@ -77,12 +78,22 @@ export default function HomeScreen({ session }) {
             .select('planned_trade_id')
             .eq('user_id', userId)
             .not('planned_trade_id', 'is', null),
+          // Cron-sync failure state. Surfaces as a banner at the top of Home
+          // so the user knows the overnight job didn't actually update their
+          // data — otherwise "no new trades today" feels indistinguishable
+          // from "sync silently broke".
+          supabase
+            .from('user_ibkr_credentials')
+            .select('last_sync_error, last_sync_failed_at, last_sync_at')
+            .eq('user_id', userId)
+            .maybeSingle(),
         ]);
         if (posRes.error) throw posRes.error;
         if (plansRes.error) throw plansRes.error;
         if (tradesRes.error) throw tradesRes.error;
         if (pipelineRes.error) throw pipelineRes.error;
         if (matchedRes.error) throw matchedRes.error;
+        // credsRes missing row is expected for users who never connected IBKR
         setPositions(posRes.data || []);
         setPlans(plansRes.data || []);
         setLogicalTrades(tradesRes.data || []);
@@ -92,6 +103,19 @@ export default function HomeScreen({ session }) {
           if (row.planned_trade_id != null) matchedIds.add(row.planned_trade_id);
         }
         setMatchedPlanIds(matchedIds);
+        // Show banner only if the failure happened AFTER the last successful
+        // sync (otherwise a user who just clicked Sync Now and succeeded would
+        // still see a stale nag).
+        const c = credsRes.data;
+        if (c?.last_sync_failed_at &&
+            (!c.last_sync_at || new Date(c.last_sync_failed_at) > new Date(c.last_sync_at))) {
+          setSyncFailure({
+            error: c.last_sync_error || 'Unknown error',
+            failedAt: c.last_sync_failed_at,
+          });
+        } else {
+          setSyncFailure(null);
+        }
       } catch (err) {
         console.error('[home] load failed:', err?.message || err);
         Sentry.withScope((scope) => {
@@ -109,7 +133,7 @@ export default function HomeScreen({ session }) {
       }
     };
     load();
-  }, [userId, reloadKey, tradesV, positionsV, plansV]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [userId, reloadKey, tradesV, positionsV, plansV, ibkrCredsV]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derived stats
   const today = todayStr();
@@ -250,6 +274,28 @@ export default function HomeScreen({ session }) {
 
   return (
     <div>
+      {syncFailure && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3.5 mb-6 flex items-start gap-3">
+          <svg className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-red-800">Last automatic sync failed</p>
+            <p className="text-xs text-red-700 mt-0.5 break-words">{syncFailure.error}</p>
+            <p className="text-[11px] text-red-500 mt-1">
+              {new Date(syncFailure.failedAt).toLocaleString(undefined, {
+                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+              })}
+            </p>
+          </div>
+          <button
+            onClick={() => navigate('/ibkr')}
+            className="text-xs font-semibold text-red-700 hover:text-red-900 whitespace-nowrap"
+          >
+            Sync now →
+          </button>
+        </div>
+      )}
       {/* ── Trade review pipeline ── */}
       {pipelineTotal > 0 && (
         <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-5 mb-6">
