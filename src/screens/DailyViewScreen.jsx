@@ -327,23 +327,29 @@ function DayBlock({ day, rawTradesWithIso, onResolve, plannedTradesMap = {}, bas
       )}
 
       <div className="overflow-x-auto">
-        <table className="w-full">
+        {/* table-fixed + per-column widths: without these, each day block's
+            table auto-sizes columns to its own content, so a day with
+            "NVDA 160P 6 Apr" in the Symbol column pushes Duration / P&L /
+            Status to different x-offsets than a day with just "NVDA". The
+            Symbol column is intentionally left unwidthed so it flexes to
+            soak up remaining space; everything else is pinned. */}
+        <table className="w-full table-fixed">
           <thead className="bg-gray-50">
             <tr>
               {[
-                { label: 'Type',     hide: true },
-                { label: 'Symbol',   hide: false },
-                { label: 'Dir',      hide: false },
-                { label: 'Entry',    hide: true },
-                { label: 'Exit',     hide: true },
-                { label: 'Qty',      hide: true },
-                { label: 'Duration', hide: true },
-                { label: 'P&L',      hide: false },
-                { label: 'Status',   hide: false },
-                { label: '',         hide: true },
-                { label: '',         hide: false },
+                { label: 'Type',     hide: true,  w: 'w-14' },
+                { label: 'Symbol',   hide: false, w: ''      },
+                { label: 'Dir',      hide: false, w: 'w-20' },
+                { label: 'Entry',    hide: true,  w: 'w-24' },
+                { label: 'Exit',     hide: true,  w: 'w-24' },
+                { label: 'Qty',      hide: true,  w: 'w-20' },
+                { label: 'Duration', hide: true,  w: 'w-24' },
+                { label: 'P&L',      hide: false, w: 'w-28' },
+                { label: 'Status',   hide: false, w: 'w-36' },
+                { label: '',         hide: true,  w: 'w-12' },
+                { label: '',         hide: false, w: 'w-10' },
               ].map((col, i) => (
-                <th key={i} className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${col.hide ? 'hidden sm:table-cell' : ''}`}>{col.label}</th>
+                <th key={i} className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${col.hide ? 'hidden sm:table-cell' : ''} ${col.w}`}>{col.label}</th>
               ))}
             </tr>
           </thead>
