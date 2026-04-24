@@ -93,17 +93,17 @@ module.exports = async function handler(req, res) {
     // If the wipe fails halfway, we still have the user's why-I-left note
     // on record. Failure here is non-fatal — we log and continue.
     //
-    // TODO (pre-public-launch, GDPR): drop `email` and `stripe_customer_id`
-    // from the insert below (and the matching columns from the
-    // account_deletions table). A user who asked to be deleted should be
-    // anonymous in the churn log. Keep only deleted_at + feedback text.
-    // Retained for now while we're in private beta and want to spot churn
-    // signals ("who did we lose?").
+    // Privacy stance: anonymous by default. We no longer record email or
+    // stripe_customer_id on new deletion rows. The columns still exist on
+    // account_deletions so pre-cutover rows can continue to be anonymised
+    // by api/cron-anonymize-churn.js on the 90-day schedule; new rows
+    // land already-anonymous, which is what a deleted user reasonably
+    // expects.
     const { error: feedbackErr } = await supabaseAdmin
       .from('account_deletions')
       .insert({
-        email: userEmail || null,
-        stripe_customer_id: sub?.stripe_customer_id || null,
+        email: null,
+        stripe_customer_id: null,
         what_didnt_work: whatDidntWork || null,
         what_would_you_change: whatWouldYouChange || null,
       });
