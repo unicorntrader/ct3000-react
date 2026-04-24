@@ -804,15 +804,14 @@ export default function PerformanceScreen({ session }) {
       {callouts.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
           {callouts.map((c, i) => {
-            const styles = {
-              positive: 'bg-green-50 border-green-200 text-green-800',
-              warning:  'bg-amber-50 border-amber-200 text-amber-800',
-              insight:  'bg-blue-50 border-blue-200 text-blue-800',
-            };
-            const dividerStyles = {
-              positive: 'border-green-200/70',
-              warning:  'border-amber-200/70',
-              insight:  'border-blue-200/70',
+            // Editorial-card style: white bg, neutral body text, only the
+            // 4px left accent bar + icon + section labels carry the color
+            // cue. Keeps the page calm even when every callout happens to
+            // be a warning.
+            const accentStyles = {
+              positive: 'border-l-green-500',
+              warning:  'border-l-amber-500',
+              insight:  'border-l-blue-500',
             };
             const labelStyles = {
               positive: 'text-green-700',
@@ -839,18 +838,18 @@ export default function PerformanceScreen({ session }) {
             const hasDetail = !!(c.why || c.action);
             const isOpen = expandedCallouts.has(i);
             return (
-              <div key={i} className={`rounded-xl border text-sm ${styles[c.type]}`}>
+              <div key={i} className={`rounded-xl border border-gray-200 border-l-4 bg-white text-sm shadow-sm ${accentStyles[c.type]}`}>
                 <button
                   type="button"
                   onClick={hasDetail ? () => toggleCallout(i) : undefined}
-                  className={`w-full flex items-start gap-2.5 px-4 py-3 text-left ${hasDetail ? 'cursor-pointer' : 'cursor-default'}`}
+                  className={`w-full flex items-start gap-2.5 px-4 py-3 text-left ${hasDetail ? 'cursor-pointer hover:bg-gray-50' : 'cursor-default'} rounded-[inherit]`}
                   aria-expanded={hasDetail ? isOpen : undefined}
                 >
                   {icons[c.type]}
-                  <span className="flex-1">{c.text}</span>
+                  <span className="flex-1 text-gray-900 font-medium">{c.text}</span>
                   {hasDetail && (
                     <svg
-                      className={`w-4 h-4 shrink-0 mt-0.5 opacity-60 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                      className={`w-4 h-4 shrink-0 mt-0.5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
                       fill="none" stroke="currentColor" viewBox="0 0 24 24"
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -858,17 +857,17 @@ export default function PerformanceScreen({ session }) {
                   )}
                 </button>
                 {hasDetail && isOpen && (
-                  <div className={`px-4 pb-4 pt-1 border-t ${dividerStyles[c.type]} space-y-3`}>
+                  <div className="px-4 pb-4 pt-1 border-t border-gray-100 space-y-3">
                     {c.why && (
                       <div>
                         <p className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${labelStyles[c.type]}`}>Why flagged</p>
-                        <p className="text-sm leading-relaxed">{c.why}</p>
+                        <p className="text-sm leading-relaxed text-gray-700">{c.why}</p>
                       </div>
                     )}
                     {c.action && (
                       <div>
                         <p className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${labelStyles[c.type]}`}>What to try</p>
-                        <p className="text-sm leading-relaxed">{c.action}</p>
+                        <p className="text-sm leading-relaxed text-gray-700">{c.action}</p>
                       </div>
                     )}
                   </div>
