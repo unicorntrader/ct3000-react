@@ -105,13 +105,6 @@ list.
   it. Ensures password resets, invite emails, and confirmation emails
   don't get throttled or spam-filtered.
 
-- **90-day cleanup cron on `account_deletions`.** Privacy policy
-  promises we strip email + stripe_customer_id from deletion records
-  after 90 days. Currently we never do. Before public launch: add a
-  scheduled job (Supabase pg_cron or a Vercel cron function) that
-  UPDATEs the table to null out identifying columns on rows older
-  than 90 days.
-
 - **Legal review of `/terms` and `/privacy`.** Both pages carry a
   `NEEDS LEGAL REVIEW` header comment. Placeholder copy is fit for
   private BETA but must be reviewed by a solicitor familiar with
@@ -166,44 +159,16 @@ given the other mitigations already in place.
   in `api/_lib/performUserSync.js`. If we ever need a real parser
   (better entity decoding, non-self-closing tags, etc.), revisit.
 
-- **Stale entry above:** the "90-day cleanup cron on
-  `account_deletions`" item under "Pre-public-launch infrastructure"
-  is done. Shipped as `api/cron-anonymize-churn.js` (commit
-  `8a056efb`) plus a one-time backfill
-  (`20260424_backfill_anonymize_account_deletions.sql`). Remove when
-  next editing this section.
+## ~~Schema cleanup (deferred from 2026-04-25 dead-column audit)~~ ✅ RESOLVED
 
-## Schema cleanup (deferred from 2026-04-25 dead-column audit)
-
-The 2026-04-25 audit found columns and a table that are written by
-the codebase but never read. As a first pass, the writes were
-removed (commits 86d0... onwards). The schema still carries the dead
-storage. Drop it when convenient:
-
-- **`logical_trades.account_id`** — written by `logicalTradeBuilder`,
-  never read. The same value lives on `trades.account_id` and
-  `user_ibkr_credentials.account_id`. Safe to drop.
-- **`logical_trades.is_reversal`** — boolean flag set on `C;O`
-  reversal LTs. Never queried. Could be repurposed (UI badge "this
-  was a flip") if desired; otherwise drop.
-- **`logical_trades.source_notes`** — text written by the builder
-  with explanations like "opened before your earliest imported
-  trade". Never displayed. Could be surfaced in `TradeInlineDetail`
-  if useful; otherwise drop.
-- **`logical_trade_executions` (entire table)** — read by Daily View
-  pre-2026-04-25, written by no code in this repo, found empty in
-  prod. The DV read has been removed. Drop the table unless we plan
-  to repurpose it for proper FIFO provenance / reversal-aware
-  position math (would require populating it from
-  `rebuildForUser`).
-
-Migration when ready:
-
-```sql
-alter table public.logical_trades
-  drop column if exists account_id,
-  drop column if exists is_reversal,
-  drop column if exists source_notes;
-
-drop table if exists public.logical_trade_executions;
-```
+The 2026-04-25 dead-column audit found four objects written by old code
+but never read: `logical_trades.account_id`, `logical_trades.is_reversal`,
+`logical_trades.source_notes`, and the `logical_trade_executions` table.
+Writes were removed from the codebase, the columns + table were dropped
+from prod via the dashboard, and the change is now formalised in
+`supabase/migrations/20260425_drop_dead_logical_trade_columns.sql` so
+fresh dev environments come up clean. Note that the
+`00000000000000_baseline_schema.sql` snapshot is dated 2026-04-17 and
+still includes these objects — that's by design (it's a reference
+snapshot, not a runnable file) and the 2026-04-25 drop migration on
+top of it brings a fresh env in line with prod.
