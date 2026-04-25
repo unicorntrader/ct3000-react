@@ -210,7 +210,27 @@ export default function TradeChartPanel({ trade, plan }) {
         }))
       )
 
-      chart.timeScale().fitContent()
+      // ── Visible window — TV-app-like focus on every timeframe change ──
+      // If the trade fits comfortably in ~TARGET_VISIBLE_BARS, show the
+      // hold centered with symmetric pad. If it doesn't (e.g. user picked
+      // 1m on a 9-day swing), zoom in to the entry: 30 bars before, 70
+      // after — exit is off-screen but reachable by scrolling.
+      const TARGET_VISIBLE_BARS = 100
+      const stepSec = barInterval.seconds
+      const holdBars = Math.ceil((data.exitTime - data.entryTime) / stepSec)
+      let visibleFrom, visibleTo
+      if (holdBars * 1.4 <= TARGET_VISIBLE_BARS) {
+        const padBars = Math.floor((TARGET_VISIBLE_BARS - holdBars) / 2)
+        visibleFrom = data.entryTime - padBars * stepSec
+        visibleTo = data.exitTime + padBars * stepSec
+      } else {
+        visibleFrom = data.entryTime - 30 * stepSec
+        visibleTo = data.entryTime + 70 * stepSec
+      }
+      // Clamp to the actual data range to avoid the chart going blank past the edge.
+      visibleFrom = Math.max(visibleFrom, data.bars[0].time)
+      visibleTo = Math.min(visibleTo, data.bars[data.bars.length - 1].time)
+      chart.timeScale().setVisibleRange({ from: visibleFrom, to: visibleTo })
     } catch (err) {
       console.error('[trade-chart] render failed:', err)
       setError(err.message || 'Could not render chart.')

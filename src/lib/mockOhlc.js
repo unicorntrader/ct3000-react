@@ -81,15 +81,27 @@ export function generateMockOhlc(trade, interval = null) {
   const intervalLabel = chosen.label;
   const stepMs = stepSec * 1000;
 
-  // Pad before/after the trade window. Two goals:
-  //   1. Markers don't sit at the edges
-  //   2. The chart shows enough surrounding bars to feel like a real chart
-  //      (a 21-bar daily chart looks bare; ~50+ bars feels right)
-  // Rule of thumb: at least 30 bars before, 10 bars after. For long holds,
-  // expand proportionally so the trade window itself isn't most of the
-  // chart. Real Alpaca data will use the same shape — just over-fetch.
-  const padBefore = Math.max(hold * 0.5, stepMs * 30);
-  const padAfter = Math.max(hold * 0.2, stepMs * 10);
+  // Generated bar count cap. We don't need 13,000 1-minute bars to render
+  // a 9-day swing — the user can only see ~100 at once anyway. Cap at 600
+  // so chart init stays fast even when the user picks a tight timeframe
+  // on a long-hold trade. Real Alpaca-backed code path will obey the same
+  // limit by asking for fewer bars in the request.
+  const MAX_BARS = 600;
+  const holdBars = Math.ceil(hold / stepMs);
+
+  // Pad before/after the trade window. Goal: at least 30 bars of context
+  // before, 10 bars after, expanded proportionally for long holds. If the
+  // total would blow past MAX_BARS, pull the pads in symmetrically.
+  let padBefore = Math.max(hold * 0.5, stepMs * 30);
+  let padAfter = Math.max(hold * 0.2, stepMs * 10);
+  let totalBars = holdBars + Math.ceil(padBefore / stepMs) + Math.ceil(padAfter / stepMs);
+  if (totalBars > MAX_BARS) {
+    const extraBudget = Math.max(MAX_BARS - holdBars, 20);
+    const beforeShare = Math.floor(extraBudget * 0.7);
+    const afterShare = extraBudget - beforeShare;
+    padBefore = beforeShare * stepMs;
+    padAfter = afterShare * stepMs;
+  }
   const startMs = openedAt - padBefore;
   const endMs = closedAt + padAfter;
 
