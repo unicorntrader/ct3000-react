@@ -1,12 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   createChart,
   CandlestickSeries,
   AreaSeries,
   LineStyle,
   createSeriesMarkers,
+  createTextWatermark,
 } from 'lightweight-charts'
-import { generateMockOhlc } from '../lib/mockOhlc'
+import { generateMockOhlc, pickAutoInterval, TIMEFRAMES } from '../lib/mockOhlc'
 import { fmtSymbol, fmtPrice } from '../lib/formatters'
 
 // Trade-review chart panel rendered inside TradeInlineDetail when the user
@@ -14,30 +15,42 @@ import { fmtSymbol, fmtPrice } from '../lib/formatters'
 // synthetic OHLC data — when /api/ohlc lands (Alpaca-backed), swap the
 // generateMockOhlc call for a real fetch.
 //
-// Rendered overlays:
-//   * Candlestick series for OHLC bars
-//   * Entry / exit fill markers (arrows)
-//   * Planned entry / target / stop horizontal price lines
-//   * Hold-window soft area shading
-//   * CT3000 watermark
+// Conventions follow the v5 official guide:
+//   * chart.addSeries(CandlestickSeries, { borderVisible: false, ... })
+//   * Hold-window AreaSeries lives on its own overlay scale so it doesn't
+//     poison the candle scale (zero baseline would crush the candles).
+//   * createSeriesMarkers(series, []) instead of v4's series.setMarkers.
+//   * createTextWatermark(pane, { lines }) instead of a manual overlay div
+//     that gets clipped by the price scale column.
 
 export default function TradeChartPanel({ trade, plan }) {
   const containerRef = useRef(null)
   const chartRef = useRef(null)
   const [error, setError] = useState(null)
-  const [intervalLabel, setIntervalLabel] = useState(null)
+
+  // Default timeframe = auto-pick. User can override via the toolbar
+  // buttons. Switching TF regenerates synthetic data; with real Alpaca
+  // data later, this state will drive a refetch instead.
+  const autoInterval = useMemo(() => {
+    if (!trade?.opened_at || !trade?.closed_at) return TIMEFRAMES[1]
+    const hold = new Date(trade.closed_at).getTime() - new Date(trade.opened_at).getTime()
+    return pickAutoInterval(Math.max(hold, 60 * 1000))
+  }, [trade?.opened_at, trade?.closed_at])
+
+  const [barInterval, setBarInterval] = useState(autoInterval)
+  // Reset selected barInterval when the trade changes
+  useEffect(() => { setBarInterval(autoInterval) }, [autoInterval])
 
   useEffect(() => {
     if (!containerRef.current || !trade) return
 
     let chart
     try {
-      const data = generateMockOhlc(trade)
+      const data = generateMockOhlc(trade, barInterval)
       if (!data || !data.bars.length) {
         setError('Not enough data to render this trade.')
         return
       }
-      setIntervalLabel(data.intervalLabel)
 
       chart = createChart(containerRef.current, {
         height: 380,
@@ -53,28 +66,69 @@ export default function TradeChartPanel({ trade, plan }) {
         },
         rightPriceScale: {
           borderColor: '#e5e7eb',
-          scaleMargins: { top: 0.1, bottom: 0.1 },
+          scaleMargins: { top: 0.08, bottom: 0.08 },
         },
         timeScale: {
           borderColor: '#e5e7eb',
-          timeVisible: data.intervalLabel !== '1D',
+          timeVisible: barInterval.label !== '1D',
           secondsVisible: false,
         },
         crosshair: { mode: 1 },
       })
       chartRef.current = chart
 
+      // ── CT3000 watermark (v5 official plugin) ──────────────────────────
+      // Uses createTextWatermark so the brand text is rendered inside the
+      // chart's drawing surface, never clipped by the price scale column.
+      const firstPane = chart.panes()[0]
+      if (firstPane) {
+        createTextWatermark(firstPane, {
+          horzAlign: 'center',
+          vertAlign: 'center',
+          lines: [
+            { text: 'CT3000', color: 'rgba(30, 64, 175, 0.10)', fontSize: 56, lineHeight: 60 },
+            { text: 'PLAN YOUR TRADE · TRADE YOUR PLAN', color: 'rgba(30, 64, 175, 0.10)', fontSize: 11 },
+          ],
+        })
+      }
+
+      // ── Candlestick series (v5 canonical setup) ────────────────────────
       const candles = chart.addSeries(CandlestickSeries, {
         upColor: '#10b981',
         downColor: '#ef4444',
-        borderUpColor: '#10b981',
-        borderDownColor: '#ef4444',
         wickUpColor: '#10b981',
         wickDownColor: '#ef4444',
+        borderVisible: false,
       })
       candles.setData(data.bars)
 
-      // ── Planned levels — only what's actually on the plan ──────────────
+      // ── Actual entry / exit reference lines ────────────────────────────
+      // Faint dashed lines at the user's avg fill prices. Always shown,
+      // even when there's no plan — gives the chart an axis reference.
+      const entryPrice = parseFloat(trade.avg_entry_price)
+      const exitPrice = trade.avg_exit_price != null ? parseFloat(trade.avg_exit_price) : null
+      if (entryPrice) {
+        candles.createPriceLine({
+          price: entryPrice,
+          color: 'rgba(16, 185, 129, 0.55)',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: 'Entry',
+        })
+      }
+      if (exitPrice) {
+        candles.createPriceLine({
+          price: exitPrice,
+          color: 'rgba(239, 68, 68, 0.55)',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: 'Exit',
+        })
+      }
+
+      // ── Plan reference lines — only fields actually on the plan ────────
       if (plan?.planned_entry_price != null) {
         candles.createPriceLine({
           price: parseFloat(plan.planned_entry_price),
@@ -82,7 +136,7 @@ export default function TradeChartPanel({ trade, plan }) {
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
-          title: `Plan entry ${fmtPrice(plan.planned_entry_price, trade.currency)}`,
+          title: 'Plan',
         })
       }
       if (plan?.planned_target_price != null) {
@@ -92,7 +146,7 @@ export default function TradeChartPanel({ trade, plan }) {
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
-          title: `Target ${fmtPrice(plan.planned_target_price, trade.currency)}`,
+          title: 'Target',
         })
       }
       if (plan?.planned_stop_loss != null) {
@@ -102,14 +156,12 @@ export default function TradeChartPanel({ trade, plan }) {
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
-          title: `Stop ${fmtPrice(plan.planned_stop_loss, trade.currency)}`,
+          title: 'Stop',
         })
       }
 
       // ── Entry / exit markers ───────────────────────────────────────────
       const isLong = trade.direction === 'LONG'
-      const entryPrice = parseFloat(trade.avg_entry_price)
-      const exitPrice = trade.avg_exit_price != null ? parseFloat(trade.avg_exit_price) : null
       const markers = []
       if (entryPrice && data.entryTime) {
         markers.push({
@@ -133,14 +185,13 @@ export default function TradeChartPanel({ trade, plan }) {
       }
       if (markers.length) createSeriesMarkers(candles, markers)
 
-      // ── Hold-window soft shading ───────────────────────────────────────
-      // Critical: put the area series on its own overlay scale (`priceScaleId
-      // = 'hold'`) so its zero-baseline doesn't drag the main candle scale
-      // down to include 0. Otherwise a $110 stock chart shows -20→140 on the
-      // y-axis and the candles get squished into a 5% band at the top.
+      // ── Hold-window soft shading on its own overlay scale ──────────────
+      // Critical: the area series must NOT share the candle scale, or its
+      // implicit zero-baseline drags the y-axis down (turning a $110 chart
+      // into a -20→140 scale that crushes the candles into a thin band).
       const holdSeries = chart.addSeries(AreaSeries, {
         priceScaleId: 'hold',
-        topColor: 'rgba(37, 99, 235, 0.18)',
+        topColor: 'rgba(37, 99, 235, 0.16)',
         bottomColor: 'rgba(37, 99, 235, 0.02)',
         lineColor: 'rgba(37, 99, 235, 0)',
         lineWidth: 0,
@@ -148,8 +199,6 @@ export default function TradeChartPanel({ trade, plan }) {
         lastValueVisible: false,
         crosshairMarkerVisible: false,
       })
-      // Hide the overlay scale entirely — we don't want a second axis label
-      // for "hold window depth" cluttering the chart.
       chart.priceScale('hold').applyOptions({
         scaleMargins: { top: 0, bottom: 0 },
         visible: false,
@@ -175,7 +224,7 @@ export default function TradeChartPanel({ trade, plan }) {
         chartRef.current = null
       }
     }
-  }, [trade, plan])
+  }, [trade, plan, barInterval])
 
   if (error) {
     return (
@@ -186,39 +235,45 @@ export default function TradeChartPanel({ trade, plan }) {
   }
 
   return (
-    <div className="relative border border-gray-200 rounded-xl overflow-hidden bg-white">
+    <div className="border border-gray-200 rounded-xl overflow-hidden bg-white">
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 bg-gray-50">
-        <div className="flex items-center gap-2 text-xs text-gray-600">
+        <div className="flex items-center gap-2 text-xs text-gray-700">
           <span className="font-semibold">{fmtSymbol(trade)}</span>
           <span className="text-gray-300">·</span>
-          <span>{intervalLabel || '—'}</span>
-          <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[10px] font-semibold uppercase tracking-wide">
-            preview · synthetic data
-          </span>
+          <span className="text-gray-500">{barInterval.label}</span>
+          <span className="text-gray-300">·</span>
+          <span className="italic text-gray-400 text-[11px]">synthetic data — Alpaca wiring pending</span>
         </div>
-        <div className="flex items-center gap-3 text-[11px] text-gray-500">
-          <span><span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1.5 align-middle" />Entry</span>
-          <span><span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5 align-middle" />Exit</span>
-          {plan?.planned_entry_price != null && (
-            <span><span className="inline-block w-3 h-0.5 bg-blue-600 mr-1.5 align-middle" />Plan</span>
-          )}
-          {plan?.planned_target_price != null && (
-            <span><span className="inline-block w-3 h-0.5 bg-emerald-600 mr-1.5 align-middle" />Target</span>
-          )}
-          {plan?.planned_stop_loss != null && (
-            <span><span className="inline-block w-3 h-0.5 bg-red-600 mr-1.5 align-middle" />Stop</span>
-          )}
+        <div className="flex items-center gap-1">
+          {TIMEFRAMES.map(tf => (
+            <button
+              key={tf.label}
+              onClick={() => setBarInterval(tf)}
+              className={`px-2 py-0.5 text-[11px] rounded font-medium transition-colors ${
+                tf.label === barInterval.label
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-400 hover:text-blue-600'
+              }`}
+            >
+              {tf.label}
+            </button>
+          ))}
         </div>
       </div>
       <div ref={containerRef} className="w-full" style={{ height: 380 }} />
-      <div
-        className="absolute pointer-events-none select-none"
-        style={{ right: 18, bottom: 18, opacity: 0.32, color: '#1e40af' }}
-      >
-        <div className="text-base font-bold tracking-[0.12em] leading-none">CT3000</div>
-        <div className="text-[9px] tracking-[0.16em] font-medium opacity-80 mt-0.5">
-          PLAN YOUR TRADE · TRADE YOUR PLAN
-        </div>
+      <div className="flex items-center gap-4 px-4 py-2 border-t border-gray-100 bg-gray-50 text-[11px] text-gray-500 flex-wrap">
+        <span><span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1.5 align-middle" />Entry fill</span>
+        <span><span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5 align-middle" />Exit fill</span>
+        {plan?.planned_entry_price != null && (
+          <span><span className="inline-block w-3 border-t border-dashed border-blue-600 mr-1.5 align-middle" />Plan entry</span>
+        )}
+        {plan?.planned_target_price != null && (
+          <span><span className="inline-block w-3 border-t border-dashed border-emerald-600 mr-1.5 align-middle" />Target</span>
+        )}
+        {plan?.planned_stop_loss != null && (
+          <span><span className="inline-block w-3 border-t border-dashed border-red-600 mr-1.5 align-middle" />Stop</span>
+        )}
+        <span className="ml-auto text-gray-400">Hold window shaded</span>
       </div>
     </div>
   )

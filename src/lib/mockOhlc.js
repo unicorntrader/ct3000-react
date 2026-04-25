@@ -13,18 +13,29 @@
 // not statistical fidelity. When we swap in real data, this file gets
 // deleted and TradeChartPanel calls /api/ohlc instead.
 
-// Pick bar interval based on hold duration.
+// Available timeframes the user can pick from. Order matters — the
+// timeframe selector renders them left-to-right in this order.
+export const TIMEFRAMES = [
+  { label: '1m', seconds: 60 },
+  { label: '5m', seconds: 5 * 60 },
+  { label: '15m', seconds: 15 * 60 },
+  { label: '1h', seconds: 60 * 60 },
+  { label: '1D', seconds: 24 * 60 * 60 },
+];
+
+// Auto-pick a sensible default interval given how long the user held
+// the trade. Caller can override this with an explicit interval.
 //   < 2h    → 1-minute bars
 //   < 1d    → 5-minute bars
 //   < 1w    → 1-hour bars
 //   ≥ 1w    → 1-day bars
-function pickInterval(holdMs) {
+export function pickAutoInterval(holdMs) {
   const HOUR = 60 * 60 * 1000;
   const DAY = 24 * HOUR;
-  if (holdMs < 2 * HOUR) return { seconds: 60, label: '1m' };
-  if (holdMs < DAY) return { seconds: 5 * 60, label: '5m' };
-  if (holdMs < 7 * DAY) return { seconds: 60 * 60, label: '1h' };
-  return { seconds: DAY / 1000, label: '1D' };
+  if (holdMs < 2 * HOUR) return TIMEFRAMES[0];
+  if (holdMs < DAY) return TIMEFRAMES[1];
+  if (holdMs < 7 * DAY) return TIMEFRAMES[3];
+  return TIMEFRAMES[4];
 }
 
 // Stable pseudo-random in [-1, 1] given an integer index — so the chart
@@ -40,6 +51,8 @@ function noise(i, salt) {
  * @param {object} trade  logical_trades row (or close enough — we read
  *                        opened_at, closed_at, avg_entry_price,
  *                        avg_exit_price, direction)
+ * @param {{seconds:number,label:string}} [interval]  optional explicit
+ *                        bar interval. If omitted, auto-pick from hold.
  * @returns {{
  *   bars: {time:number,open:number,high:number,low:number,close:number}[],
  *   entryTime: number,
@@ -47,7 +60,7 @@ function noise(i, salt) {
  *   intervalLabel: string,
  * }}
  */
-export function generateMockOhlc(trade) {
+export function generateMockOhlc(trade, interval = null) {
   const openedAt = trade.opened_at ? new Date(trade.opened_at).getTime() : null;
   const closedAt = trade.closed_at ? new Date(trade.closed_at).getTime() : null;
   if (!openedAt || !closedAt) return null;
@@ -63,7 +76,9 @@ export function generateMockOhlc(trade) {
   if (!entryPrice || !exitPrice) return null;
 
   const hold = Math.max(closedAt - openedAt, 60 * 1000);
-  const { seconds: stepSec, label: intervalLabel } = pickInterval(hold);
+  const chosen = interval || pickAutoInterval(hold);
+  const stepSec = chosen.seconds;
+  const intervalLabel = chosen.label;
   const stepMs = stepSec * 1000;
 
   // Pad ~30% before and after the trade window so markers aren't at edges.
