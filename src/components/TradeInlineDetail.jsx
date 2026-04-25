@@ -20,20 +20,6 @@ function StatCard({ label, value, color }) {
   )
 }
 
-function AdherencePill({ score }) {
-  if (score == null) return null
-  const { bg, text } = score >= 75
-    ? { bg: 'bg-green-100', text: 'text-green-700' }
-    : score >= 50
-    ? { bg: 'bg-amber-100', text: 'text-amber-700' }
-    : { bg: 'bg-red-100', text: 'text-red-700' }
-  return (
-    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${bg} ${text}`}>
-      {score}
-    </span>
-  )
-}
-
 export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) {
   const [notes, setNotes] = useState(trade?.review_notes || '')
   const [saving, setSaving] = useState(false)
@@ -231,7 +217,7 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
           </div>
 
           {/* Stats row */}
-          <div className="grid grid-cols-4 gap-2 mb-5">
+          <div className="grid grid-cols-5 gap-2 mb-5">
             <StatCard label="Entry" value={fmtPrice(trade.avg_entry_price, currency)} />
             <StatCard label="Exit" value={actualExit != null ? fmtPrice(actualExit, currency) : '—'} />
             <StatCard
@@ -244,18 +230,22 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
               value={rMultiple ?? '—'}
               color={rMultiple ? (parseFloat(rMultiple) >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'}
             />
+            <StatCard
+              label="Adherence"
+              value={adherence != null ? adherence : '—'}
+              color={
+                adherence == null ? 'text-gray-400'
+                : adherence >= 75 ? 'text-green-600'
+                : adherence >= 50 ? 'text-amber-600'
+                : 'text-red-500'
+              }
+            />
           </div>
 
           {/* Plan vs actual — matched closed trades only */}
           {isMatchedClosed && planRows.length > 0 && (
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Plan vs actual</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">Adherence</span>
-                  <AdherencePill score={adherence} />
-                </div>
-              </div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Plan vs actual</p>
               <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
                 {planRows.map(row => (
                   <div key={row.label} className="flex items-center justify-between px-4 py-2">
