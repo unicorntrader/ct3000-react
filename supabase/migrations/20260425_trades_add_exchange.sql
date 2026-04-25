@@ -16,4 +16,13 @@
 -- ══════════════════════════════════════════════════════════════════════
 
 alter table public.trades
-  add column if not exists exchange varchar(16);
+  add column if not exists exchange   varchar(16),
+  add column if not exists order_type varchar(16);
+
+-- order_type captures the IBKR order type at fill time (LMT, MKT, STP,
+-- STPLMT, MIT, TRAIL, etc.). Useful later for execution-quality
+-- analysis: "are my fills consistently giving up cents because I cross
+-- the spread?", "am I respecting my plan's limits-only discipline?",
+-- "are my stops getting run?". Same persistence pattern as exchange:
+-- captured in the parser already, just need to thread it through the
+-- upsert.
