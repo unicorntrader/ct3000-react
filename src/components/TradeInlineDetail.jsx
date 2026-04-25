@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useBumpDataVersion } from '../lib/DataVersionContext'
 import { fmtPrice, fmtPnl, fmtDateLong, fmtSymbol } from '../lib/formatters'
+import TradeChartPanel from './TradeChartPanel'
 
 // Rendered inline underneath a trade row in the Smart Journal table. Same
 // content the old TradeJournalDrawer used to show, but with no overlay, no
@@ -24,6 +25,7 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
   const [notes, setNotes] = useState(trade?.review_notes || '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [chartOpen, setChartOpen] = useState(false)
   const bump = useBumpDataVersion()
 
   // Refs so the keyboard effect can call the latest handler without having it
@@ -36,6 +38,7 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
   useEffect(() => {
     setNotes(trade?.review_notes || '')
     setSaved(false)
+    setChartOpen(false)
   }, [trade])
 
   // Keyboard: Esc collapses the row, Cmd/Ctrl+Enter saves the note.
@@ -325,6 +328,38 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
           </p>
         </div>
       </div>
+
+      {/* Chart panel — closed trades only, click-to-load. Full-width below
+          the two-column layout so the chart breathes. Synthetic data for
+          now; swap for an Alpaca-backed /api/ohlc fetch later. */}
+      {!isOpen_trade && (
+        <div className="mt-6 max-w-5xl">
+          {!chartOpen ? (
+            <button
+              onClick={e => { e.stopPropagation(); setChartOpen(true) }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 hover:border-blue-400 hover:text-blue-600 text-sm font-medium text-gray-600 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3v18h18M7 14l3-3 4 4 5-5" />
+              </svg>
+              Show chart
+            </button>
+          ) : (
+            <div onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Chart</p>
+                <button
+                  onClick={() => setChartOpen(false)}
+                  className="text-xs text-gray-400 hover:text-blue-600 underline decoration-dotted underline-offset-2"
+                >
+                  Hide chart
+                </button>
+              </div>
+              <TradeChartPanel trade={trade} plan={plan} />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
