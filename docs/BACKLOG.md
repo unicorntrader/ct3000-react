@@ -4,7 +4,7 @@ Running list of known, low-priority, or deferred improvements. When a beta
 bug gets reported, check here first — the cause might already be on the
 list.
 
-## IBKR XML parser (`api/sync.js`, `api/lib/logicalTradeBuilder.js`)
+## IBKR XML parser (`api/sync.js`, `api/_lib/performUserSync.js`)
 
 - **Self-closing tag assumption.** `/<Trade\s([^>]+)\/>/g` only matches
   `<Trade ... />`. If IBKR ever emits `<Trade ...></Trade>` (some report
@@ -57,15 +57,14 @@ list.
 
 ## Schema / data
 
-- **`trades.date_time` still `varchar(20)` in IBKR compact format**
-  (`YYYYMMDD;HHMMSS`). Sibling columns on `logical_trades` already moved
-  to `timestamptz` on 2026-04-17. Coordinated code + migration ship
-  required: update `api/sync.js` to parse at sync time and the `toMs`
-  helpers in both `logicalTradeBuilder` copies, then run the ALTER.
+- ~~**`trades.date_time` still `varchar(20)` in IBKR compact format**~~ —
+  resolved 2026-04-17 (`20260417_trades_date_time_to_timestamptz.sql`).
+  The pipeline now parses IBKR `YYYYMMDD;HHMMSS` as exchange-local
+  wall-clock and writes real UTC via `api/_lib/exchangeTimezone.js`.
 
-- **Two copies of `logicalTradeBuilder` and `adherenceScore`** in
-  `src/lib/` (ES module) and `api/lib/` (CJS). Drift-prone — fixes must
-  land in both. Consolidation candidate.
+- ~~**Two copies of `logicalTradeBuilder` and `adherenceScore`**~~ —
+  resolved. The `src/lib/` ES-module copies were deleted; FIFO and
+  adherence are server-only under `api/_lib/`.
 
 - **`planned_trades.playbook_id` and `missed_trades.playbook_id` aren't
   wired into the UI yet.** Schema is there with FKs, but nothing sets

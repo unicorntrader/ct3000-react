@@ -69,8 +69,8 @@ exceeded with the addition of `/api/ibkr-credentials`).
 **Fix sketch:** build into a staging table and swap, or use a Postgres RPC with transaction semantics, or at minimum snapshot the deleted rows to a temp structure to restore on failure.
 
 ### 4. ~~No observability — we won't know beta users are breaking~~ ✅ RESOLVED
-**Status:** Sentry wired for both browser (`@sentry/react`) and serverless (`@sentry/node` via `api/lib/sentry.js`). ErrorBoundary reports crashes; IBKRScreen captures sync-step failures with tags (`sync_step=flex-fetch | trades-upsert | positions-insert | credentials-update | logical-rebuild`); `api/sync.js` and `api/rebuild.js` capture unhandled errors with `route` + `sync_step` tags and flush before responding. User context (Supabase `user_id`, email for non-anon) is attached to every event.
-**Remaining:** add `REACT_APP_SENTRY_DSN` + `SENTRY_DSN` env vars in Vercel. Consider a Slack webhook alert on 5xx in the Sentry project settings.
+**Status:** Sentry wired for both browser (`@sentry/react`) and serverless (`@sentry/node` via `api/_lib/sentry.js`). ErrorBoundary reports crashes; IBKRScreen captures sync-step failures with tags; `api/sync.js`, `api/rebuild.js`, and the cron functions capture unhandled errors with `route` + `step` tags and flush before responding. User context (Supabase `user_id`, email) is attached to every event.
+**Remaining:** add `VITE_SENTRY_DSN` + `SENTRY_DSN` env vars in Vercel. Consider a Slack webhook alert on 5xx in the Sentry project settings.
 
 ---
 
@@ -105,7 +105,7 @@ exceeded with the addition of `/api/ibkr-credentials`).
 **Fix sketch:** `react-window` or similar. Medium effort.
 
 ### 10. FIFO builder is O(n) per closing trade group, but `Array.shift()` in the hot loop
-**Where:** `src/lib/logicalTradeBuilder.js` — `.shift()` per matched lot.
+**Where:** `api/_lib/logicalTradeBuilder.js` — `.shift()` per matched lot.
 **Risk:** not a real problem until ~50k+ executions. Shift is O(m) where m is open-positions-on-that-symbol, usually <10. Listing for completeness.
 **Fix sketch:** skip; not worth optimising pre-beta.
 

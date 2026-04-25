@@ -36,7 +36,7 @@ assignment, exercise, multi-leg spreads). User flagged 2026-04-21 that options
 trades are botched. Needs a focused pass with real options data from a user
 account.
 
-**Scope:** probably 1-2 days. Touches `api/lib/logicalTradeBuilder.js` and
+**Scope:** probably 1-2 days. Touches `api/_lib/logicalTradeBuilder.js` and
 relevant UI that renders OSI-formatted symbols.
 
 ---

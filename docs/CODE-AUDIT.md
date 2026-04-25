@@ -30,8 +30,8 @@ Scope: all `src/`, `api/`, core docs. Excludes `supabase/migrations/*`
 ### 2. ~~Two copies of `logicalTradeBuilder.js` / `adherenceScore.js` — guaranteed drift~~ ✅ RESOLVED
 
 **Status:** Both cleaned up April 2026.
-- `src/lib/logicalTradeBuilder.js` was dead code (zero importers) — deleted outright. Browser never runs FIFO; all rebuilds happen server-side in `api/lib/logicalTradeBuilder.js` via `api/rebuild.js`.
-- `src/lib/adherenceScore.js` was actively used by three browser files, but only to recompute what `api/rebuild.js` had already written to `logical_trades.adherence_score`. Browser now reads the DB column directly (Journal, TradeInlineDetail, PerformanceScreen); the browser copy was deleted and `api/lib/adherenceScore.js` simplified to a single scalar function. The Performance screen's 4-bar "Adherence breakdown" panel was dropped at the same time — the overall "Avg adherence" KPI card remains.
+- `src/lib/logicalTradeBuilder.js` was dead code (zero importers) — deleted outright. Browser never runs FIFO; all rebuilds happen server-side in `api/_lib/logicalTradeBuilder.js` via `api/_lib/rebuildForUser.js` (called inline by `/api/sync` and exposed standalone via `/api/rebuild`).
+- `src/lib/adherenceScore.js` was actively used by three browser files, but only to recompute what the server had already written to `logical_trades.adherence_score`. Browser now reads the DB column directly (Journal, TradeInlineDetail, PerformanceScreen); the browser copy was deleted and `api/_lib/adherenceScore.js` simplified to a single scalar function. The Performance screen's 4-bar "Adherence breakdown" panel was dropped at the same time — the overall "Avg adherence" KPI card remains.
 
 ---
 

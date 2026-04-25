@@ -2,7 +2,7 @@
 
 > **Purpose:** a plain-English map of every file, function, and user flow in the app. Written for the project owner (a trader, not a pro engineer) to internalize how the codebase actually works. If you read this end-to-end you should be able to find any piece of the app and understand what it does without having to reverse-engineer from the source.
 
-**Status:** accurate as of April 15, 2026. Known small staleness flagged inline.
+**Status:** reconciled with code on 2026-04-25. Spot any drift? Source code is the truth — these notes describe shape, not contract.
 
 ---
 
@@ -46,8 +46,8 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 - Default `App` — wraps auth state machine and polling after Stripe checkout
 
 **Dependencies:** `./lib/supabaseClient`, `./lib/PrivacyContext`, every screen in `./screens/`, every shell component in `./components/`.
-**Used by:** `src/index.js`.
-**Tables touched:** `user_subscriptions` (read, polls), `logical_trades` (checks anon demo seed state).
+**Used by:** `src/index.jsx`.
+**Tables touched:** `user_subscriptions` (read, polls), `logical_trades` (checks demo seed state on first login).
 
 ---
 
@@ -362,7 +362,7 @@ post-2026-04-25 (DB grants revoked, except column-level UPDATE on
 4. Insert `user_subscriptions` row with `is_comped=true`, `status='active'`
 5. Mark invite as redeemed
 
-**Current status:** Functional but **not wired to any UI path**. Unclear if it's a planned feature or abandoned. Logged as a question in the audit.
+**Current status:** Wired into `AuthScreen` — when a user lands on `/?invite=TOKEN`, AuthScreen flips to invite-redemption mode, captures email + password, and POSTs to `/api/redeem-invite`. Used to onboard comped beta users.
 
 #### `api/_lib/supabaseAdmin.js`
 **Purpose:** Server-side Supabase client using `SUPABASE_SERVICE_ROLE_KEY`. Bypasses RLS. Used by every `api/*.js` file for privileged writes.

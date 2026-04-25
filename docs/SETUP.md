@@ -242,7 +242,7 @@ After the first deployment, set the environment variables in the Vercel dashboar
 **Sentry setup:**
 
 The app wires Sentry for both the browser (`@sentry/react`) and the serverless
-functions (`@sentry/node` via `api/lib/sentry.js`). Both are no-ops when their
+functions (`@sentry/node` via `api/_lib/sentry.js`). Both are no-ops when their
 respective env vars are absent, so local dev and preview deploys work without
 a Sentry project.
 

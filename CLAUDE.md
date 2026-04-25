@@ -1,12 +1,12 @@
 # CT3000 — Claude context
 
 ## Project
-React + Supabase trading journal for IBKR traders. Trades are synced via IBKR Flex XML through a Vercel serverless function (`api/sync.js`), built into logical trades server-side (`api/lib/logicalTradeBuilder.js`, invoked from `api/rebuild.js`), and displayed across several screens.
+React + Supabase trading journal for IBKR traders. Trades are synced via IBKR Flex XML through a Vercel serverless function (`api/sync.js` → `api/_lib/performUserSync.js`), built into logical trades server-side (`api/_lib/logicalTradeBuilder.js`, invoked from `api/_lib/rebuildForUser.js` and also exposed via `api/rebuild.js`), and displayed across several screens.
 
 ## Key architecture
 
 ### Data flow
-IBKR Flex XML → `api/sync.js` → `trades` table → `api/lib/logicalTradeBuilder.js` (via `api/rebuild.js`) → `logical_trades` table → screens
+IBKR Flex XML → `api/_lib/performUserSync.js` (called by `/api/sync` and `/api/cron-sync`) → `trades` table → `api/_lib/rebuildForUser.js` → `logical_trades` table → screens
 
 The browser never runs FIFO — it only reads the finished `logical_trades` rows.
 
@@ -56,7 +56,7 @@ All formatting and P&L helpers live here. Import from this file; do not define l
 ## Multi-currency
 - IBKR provides `fxRateToBase` per execution in the Flex XML
 - `api/sync.js` writes it to `trades.fx_rate_to_base`
-- `api/lib/logicalTradeBuilder.js` propagates the close-time rate to `logical_trades.fx_rate_to_base`
+- `api/_lib/logicalTradeBuilder.js` propagates the close-time rate to `logical_trades.fx_rate_to_base`
 - Account base currency is parsed from the `<AccountInformation currency="...">` XML node and stored in `user_ibkr_credentials.base_currency`
 - `DailyViewScreen` and `PerformanceScreen` fetch `base_currency` from `user_ibkr_credentials` on load and pass it to all format functions — never hardcode `'USD'` or `$`
 
