@@ -143,9 +143,6 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
   if (loadError) {
     return (
       <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">Plans</h2>
-        </div>
         <LoadError title="Could not load plans" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />
       </div>
     );
@@ -178,8 +175,7 @@ export default function PlansScreen({ session, onNewPlan, onEditPlan, refreshKey
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold text-gray-900">Plans</h2>
+      <div className="flex items-center justify-end mb-4">
         <button
           onClick={onNewPlan}
           className="flex items-center space-x-1.5 bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"

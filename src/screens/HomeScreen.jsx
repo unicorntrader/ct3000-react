@@ -248,7 +248,6 @@ export default function HomeScreen({ session }) {
   if (loadError) {
     return (
       <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Home</h2>
         <LoadError title="Could not load your dashboard" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />
       </div>
     );

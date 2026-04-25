@@ -647,7 +647,6 @@ export default function PerformanceScreen({ session }) {
   if (loadError) {
     return (
       <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Performance</h2>
         <LoadError title="Could not load performance data" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />
       </div>
     );
@@ -736,9 +735,8 @@ export default function PerformanceScreen({ session }) {
   return (
     <div className="space-y-6" style={{}}>
 
-      {/* ── header + period controls ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <h2 className="text-xl font-semibold text-gray-900">Performance</h2>
+      {/* ── period controls ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
         <div className="flex flex-wrap items-center gap-2">
           {PRESETS.map(p => (
             <button

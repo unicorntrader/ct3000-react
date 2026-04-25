@@ -447,10 +447,6 @@ export default function JournalScreen({ session }) {
           )}
         </button>
       )}
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold text-gray-900">Smart Journal</h2>
-      </div>
-
       {loadError && (
         <div className="mb-4">
           <LoadError title="Could not load trades" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />

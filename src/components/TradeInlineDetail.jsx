@@ -198,38 +198,67 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
 
   return (
     <div className="px-6 py-5 bg-gray-50 border-y border-gray-100">
+      {/* Full-width header — symbol, direction, win/loss, date, reset */}
+      <div className="flex items-center flex-wrap gap-2 mb-3 max-w-5xl">
+        <span className="text-base font-semibold text-gray-900">{fmtSymbol(trade)}</span>
+        <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
+          trade.direction === 'LONG' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+        }`}>
+          {trade.direction}
+        </span>
+        {isOpen_trade ? (
+          <span className="px-2 py-0.5 text-xs rounded-full font-medium bg-blue-50 text-blue-600">open</span>
+        ) : (
+          <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
+            isWin ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+          }`}>
+            {isWin ? 'win' : 'loss'}
+          </span>
+        )}
+        <span className="text-xs text-gray-400 ml-1">{dateDisplay}</span>
+        {canResetMatch && (
+          <button
+            onClick={e => { e.stopPropagation(); handleResetMatch(); }}
+            className="ml-auto text-xs text-gray-400 hover:text-blue-600 underline decoration-dotted underline-offset-2"
+            title="Clear the plan match and send this trade back to Needs review"
+          >
+            Reset match
+          </button>
+        )}
+      </div>
+
+      {/* Action row — chart + screenshot. Sits right under the header so the
+          two key actions are visible without scrolling past the stats/notes. */}
+      {!isOpen_trade && (
+        <div onClick={e => e.stopPropagation()} className="flex flex-wrap items-center gap-3 mb-5 max-w-5xl">
+          {!chartOpen ? (
+            <button
+              onClick={() => setChartOpen(true)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:border-blue-400 hover:text-blue-600 text-sm font-medium text-gray-600 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3v18h18M7 14l3-3 4 4 5-5" />
+              </svg>
+              Show chart
+            </button>
+          ) : (
+            <button
+              onClick={() => setChartOpen(false)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-sm font-medium hover:bg-blue-100 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3v18h18M7 14l3-3 4 4 5-5" />
+              </svg>
+              Hide chart
+            </button>
+          )}
+          <TradeScreenshot trade={trade} onSaved={onSaved} />
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl">
         {/* Left column: stats + plan vs actual */}
         <div>
-          {/* Header row */}
-          <div className="flex items-center flex-wrap gap-2 mb-4">
-            <span className="text-base font-semibold text-gray-900">{fmtSymbol(trade)}</span>
-            <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-              trade.direction === 'LONG' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
-            }`}>
-              {trade.direction}
-            </span>
-            {isOpen_trade ? (
-              <span className="px-2 py-0.5 text-xs rounded-full font-medium bg-blue-50 text-blue-600">open</span>
-            ) : (
-              <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-                isWin ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
-              }`}>
-                {isWin ? 'win' : 'loss'}
-              </span>
-            )}
-            <span className="text-xs text-gray-400 ml-1">{dateDisplay}</span>
-            {canResetMatch && (
-              <button
-                onClick={e => { e.stopPropagation(); handleResetMatch(); }}
-                className="ml-auto text-xs text-gray-400 hover:text-blue-600 underline decoration-dotted underline-offset-2"
-                title="Clear the plan match and send this trade back to Needs review"
-              >
-                Reset match
-              </button>
-            )}
-          </div>
-
           {/* Stats row */}
           <div className="grid grid-cols-5 gap-2 mb-5">
             <StatCard label="Entry" value={fmtPrice(trade.avg_entry_price, currency)} />
@@ -330,40 +359,13 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
         </div>
       </div>
 
-      {/* Chart + screenshot — closed trades only, full-width below the
-          two-column layout so they breathe. The CT3000 chart is auto-built
-          from Alpaca; the screenshot is the user's own TradingView setup
-          shot, attached for memory/review. */}
-      {!isOpen_trade && (
-        <div className="mt-6 max-w-5xl space-y-5">
-          <div onClick={e => e.stopPropagation()} className="flex flex-wrap items-start gap-4">
-            {!chartOpen ? (
-              <button
-                onClick={() => setChartOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 hover:border-blue-400 hover:text-blue-600 text-sm font-medium text-gray-600 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3v18h18M7 14l3-3 4 4 5-5" />
-                </svg>
-                Show chart
-              </button>
-            ) : null}
-            <TradeScreenshot trade={trade} onSaved={onSaved} />
-          </div>
-          {chartOpen && (
-            <div onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Chart</p>
-                <button
-                  onClick={() => setChartOpen(false)}
-                  className="text-xs text-gray-400 hover:text-blue-600 underline decoration-dotted underline-offset-2"
-                >
-                  Hide chart
-                </button>
-              </div>
-              <TradeChartPanel trade={trade} plan={plan} />
-            </div>
-          )}
+      {/* Chart panel — full-width below the two-column layout when the
+          user has clicked Show chart. The button itself sits in the action
+          row above the grid; only the panel itself lives down here so it
+          has the breathing room it needs. */}
+      {!isOpen_trade && chartOpen && (
+        <div onClick={e => e.stopPropagation()} className="mt-6 max-w-5xl">
+          <TradeChartPanel trade={trade} plan={plan} />
         </div>
       )}
     </div>

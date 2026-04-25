@@ -802,7 +802,6 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
   if (loadError) {
     return (
       <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Daily view</h2>
         <LoadError title="Could not load daily trades" message={loadError} onRetry={() => setReloadKey(k => k + 1)} />
       </div>
     );
