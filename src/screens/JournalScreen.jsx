@@ -44,17 +44,21 @@ function AdherencePill({ score }) {
 }
 
 // Filter semantics — Smart Journal is for REVIEWING closed trades. Open
-// positions belong on HomeScreen / DailyView, not here. Every tab in this
-// bar is implicitly scoped to status = 'closed'.
+// positions belong on HomeScreen / DailyView, not here. Every chip in this
+// row is implicitly scoped to status = 'closed'.
+//
+// 5-chip set — outcome (Wins/Losses) + the two work-to-do gaps
+// (Need matching / Not journalled), plus All. The match-status sub-filters
+// (Planned / Off-plan) and the composite "Fully done" view were dropped
+// 2026-04-26: filter row was getting crowded, those views are rarely what
+// you actually want during the journaling workflow, and the per-row status
+// pill still surfaces matched/off-plan at-a-glance.
+//
 //   All            — default view, all closed trades
 //   Wins / Losses  — by P&L sign
 //   Need matching  — matching_status = 'needs_review' (2+ candidate plans)
-//   Planned        — matching_status = 'matched'
-//   Off-plan       — matching_status = 'off_plan'
-//   Not journalled — no review_notes
-//   Fully done     — resolved (matched or off_plan) AND has review_notes.
-//                    Matches the "Fully done" card on HomeScreen pipeline.
-const FILTERS = ['All', 'Wins', 'Losses', 'Need matching', 'Planned', 'Off-plan', 'Not journalled', 'Fully done'];
+//   Not journalled — no review_notes yet
+const FILTERS = ['All', 'Wins', 'Losses', 'Need matching', 'Not journalled'];
 
 const DATE_RANGES = [
   { key: 'all', label: 'All time' },
@@ -370,18 +374,8 @@ export default function JournalScreen({ session }) {
         list = trades.filter(t => (t.total_realized_pnl || 0) <= 0); break;
       case 'Need matching':
         list = trades.filter(t => t.matching_status === 'needs_review'); break;
-      case 'Planned':
-        list = trades.filter(t => t.matching_status === 'matched'); break;
-      case 'Off-plan':
-        list = trades.filter(t => t.matching_status === 'off_plan'); break;
       case 'Not journalled':
         list = trades.filter(t => !t.review_notes); break;
-      case 'Fully done':
-        // Resolved (matched or off_plan) AND has review notes. The happy-path
-        // terminus of the review pipeline.
-        list = trades.filter(t => !!t.review_notes &&
-          (t.matching_status === 'matched' || t.matching_status === 'off_plan')
-        ); break;
       case 'All':
       default:
         list = trades;
@@ -557,27 +551,34 @@ export default function JournalScreen({ session }) {
       {activeSection === 'taken' && (loading ? takenLoadingSkeleton : (<>
 
       {(() => {
-        // Cards reflect the journal workflow: how many trades, how far along on
-        // matching, how far along on journalling. Each card's click takes you
-        // to the "gap" — the trades still needing that step.
-        const matchedCount = closedTrades.filter(t => t.matching_status === 'matched').length;
-        const journalledCount = closedTrades.filter(t => t.review_notes).length;
+        // Three journaling-discipline cards: total trades for context, plus
+        // two gap counters that drive the user back to the work that's
+        // still owed. Each card click matches its label — "Trades" filters
+        // to All, "To match" to Need matching, "To journal" to Not
+        // journalled.
+        const toMatchCount = closedTrades.filter(t => t.matching_status === 'needs_review').length;
+        const toJournalCount = closedTrades.filter(t => !t.review_notes).length;
         const total = closedTrades.length;
         return (
           <div className="grid grid-cols-3 gap-4 mb-6">
             {[
-              { label: 'Trades', value: total > 0 ? String(total) : '—', color: 'text-gray-900', onClick: null },
               {
-                label: 'Matched to plan',
-                value: total > 0 ? `${matchedCount} / ${total}` : '—',
-                color: 'text-blue-600',
-                onClick: matchedCount < total ? () => setActiveFilter('Need matching') : null,
+                label: 'Trades',
+                value: total > 0 ? String(total) : '—',
+                color: 'text-gray-900',
+                onClick: total > 0 ? () => setActiveFilter('All') : null,
               },
               {
-                label: 'Journalled',
-                value: total > 0 ? `${journalledCount} / ${total}` : '—',
-                color: 'text-green-600',
-                onClick: journalledCount < total ? () => setActiveFilter('Not journalled') : null,
+                label: 'To match',
+                value: total > 0 ? String(toMatchCount) : '—',
+                color: toMatchCount > 0 ? 'text-amber-600' : 'text-gray-400',
+                onClick: toMatchCount > 0 ? () => setActiveFilter('Need matching') : null,
+              },
+              {
+                label: 'To journal',
+                value: total > 0 ? String(toJournalCount) : '—',
+                color: toJournalCount > 0 ? 'text-amber-600' : 'text-gray-400',
+                onClick: toJournalCount > 0 ? () => setActiveFilter('Not journalled') : null,
               },
             ].map(c => (
               <div
