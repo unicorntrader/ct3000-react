@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CT3000 — Smart Journal cards preview</title>
+  <style>
+    :root {
+      --gray-900: #111827;
+      --gray-700: #374151;
+      --gray-500: #6b7280;
+      --gray-400: #9ca3af;
+      --gray-300: #d1d5db;
+      --gray-200: #e5e7eb;
+      --gray-100: #f3f4f6;
+      --gray-50:  #f9fafb;
+      --blue-600: #2563eb;
+      --blue-200: #bfdbfe;
+      --green-600: #059669;
+      --red-500: #ef4444;
+      --amber-600: #d97706;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f3f4f6;
+      color: var(--gray-900);
+      padding: 32px 16px 64px;
+    }
+    .wrap {
+      max-width: 920px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0 0 4px;
+    }
+    .lede {
+      font-size: 13px;
+      color: var(--gray-500);
+      margin: 0 0 28px;
+      max-width: 60ch;
+    }
+    .section {
+      margin-bottom: 28px;
+    }
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      gap: 16px;
+    }
+    .section-head h2 {
+      font-size: 14px;
+      font-weight: 600;
+      margin: 0;
+      letter-spacing: 0.02em;
+    }
+    .section-head .blurb {
+      font-size: 12px;
+      color: var(--gray-500);
+      text-align: right;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .cards.three { grid-template-columns: repeat(3, 1fr); }
+
+    .card {
+      background: white;
+      border: 1px solid var(--gray-100);
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    .card.clickable { cursor: pointer; transition: all 0.15s; }
+    .card.clickable:hover {
+      border-color: var(--blue-200);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    }
+    .card .label {
+      font-size: 11px;
+      color: var(--gray-400);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin: 0 0 4px;
+    }
+    .card .value {
+      font-size: 26px;
+      font-weight: 600;
+      margin: 0;
+      line-height: 1.1;
+    }
+    .card .sub {
+      font-size: 11px;
+      color: var(--gray-400);
+      margin-top: 6px;
+    }
+    .v-gray-900 { color: var(--gray-900); }
+    .v-blue { color: var(--blue-600); }
+    .v-green { color: var(--green-600); }
+    .v-red { color: var(--red-500); }
+    .v-amber { color: var(--amber-600); }
+
+    .pick-tag {
+      display: inline-block;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      letter-spacing: 0.04em;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .lean-tag {
+      display: inline-block;
+      background: #dbeafe;
+      color: #1e40af;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      letter-spacing: 0.04em;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
+    .note {
+      background: white;
+      border: 1px dashed var(--gray-200);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 12px;
+      color: var(--gray-500);
+      line-height: 1.5;
+      margin-top: 32px;
+    }
+    .note strong { color: var(--gray-700); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Smart Journal — top cards preview</h1>
+    <p class="lede">
+      Five options for the two summary cards above the trade table. Sample data shows
+      a fictional month: 42 closed trades, 28 wins, +$3,420 P&L, 78 avg adherence,
+      31 matched-to-plan, 24 with notes.
+    </p>
+
+    <!-- Option A -->
+    <div class="section">
+      <div class="section-head">
+        <h2>Option A — Trades + Win rate</h2>
+        <span class="blurb">Volume + canonical metric</span>
+      </div>
+      <div class="cards">
+        <div class="card clickable">
+          <p class="label">Trades</p>
+          <p class="value v-gray-900">42</p>
+          <p class="sub">click → All</p>
+        </div>
+        <div class="card clickable">
+          <p class="label">Win rate</p>
+          <p class="value v-green">67%</p>
+          <p class="sub">click → Wins</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option B -->
+    <div class="section">
+      <div class="section-head">
+        <h2>Option B — P&amp;L + Win rate <span class="lean-tag">my #1 pick</span></h2>
+        <span class="blurb">The two big "is this working?" numbers</span>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <p class="label">P&amp;L (period)</p>
+          <p class="value v-green">+$3,420</p>
+        </div>
+        <div class="card clickable">
+          <p class="label">Win rate</p>
+          <p class="value v-green">67%</p>
+          <p class="sub">click → Wins</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option C -->
+    <div class="section">
+      <div class="section-head">
+        <h2>Option C — Trades + P&amp;L</h2>
+        <span class="blurb">Volume + outcome</span>
+      </div>
+      <div class="cards">
+        <div class="card clickable">
+          <p class="label">Trades</p>
+          <p class="value v-gray-900">42</p>
+          <p class="sub">click → All</p>
+        </div>
+        <div class="card">
+          <p class="label">P&amp;L (period)</p>
+          <p class="value v-green">+$3,420</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option D -->
+    <div class="section">
+      <div class="section-head">
+        <h2>Option D — Trades + Avg adherence <span class="lean-tag">my #2 pick</span></h2>
+        <span class="blurb">CT3000's unique angle: did you stick to plan?</span>
+      </div>
+      <div class="cards">
+        <div class="card clickable">
+          <p class="label">Trades</p>
+          <p class="value v-gray-900">42</p>
+          <p class="sub">click → All</p>
+        </div>
+        <div class="card">
+          <p class="label">Avg adherence</p>
+          <p class="value v-blue">78</p>
+          <p class="sub">mean of matched trades</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option E (the mash) -->
+    <div class="section">
+      <div class="section-head">
+        <h2>Option E — P&amp;L + Win rate + Avg adherence <span class="pick-tag">3 cards</span></h2>
+        <span class="blurb">If you can stretch to three — the killer combo</span>
+      </div>
+      <div class="cards three">
+        <div class="card">
+          <p class="label">P&amp;L (period)</p>
+          <p class="value v-green">+$3,420</p>
+        </div>
+        <div class="card clickable">
+          <p class="label">Win rate</p>
+          <p class="value v-green">67%</p>
+          <p class="sub">click → Wins</p>
+        </div>
+        <div class="card">
+          <p class="label">Avg adherence</p>
+          <p class="value v-blue">78</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>How outcome of card click works in each option:</strong> any card with a
+      "click → X" sub-label routes you to that filter chip. Cards without a click
+      target are pure stat displays. The chip row directly below the cards still
+      handles work-to-do (<em>Need matching</em>, <em>Not journalled</em>) and
+      outcome filters (<em>Wins</em>, <em>Losses</em>) — the cards are deliberately
+      not duplicating those.
+    </div>
+  </div>
+</body>
+</html>
