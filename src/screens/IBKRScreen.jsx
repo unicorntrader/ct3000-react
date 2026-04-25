@@ -87,6 +87,12 @@ export default function IBKRScreen({ session }) {
     })();
   }, [userId, reloadKey, ibkrCredsV]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Credential save + remove now flow through /api/ibkr-credentials so the
+  // raw ibkr_token / query_id_30d never traverse the anon DB role. The
+  // matching migration revokes browser INSERT/UPDATE/DELETE on the table
+  // (with a narrow exception for the auto_sync_enabled column, used by
+  // the toggle below). See api/ibkr-credentials.js for the validation
+  // rules + masking; the masked variants come back in the response.
   const handleSaveCredentials = async () => {
     if (!token || !queryId) {
       setSaveError('Please enter both your token and Query ID.');
@@ -94,47 +100,62 @@ export default function IBKRScreen({ session }) {
     }
     setSaving(true);
     setSaveError(null);
-
-    const tokenMasked = '•'.repeat(token.length - 4) + token.slice(-4);
-    const queryIdMasked = '•'.repeat(Math.max(0, queryId.length - 2)) + queryId.slice(-2);
-
-    const { error } = await supabase
-      .from('user_ibkr_credentials')
-      .upsert({
-        user_id: session.user.id,
-        ibkr_token: token,
-        query_id_30d: queryId,
-        token_masked: tokenMasked,
-        query_id_masked: queryIdMasked,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' });
-
-    if (error) {
-      setSaveError(error.message);
-    } else {
+    try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const res = await fetch('/api/ibkr-credentials', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentSession.access_token}`,
+        },
+        body: JSON.stringify({ token, queryId }),
+      });
+      const rawText = await res.text();
+      let data;
+      try { data = JSON.parse(rawText); }
+      catch {
+        setSaveError(`HTTP ${res.status} — non-JSON response: ${rawText.slice(0, 200)}`);
+        return;
+      }
+      if (!res.ok || !data.success) {
+        setSaveError(data.error || `Save failed (HTTP ${res.status})`);
+        return;
+      }
       bump('ibkrCreds');
       setConnected(true);
-      setMaskedToken(tokenMasked);
-      setMaskedQueryId(queryIdMasked);
+      setMaskedToken(data.tokenMasked || '');
+      setMaskedQueryId(data.queryIdMasked || '');
       setToken('');
       setQueryId('');
+    } catch (err) {
+      setSaveError(err?.message || 'Could not save credentials.');
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const handleRemove = async () => {
-    const { error } = await supabase
-      .from('user_ibkr_credentials')
-      .delete()
-      .eq('user_id', session.user.id);
-
-    if (!error) {
+    try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const res = await fetch('/api/ibkr-credentials', {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${currentSession.access_token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error('[ibkr] remove failed:', data.error || `HTTP ${res.status}`);
+        alert(`Could not disconnect IBKR: ${data.error || `HTTP ${res.status}`}`);
+        return;
+      }
       bump('ibkrCreds', 'trades', 'positions');
       setConnected(false);
       setMaskedToken('');
       setMaskedQueryId('');
       setSyncResult(null);
       setSyncError(null);
+    } catch (err) {
+      console.error('[ibkr] remove failed:', err?.message || err);
+      alert(`Could not disconnect IBKR: ${err?.message || err}`);
     }
   };
 
