@@ -76,7 +76,7 @@ function AssetBadge({ category }) {
   return <span className="inline-flex items-center justify-center h-6 px-1 rounded text-xs font-bold bg-gray-100 text-gray-500">{label}</span>;
 }
 
-const COL_SPAN = 9; // TYPE SYMBOL DIR BOUGHT SOLD P&L STATUS share chevron
+const COL_SPAN = 10; // TYPE SYMBOL DIR BOUGHT SOLD POSITION P&L STATUS share chevron
 
 // Collapse fills into one row per ib_order_id. Fills with no order id (rare:
 // pre-migration manual entries) stay as-is -- each gets its own row. Within
@@ -286,15 +286,16 @@ function DayBlock({ day, plannedTradesMap = {}, baseCurrency = 'USD', userId, on
           <thead className="bg-gray-50">
             <tr>
               {[
-                { label: 'Type',   hide: true,  w: 'w-14' },
-                { label: 'Symbol', hide: false, w: ''      },
-                { label: 'Dir',    hide: false, w: 'w-20' },
-                { label: 'Bought', hide: true,  w: 'w-40' },
-                { label: 'Sold',   hide: true,  w: 'w-40' },
-                { label: 'P&L',    hide: false, w: 'w-28' },
-                { label: 'Status', hide: false, w: 'w-36' },
-                { label: '',       hide: true,  w: 'w-12' },
-                { label: '',       hide: false, w: 'w-10' },
+                { label: 'Type',     hide: true,  w: 'w-14' },
+                { label: 'Symbol',   hide: false, w: ''      },
+                { label: 'Dir',      hide: false, w: 'w-20' },
+                { label: 'Bought',   hide: true,  w: 'w-36' },
+                { label: 'Sold',     hide: true,  w: 'w-36' },
+                { label: 'Position', hide: true,  w: 'w-28' },
+                { label: 'P&L',      hide: false, w: 'w-24' },
+                { label: 'Status',   hide: false, w: 'w-32' },
+                { label: '',         hide: true,  w: 'w-12' },
+                { label: '',         hide: false, w: 'w-10' },
               ].map((col, i) => (
                 <th key={i} className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${col.hide ? 'hidden sm:table-cell' : ''} ${col.w}`}>{col.label}</th>
               ))}
@@ -331,6 +332,19 @@ function DayBlock({ day, plannedTradesMap = {}, baseCurrency = 'USD', userId, on
                     <td className="px-4 py-3.5 text-sm text-gray-600">{row.direction}</td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">{boughtCell}</td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">{soldCell}</td>
+                    <td className="hidden sm:table-cell px-4 py-3.5 text-sm">
+                      {row.posBefore != null && row.posAfter != null ? (
+                        <>
+                          <span className="text-xs text-gray-400">
+                            <PrivacyValue value={Math.round(row.posBefore).toLocaleString()} />
+                          </span>
+                          <span className="mx-1 text-xs text-gray-300">→</span>
+                          <span className="font-medium text-gray-700">
+                            <PrivacyValue value={Math.round(row.posAfter).toLocaleString()} />
+                          </span>
+                        </>
+                      ) : '—'}
+                    </td>
                     <td className={`px-4 py-3.5 text-sm font-medium ${hasRealized ? ((rowPnl || 0) >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'}`}>
                       {hasRealized ? <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency, 0)} /> : '—'}
                     </td>
@@ -659,6 +673,48 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
       g.fills.push({ ...t, _ms: ms });
     }
 
+    // Compute pre/post absolute position per (LT, day) for the Position
+    // column. Walk each LT's in-window day-totals chronologically. Position
+    // at start of window is derived from current state:
+    //   pos_at_window_start = lt.remaining_quantity
+    //                       - sum(in-window opens)
+    //                       + sum(in-window closes)
+    // (proof: lt.remaining_quantity == abs_position_now;
+    //  abs_position_now == abs_position_at_window_start
+    //                    + sum(in-window opens) - sum(in-window closes);
+    //  rearrange.) From there, walking forward day by day gives the
+    //  position before and after each day's activity.
+    //
+    // Pre-window fills don't need to be available in rawTrades -- they're
+    // already baked into lt.remaining_quantity / total_opening_quantity /
+    // total_closing_quantity.
+    const positionByGroupKey = new Map();
+    const ltDayTotals = new Map();
+    for (const g of groups.values()) {
+      const opensQty = g.fills
+        .filter(f => (f.open_close_indicator || '').includes('O'))
+        .reduce((s, f) => s + Math.abs(parseFloat(f.quantity) || 0), 0);
+      const closesQty = g.fills
+        .filter(f => (f.open_close_indicator || '').includes('C'))
+        .reduce((s, f) => s + Math.abs(parseFloat(f.quantity) || 0), 0);
+      if (!ltDayTotals.has(g.ltId)) ltDayTotals.set(g.ltId, []);
+      ltDayTotals.get(g.ltId).push({ dateKey: g.dateKey, opensQty, closesQty });
+    }
+    for (const [ltId, days] of ltDayTotals.entries()) {
+      const lt = ltById[ltId];
+      if (!lt) continue;
+      days.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+      const totalOpens  = days.reduce((s, d) => s + d.opensQty, 0);
+      const totalCloses = days.reduce((s, d) => s + d.closesQty, 0);
+      const remaining = Math.abs(parseFloat(lt.remaining_quantity) || 0);
+      let pos = remaining - totalOpens + totalCloses;  // window-start position
+      for (const d of days) {
+        const before = pos;
+        pos = pos + d.opensQty - d.closesQty;
+        positionByGroupKey.set(`${ltId}|${d.dateKey}`, { before, after: pos });
+      }
+    }
+
     // Materialise each group into a day-row.
     const rowsByDate = new Map();
     for (const g of groups.values()) {
@@ -676,6 +732,8 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
       const fxRate = parseFloat(lt.fx_rate_to_base) || 1;
       const realizedPnlBase = realizedPnlNative * fxRate;
 
+      const positionInfo = positionByGroupKey.get(`${lt.id}|${dateKey}`) || { before: null, after: null };
+
       const row = {
         id: `${lt.id}_${dateKey}`,
         parentLt: lt,
@@ -688,6 +746,8 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
         buyAvgPrice: buyQty > 0 ? weightedAvg(buys) : null,
         sellQty,
         sellAvgPrice: sellQty > 0 ? weightedAvg(sells) : null,
+        posBefore: positionInfo.before,
+        posAfter: positionInfo.after,
         realizedPnlNative,
         realizedPnlBase,
         // A row has realised P&L to show if any closing fills landed today.
