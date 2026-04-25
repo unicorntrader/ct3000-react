@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useBumpDataVersion } from '../lib/DataVersionContext'
 import { fmtPrice, fmtPnl, fmtDateLong, fmtSymbol } from '../lib/formatters'
 import TradeChartPanel from './TradeChartPanel'
+import TradeScreenshot from './TradeScreenshot'
 
 // Rendered inline underneath a trade row in the Smart Journal table. Same
 // content the old TradeJournalDrawer used to show, but with no overlay, no
@@ -329,22 +330,27 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
         </div>
       </div>
 
-      {/* Chart panel — closed trades only, click-to-load. Full-width below
-          the two-column layout so the chart breathes. Synthetic data for
-          now; swap for an Alpaca-backed /api/ohlc fetch later. */}
+      {/* Chart + screenshot — closed trades only, full-width below the
+          two-column layout so they breathe. The CT3000 chart is auto-built
+          from Alpaca; the screenshot is the user's own TradingView setup
+          shot, attached for memory/review. */}
       {!isOpen_trade && (
-        <div className="mt-6 max-w-5xl">
-          {!chartOpen ? (
-            <button
-              onClick={e => { e.stopPropagation(); setChartOpen(true) }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 hover:border-blue-400 hover:text-blue-600 text-sm font-medium text-gray-600 transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3v18h18M7 14l3-3 4 4 5-5" />
-              </svg>
-              Show chart
-            </button>
-          ) : (
+        <div className="mt-6 max-w-5xl space-y-5">
+          <div onClick={e => e.stopPropagation()} className="flex flex-wrap items-start gap-4">
+            {!chartOpen ? (
+              <button
+                onClick={() => setChartOpen(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 hover:border-blue-400 hover:text-blue-600 text-sm font-medium text-gray-600 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3v18h18M7 14l3-3 4 4 5-5" />
+                </svg>
+                Show chart
+              </button>
+            ) : null}
+            <TradeScreenshot trade={trade} onSaved={onSaved} />
+          </div>
+          {chartOpen && (
             <div onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Chart</p>

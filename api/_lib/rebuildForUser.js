@@ -78,7 +78,7 @@ async function rebuildForUser(userId, supabaseAdmin) {
 
   const { data: existingLogical } = await supabaseAdmin
     .from('logical_trades')
-    .select('opening_ib_order_id, conid, review_notes, matching_status, planned_trade_id, user_reviewed')
+    .select('opening_ib_order_id, conid, review_notes, matching_status, planned_trade_id, user_reviewed, screenshot_path')
     .eq('user_id', userId);
 
   const preservedByKey = new Map();
@@ -92,6 +92,7 @@ async function rebuildForUser(userId, supabaseAdmin) {
       user_reviewed: isRealDecision,
       preserved_status: isRealDecision ? row.matching_status : null,
       preserved_planned_trade_id: isRealDecision ? row.planned_trade_id : null,
+      screenshot_path: row.screenshot_path || null,
     });
   }
 
@@ -118,6 +119,7 @@ async function rebuildForUser(userId, supabaseAdmin) {
     const p = preservedByKey.get(key);
     if (!p) continue;
     if (p.review_notes) lt.review_notes = p.review_notes;
+    if (p.screenshot_path) lt.screenshot_path = p.screenshot_path;
     if (p.user_reviewed) {
       lt.user_reviewed = true;
       lt.matching_status = p.preserved_status;

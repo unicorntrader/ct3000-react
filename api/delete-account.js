@@ -150,6 +150,32 @@ module.exports = async function handler(req, res) {
       }
     }
 
+    // ── Wipe user-owned files in Storage ──────────────────────────────────
+    // Trade screenshots live under {user_id}/... in the trade-screenshots
+    // bucket. Best-effort delete — a Storage failure shouldn't block the
+    // account deletion since the DB rows that reference these paths are
+    // already gone. Sentry-capture so we can clean orphans later if needed.
+    try {
+      const { data: files, error: listErr } = await supabaseAdmin
+        .storage
+        .from('trade-screenshots')
+        .list(userId);
+      if (listErr) throw listErr;
+      if (files?.length) {
+        const paths = files.map(f => `${userId}/${f.name}`);
+        const { error: removeErr } = await supabaseAdmin
+          .storage
+          .from('trade-screenshots')
+          .remove(paths);
+        if (removeErr) throw removeErr;
+        console.log(`[delete-account] removed ${paths.length} screenshot file(s) for ${userId}`);
+      }
+    } catch (storageErr) {
+      console.warn('[delete-account] storage cleanup failed:', storageErr?.message || storageErr);
+      await captureServerError(storageErr, { userId, step: 'wipe-storage', route: 'delete-account' });
+      // intentional: don't fail the whole deletion on storage cleanup error
+    }
+
     // ── Finally, delete the auth.users record ────────────────────────────
     // Done LAST so a mid-wipe failure leaves a recoverable state (user can
     // still log in, we can retry). Once this succeeds, the token they're
