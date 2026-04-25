@@ -134,7 +134,12 @@ export default function TradeChartPanel({ trade, plan }) {
       if (markers.length) createSeriesMarkers(candles, markers)
 
       // ── Hold-window soft shading ───────────────────────────────────────
+      // Critical: put the area series on its own overlay scale (`priceScaleId
+      // = 'hold'`) so its zero-baseline doesn't drag the main candle scale
+      // down to include 0. Otherwise a $110 stock chart shows -20→140 on the
+      // y-axis and the candles get squished into a 5% band at the top.
       const holdSeries = chart.addSeries(AreaSeries, {
+        priceScaleId: 'hold',
         topColor: 'rgba(37, 99, 235, 0.18)',
         bottomColor: 'rgba(37, 99, 235, 0.02)',
         lineColor: 'rgba(37, 99, 235, 0)',
@@ -143,10 +148,16 @@ export default function TradeChartPanel({ trade, plan }) {
         lastValueVisible: false,
         crosshairMarkerVisible: false,
       })
+      // Hide the overlay scale entirely — we don't want a second axis label
+      // for "hold window depth" cluttering the chart.
+      chart.priceScale('hold').applyOptions({
+        scaleMargins: { top: 0, bottom: 0 },
+        visible: false,
+      })
       holdSeries.setData(
         data.bars.map(bar => ({
           time: bar.time,
-          value: bar.time >= data.entryTime && bar.time <= data.exitTime ? bar.high * 1.005 : null,
+          value: bar.time >= data.entryTime && bar.time <= data.exitTime ? 1 : null,
         }))
       )
 
