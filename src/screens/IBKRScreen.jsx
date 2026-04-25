@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPrice } from '../lib/formatters';
+import { fmtPrice, fmtQty } from '../lib/formatters';
 import { useDataVersion, useInitialLoadTracker, useBumpDataVersion } from '../lib/DataVersionContext';
 import LoadError from '../components/LoadError';
 import PrivacyValue from '../components/PrivacyValue';
@@ -512,7 +512,7 @@ export default function IBKRScreen({ session }) {
                                 {t.buySell}
                               </span>
                               <span className="w-16 text-right">
-                                <PrivacyValue value={t.quantity != null ? t.quantity.toLocaleString() : '—'} />
+                                <PrivacyValue value={fmtQty(t.quantity)} />
                               </span>
                               <span className="w-20 text-right">@ {fmtPrice(t.price, t.currency)}</span>
                               <span className="text-green-600 ml-auto">{formatFillTime(t.dateTime)}</span>

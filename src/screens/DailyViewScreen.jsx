@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPrice, fmtPnl, fmtSymbol } from '../lib/formatters';
+import { fmtPrice, fmtPnl, fmtSymbol, fmtQty } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import { useDataVersion, useInitialLoadTracker, useBumpDataVersion } from '../lib/DataVersionContext';
 import PrivacyValue from '../components/PrivacyValue';
@@ -180,7 +180,7 @@ function ExecSubTable({ execs }) {
                       )}
                     </td>
                     <td className="py-1.5 pr-3 text-xs text-gray-800 font-medium">{fmtPrice(r.price, r.currency)}</td>
-                    <td className="py-1.5 pr-3 text-xs text-gray-600"><PrivacyValue value={r.qty.toLocaleString()} /></td>
+                    <td className="py-1.5 pr-3 text-xs text-gray-600"><PrivacyValue value={fmtQty(r.qty)} /></td>
                     <td className="py-1.5 pr-3">
                       <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${r.buy_sell === 'BUY' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
                         {r.buy_sell}
@@ -313,10 +313,10 @@ function DayBlock({ day, plannedTradesMap = {}, baseCurrency = 'USD', userId, on
               const hasRealized = row.hasClosesToday;
 
               const boughtCell = row.buyQty > 0
-                ? <><PrivacyValue value={Math.round(row.buyQty).toLocaleString()} /> @ {fmtPrice(row.buyAvgPrice, row.currency)}</>
+                ? <><PrivacyValue value={fmtQty(Math.round(row.buyQty))} /> @ {fmtPrice(row.buyAvgPrice, row.currency)}</>
                 : '—';
               const soldCell = row.sellQty > 0
-                ? <><PrivacyValue value={Math.round(row.sellQty).toLocaleString()} /> @ {fmtPrice(row.sellAvgPrice, row.currency)}</>
+                ? <><PrivacyValue value={fmtQty(Math.round(row.sellQty))} /> @ {fmtPrice(row.sellAvgPrice, row.currency)}</>
                 : '—';
 
               return (
@@ -341,7 +341,7 @@ function DayBlock({ day, plannedTradesMap = {}, baseCurrency = 'USD', userId, on
                         const fmt = (raw) => {
                           const n = Math.round(raw);
                           if (n === 0) return '0';
-                          return (n * sign).toLocaleString();
+                          return fmtQty(n * sign);
                         };
                         return (
                           <>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPnl, fmtPrice, fmtSymbol, pnlBase } from '../lib/formatters';
+import { fmtPnl, fmtPrice, fmtSymbol, fmtQty, pnlBase } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import { useDataVersion, useInitialLoadTracker } from '../lib/DataVersionContext';
 import PrivacyValue from '../components/PrivacyValue';
@@ -510,7 +510,7 @@ export default function HomeScreen({ session }) {
                     </span>
                     <span className="text-sm text-gray-600 flex-1 truncate">
                       {plan.planned_quantity != null
-                        ? <PrivacyValue value={Number(plan.planned_quantity).toLocaleString()} />
+                        ? <PrivacyValue value={fmtQty(plan.planned_quantity)} />
                         : <span className="italic text-gray-400">set qty</span>}
                       <span className="text-gray-300 mx-1.5">@</span>
                       {plan.planned_entry_price != null

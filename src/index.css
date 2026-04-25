@@ -5,6 +5,12 @@
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   background-color: #f9fafb;
+  /* Tabular figures everywhere — every digit (0–9) renders at the same
+     fixed width so columns of numbers (P&L, qty, prices) align on their
+     right edges and no longer jiggle when values change. Especially
+     valuable in the Smart Journal table, Daily View, and the Performance
+     screen where rows of numbers stack vertically. */
+  font-variant-numeric: tabular-nums;
 }
 
 .slide-up {

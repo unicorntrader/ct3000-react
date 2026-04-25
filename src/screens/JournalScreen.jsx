@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
-import { fmtPnl, fmtDate, fmtSymbol } from '../lib/formatters';
+import { fmtPnl, fmtDate, fmtSymbol, fmtQty } from '../lib/formatters';
 import { useBaseCurrency } from '../lib/BaseCurrencyContext';
 import { useDataVersion, useInitialLoadTracker, useBumpDataVersion } from '../lib/DataVersionContext';
 import PrivacyValue from '../components/PrivacyValue';
@@ -858,7 +858,7 @@ export default function JournalScreen({ session }) {
                       </td>
                       <td className="hidden sm:table-cell px-6 py-4 text-sm text-gray-600">{trade.direction}</td>
                       <td className="hidden sm:table-cell px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
-                        <PrivacyValue value={qty > 0 ? qty.toLocaleString() : '—'} />
+                        <PrivacyValue value={qty > 0 ? fmtQty(qty) : '—'} />
                       </td>
                       <td className={`px-4 sm:px-6 py-4 text-sm font-semibold whitespace-nowrap ${isOpen ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}`}>
                         {isOpen ? '—' : (

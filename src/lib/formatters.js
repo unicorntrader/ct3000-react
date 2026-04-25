@@ -44,6 +44,31 @@ export const fmtPnl = (n, currency, decimals = 0) => {
   return (n >= 0 ? '+' : '-') + sym + abs;
 };
 
+/**
+ * Quantity / share count display.
+ *
+ *   < 10,000  → standard locale: "30", "1,234", "9,999"
+ *   ≥ 10,000  → compact: "10K", "40K", "1.25M", "2.3B"
+ *
+ * Why compact for large quantities: FX positions are sized in raw currency
+ * units (40,000 USD, 100,000 EUR) — an order of magnitude larger than
+ * typical equity share counts. Without compact notation, an FX row blows
+ * out the column layout next to a stock row showing "30". Compact at ≥10K
+ * keeps everyday equity quantities pristine while taming the FX numbers.
+ *
+ * Returns '—' for null / undefined / NaN.
+ */
+export const fmtQty = (n) => {
+  if (n == null || isNaN(n)) return '—';
+  const num = Number(n);
+  const abs = Math.abs(num);
+  if (abs < 10000) return num.toLocaleString('en-US');
+  return num.toLocaleString('en-US', {
+    notation: 'compact',
+    maximumFractionDigits: 2,
+  });
+};
+
 /** Compact signed P&L for chart axes, e.g. "+€1.2k". Currency is REQUIRED. */
 export const fmtShort = (n, currency) => {
   if (n == null || isNaN(n)) return '—';
