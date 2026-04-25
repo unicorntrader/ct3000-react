@@ -1,0 +1,374 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Trade render surfaces</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .surface { background: #fff; border: 1px solid rgb(229, 231, 235); border-radius: 12px; padding: 16px; }
+    .label { font-size: 11px; font-weight: 600; color: rgb(107, 114, 128); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .file-ref { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 10px; color: rgb(156, 163, 175); }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div class="max-w-[1400px] mx-auto p-6">
+    <h1 class="text-2xl font-bold text-gray-900 mb-2">Trade render surfaces — audit</h1>
+    <p class="text-sm text-gray-600 mb-6">Same 3 mock trades rendered in every UI surface that shows numbers. Look for inconsistencies between columns.</p>
+
+    <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 text-sm text-blue-900">
+      <strong>Mock data:</strong>
+      <ul class="list-disc pl-5 mt-1 space-y-0.5">
+        <li><strong>Normal:</strong> AAPL LONG, entry $183.00, exit $205.00, qty 100, P&L +$2,200</li>
+        <li><strong>Orphan:</strong> CRWV SHORT, entry UNKNOWN (pre-window), exit $118.04, qty 100, P&L −$1,455</li>
+        <li><strong>Option:</strong> NVDA 160 Call, LONG, entry $0.41, exit $3.15, qty 5 contracts, multiplier 100, P&L +$1,370</li>
+      </ul>
+    </div>
+
+    <!-- ═══════════════════════════ HOME — Open positions ════════════════════ -->
+    <h2 class="text-lg font-semibold text-gray-900 mt-8 mb-1">1. Home → Open positions <span class="file-ref">HomeScreen.jsx:440</span></h2>
+    <p class="text-xs text-gray-500 mb-3">Unrealized positions. Direction derived from sign of position, not a pill. Shows avg cost + unrealized P&L.</p>
+    <div class="grid grid-cols-3 gap-4 mb-6">
+      <div class="surface">
+        <p class="label">Normal</p>
+        <div class="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+          <div class="flex items-center justify-between px-5 py-3">
+            <div>
+              <p class="font-semibold text-gray-900">AAPL</p>
+              <p class="text-xs text-gray-400 mt-0.5">Long · 100 shares</p>
+            </div>
+            <div class="text-right">
+              <p class="font-semibold text-green-600">+$2,200.00</p>
+              <p class="text-xs text-gray-400 mt-0.5">avg cost $183.00</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="surface">
+        <p class="label">Orphan</p>
+        <p class="text-xs text-gray-500 italic">Open positions are never orphans (they're always in the live IBKR snapshot). N/A.</p>
+      </div>
+      <div class="surface">
+        <p class="label">Option</p>
+        <div class="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+          <div class="flex items-center justify-between px-5 py-3">
+            <div>
+              <p class="font-semibold text-gray-900">NVDA 160P 6 Apr</p>
+              <p class="text-xs text-gray-400 mt-0.5">Long · 5 contracts</p>
+            </div>
+            <div class="text-right">
+              <p class="font-semibold text-green-600">+$1,370.00</p>
+              <p class="text-xs text-gray-400 mt-0.5">avg cost $0.41</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════ HOME — Active plans ══════════════════════ -->
+    <h2 class="text-lg font-semibold text-gray-900 mt-8 mb-1">2. Home → Active plans <span class="file-ref">HomeScreen.jsx:505</span></h2>
+    <p class="text-xs text-gray-500 mb-3">Unmatched plans. Entry → target, R:R.</p>
+    <div class="surface mb-6">
+      <div class="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50 overflow-hidden">
+        <button class="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 text-left">
+          <span class="font-semibold text-gray-900 w-16 shrink-0">AAPL</span>
+          <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700 shrink-0">LONG</span>
+          <span class="text-sm text-gray-600 flex-1 truncate">
+            $183.00 <span class="text-gray-300 mx-1.5">→</span> <span class="text-green-600">$205.00</span>
+          </span>
+          <span class="text-xs font-semibold text-green-600 shrink-0">2.2R</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════ DAILY VIEW — main row ════════════════════ -->
+    <h2 class="text-lg font-semibold text-gray-900 mt-8 mb-1">3. Daily View → main row <span class="file-ref">DailyViewScreen.jsx:357</span></h2>
+    <p class="text-xs text-gray-500 mb-3">Exit computed via <code>buildExitInfo</code> scanning raw trades (not yet <code>avg_exit_price</code>).</p>
+    <div class="surface mb-6 overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dir</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Entry</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Exit</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">P&L</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3.5"><span class="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold bg-gray-100 text-gray-600">S</span></td>
+            <td class="px-4 py-3.5 font-medium text-gray-900">AAPL</td>
+            <td class="px-4 py-3.5 text-gray-600">LONG</td>
+            <td class="px-4 py-3.5 text-gray-900">$183.00</td>
+            <td class="px-4 py-3.5 text-gray-900">$205.00</td>
+            <td class="px-4 py-3.5 text-gray-900">100</td>
+            <td class="px-4 py-3.5 text-gray-500">Swing</td>
+            <td class="px-4 py-3.5 font-medium text-green-600">+$2,200</td>
+            <td class="px-4 py-3.5"><span class="px-2 py-0.5 text-xs rounded-full font-medium bg-blue-50 text-blue-700">Matched</span></td>
+          </tr>
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3.5"><span class="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold bg-gray-100 text-gray-600">S</span></td>
+            <td class="px-4 py-3.5 font-medium text-gray-900">CRWV</td>
+            <td class="px-4 py-3.5 text-gray-600">SHORT</td>
+            <td class="px-4 py-3.5 text-gray-900">—</td>
+            <td class="px-4 py-3.5 text-gray-900">$118.04</td>
+            <td class="px-4 py-3.5 text-gray-900">100</td>
+            <td class="px-4 py-3.5 text-gray-500">Swing</td>
+            <td class="px-4 py-3.5 font-medium text-red-500">−$1,455</td>
+            <td class="px-4 py-3.5"><span class="px-2 py-0.5 text-xs rounded-full font-medium bg-gray-100 text-gray-600">Off-plan</span></td>
+          </tr>
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3.5"><span class="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold bg-purple-100 text-purple-700">O</span></td>
+            <td class="px-4 py-3.5 font-medium text-gray-900">NVDA 160P 6 Apr</td>
+            <td class="px-4 py-3.5 text-gray-600">LONG</td>
+            <td class="px-4 py-3.5 text-gray-900">$0.41</td>
+            <td class="px-4 py-3.5 text-gray-900">$3.15</td>
+            <td class="px-4 py-3.5 text-gray-900">5</td>
+            <td class="px-4 py-3.5 text-gray-500">Day</td>
+            <td class="px-4 py-3.5 font-medium text-green-600">+$1,370</td>
+            <td class="px-4 py-3.5"><span class="px-2 py-0.5 text-xs rounded-full font-medium bg-blue-50 text-blue-700">Matched</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ═══════════════════════════ JOURNAL — trade row ═════════════════════ -->
+    <h2 class="text-lg font-semibold text-gray-900 mt-8 mb-1">4. Journal → trade row <span class="file-ref">JournalScreen.jsx:781</span></h2>
+    <p class="text-xs text-gray-500 mb-3">NO entry/exit columns shown inline — just date, symbol, direction, qty, P&L, R, adherence.</p>
+    <div class="surface mb-6 overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Dir</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">P&L</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">R</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Adh</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Plan</th>
+            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Note</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <tr><td class="px-3 py-2 text-gray-400">Apr 14</td><td class="px-3 py-2 font-medium text-gray-900">AAPL</td><td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700">LONG</span></td><td class="px-3 py-2">100</td><td class="px-3 py-2 text-green-600 font-medium">+$2,200 (+12%)</td><td class="px-3 py-2">2.2R</td><td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700">92</span></td><td class="px-3 py-2"><span class="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700">Planned</span></td><td class="px-3 py-2"><span class="w-2 h-2 inline-block rounded-full bg-green-500"></span></td></tr>
+          <tr><td class="px-3 py-2 text-gray-400">Apr 15</td><td class="px-3 py-2 font-medium text-gray-900">CRWV</td><td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium bg-red-50 text-red-600">SHORT</span></td><td class="px-3 py-2">100</td><td class="px-3 py-2 text-red-500 font-medium">−$1,455 (−?%)</td><td class="px-3 py-2">—</td><td class="px-3 py-2">—</td><td class="px-3 py-2"><span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">Off-plan</span></td><td class="px-3 py-2"><span class="w-2 h-2 inline-block rounded-full bg-gray-300"></span></td></tr>
+          <tr><td class="px-3 py-2 text-gray-400">Apr 8</td><td class="px-3 py-2 font-medium text-gray-900">NVDA 160P 6 Apr</td><td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700">LONG</span></td><td class="px-3 py-2">5</td><td class="px-3 py-2 text-green-600 font-medium">+$1,370 (+668%)</td><td class="px-3 py-2">5.4R</td><td class="px-3 py-2">—</td><td class="px-3 py-2"><span class="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700">Planned</span></td><td class="px-3 py-2"><span class="w-2 h-2 inline-block rounded-full bg-green-500"></span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ═══════════════════════════ JOURNAL — drawer ════════════════════════ -->
+    <h2 class="text-lg font-semibold text-gray-900 mt-8 mb-1">5. Journal → expanded drawer (TradeInlineDetail) <span class="file-ref">TradeInlineDetail.jsx:199</span></h2>
+    <p class="text-xs text-gray-500 mb-3">Uses <code>avg_exit_price</code> with multiplier-aware reverse-engineering fallback. ✓</p>
+    <div class="grid grid-cols-3 gap-4 mb-6">
+      <div class="surface">
+        <p class="label">Normal</p>
+        <div class="grid grid-cols-4 gap-2">
+          <div class="bg-gray-50 rounded-lg p-2 text-center"><p class="text-[10px] text-gray-400">Entry</p><p class="text-sm font-semibold">$183.00</p></div>
+          <div class="bg-gray-50 rounded-lg p-2 text-center"><p class="text-[10px] text-gray-400">Exit</p><p class="text-sm font-semibold">$205.00</p></div>
+          <div class="bg-gray-50 rounded-lg p-2 text-center"><p class="text-[10px] text-gray-400">Qty</p><p class="text-sm font-semibold">100</p></div>
+          <div class="bg-gray-50 rounded-lg p-2 text-center"><p class="text-[10px] text-gray-400">P&L</p><p class="text-sm font-semibold text-green-600">+$2,200</p></div>
+        </div>
+      </div>
+      <div class="surface">
+        <p class="label">Orphan (entry unknown)</p>
+        <div class="grid grid-cols-4 gap-2">
+          <div class="bg-gray-50 rounded-lg p-2 text-center"><p class="text-[10px] text-gray-400">Entry</p><p class="text-sm font-semibold">—</p></div>
+          <div class="bg-gray-50 rounded-lg p-2 text-center"><p class="text-[10px] text-gray-400">Exit</p><p class="text-sm font-semibold">$118.04</p></div>
+          <div class="bg-gray-50 rounded-lg p-2 text-center"><p class="text-[10px] text-gray-400">Qty</p><p class="text-sm font-semibold">100</p></div>
+          <div class="bg-gray-50 rounded-lg p-2 text-center"><p class="text-[10px] text-gray-400">P&L</p><p class="text-sm font-semibold text-red-500">−$1,455</p></div>
+        </div>
+      </div>
+      <div class="surface">
+        <p class="label">Option</p>
+        <div class="grid grid-cols-4 gap-2">
+          <div class="bg-gray-50 rounded-lg p-2 text-center"><p class="text-[10px] text-gray-400">Entry</p><p class="text-sm font-semibold">$0.41</p></div>
+          <div class="bg-gray-50 rounded-lg p-2 text-center"><p class="text-[10px] text-gray-400">Exit</p><p class="text-sm font-semibold">$3.15</p></div>
+          <div class="bg-gray-50 rounded-lg p-2 text-center"><p class="text-[10px] text-gray-400">Qty</p><p class="text-sm font-semibold">5</p></div>
+          <div class="bg-gray-50 rounded-lg p-2 text-center"><p class="text-[10px] text-gray-400">P&L</p><p class="text-sm font-semibold text-green-600">+$1,370</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════ PLANS — card ════════════════════════════ -->
+    <h2 class="text-lg font-semibold text-gray-900 mt-8 mb-1">6. Plans → plan card <span class="file-ref">PlansScreen.jsx:260</span></h2>
+    <p class="text-xs text-gray-500 mb-3">Entry/Target/Stop/Risk/Reward/R:R grid. No orphan/option variance — plans are forward-looking.</p>
+    <div class="surface mb-6">
+      <div class="bg-white rounded-xl border border-gray-100 p-5">
+        <div class="flex items-center gap-2 mb-4">
+          <span class="font-semibold text-gray-900">AAPL</span>
+          <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700">LONG</span>
+          <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">Active</span>
+        </div>
+        <div class="grid grid-cols-6 gap-3">
+          <div class="text-center bg-gray-50 rounded-lg py-2"><p class="text-xs text-gray-400 mb-1">Entry</p><p class="text-sm font-medium">$183.00</p></div>
+          <div class="text-center bg-gray-50 rounded-lg py-2"><p class="text-xs text-gray-400 mb-1">Target</p><p class="text-sm font-medium text-green-600">$205.00</p></div>
+          <div class="text-center bg-gray-50 rounded-lg py-2"><p class="text-xs text-gray-400 mb-1">Stop</p><p class="text-sm font-medium text-red-500">$175.00</p></div>
+          <div class="text-center bg-gray-50 rounded-lg py-2"><p class="text-xs text-gray-400 mb-1">Risk</p><p class="text-sm font-medium text-red-500">−$800</p></div>
+          <div class="text-center bg-gray-50 rounded-lg py-2"><p class="text-xs text-gray-400 mb-1">Reward</p><p class="text-sm font-medium text-green-600">+$2,200</p></div>
+          <div class="text-center bg-gray-50 rounded-lg py-2"><p class="text-xs text-gray-400 mb-1">R:R</p><p class="text-sm font-medium text-blue-600">2.75</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════ PLANSHEET — Relevant trades ═════════════ -->
+    <h2 class="text-lg font-semibold text-gray-900 mt-8 mb-1">7. PlanSheet → Relevant trades strip <span class="file-ref">PlanSheet.jsx:631</span></h2>
+    <p class="text-xs text-gray-500 mb-3">Uses <code>avg_exit_price</code> with multiplier-aware fallback. ✓ (After recent fix.)</p>
+    <div class="surface mb-6">
+      <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Relevant trades</p>
+      <p class="text-xs text-gray-500 mb-2">3 trades · <span class="text-green-600">2 long</span> / <span class="text-red-500">1 short</span> · <span class="text-green-600">2W</span> / <span class="text-red-500">1L</span> · avg entry $91.70 · <span class="text-green-600">+$2,115</span></p>
+      <div class="border border-gray-100 rounded-xl overflow-hidden">
+        <div class="flex items-center gap-2 px-3 py-2 text-xs border-b border-gray-50 bg-white">
+          <span class="text-gray-400 w-12 shrink-0">Apr 14</span>
+          <span class="px-1.5 py-0.5 rounded font-medium bg-green-50 text-green-700">LONG</span>
+          <span class="text-gray-600">$183.00</span>
+          <span class="text-gray-300">→</span>
+          <span class="text-gray-600">$205.00</span>
+          <span class="font-medium ml-auto text-green-600">+$2,200</span>
+        </div>
+        <div class="flex items-center gap-2 px-3 py-2 text-xs border-b border-gray-50 bg-white">
+          <span class="text-gray-400 w-12 shrink-0">Apr 15</span>
+          <span class="px-1.5 py-0.5 rounded font-medium bg-red-50 text-red-600">SHORT</span>
+          <span class="text-gray-600">—</span>
+          <span class="text-gray-300">→</span>
+          <span class="text-gray-600">$118.04</span>
+          <span class="font-medium ml-auto text-red-500">−$1,455</span>
+        </div>
+        <div class="flex items-center gap-2 px-3 py-2 text-xs bg-white">
+          <span class="text-gray-400 w-12 shrink-0">Apr 8</span>
+          <span class="px-1.5 py-0.5 rounded font-medium bg-green-50 text-green-700">LONG</span>
+          <span class="text-gray-600">$0.41</span>
+          <span class="text-gray-300">→</span>
+          <span class="text-gray-600">$3.15</span>
+          <span class="font-medium ml-auto text-green-600">+$1,370</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════ REVIEW — TradeCard ══════════════════════ -->
+    <h2 class="text-lg font-semibold text-gray-900 mt-8 mb-1">8. Review → TradeCard <span class="file-ref">ReviewScreen.jsx:15</span></h2>
+    <p class="text-xs text-gray-500 mb-3">Now uses <code>avg_exit_price</code> with multiplier-aware fallback. ✓ (After latest fix.)</p>
+    <div class="grid grid-cols-3 gap-4 mb-6">
+      <div class="surface">
+        <p class="label">Normal</p>
+        <div class="bg-gray-50 rounded-xl p-5 border border-gray-100">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="text-lg font-semibold text-gray-900">AAPL</span>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700">LONG</span>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700">win</span>
+          </div>
+          <div class="grid grid-cols-4 gap-2">
+            <div class="bg-white rounded-lg p-2 text-center border"><p class="text-[10px] text-gray-400">Entry</p><p class="text-sm font-semibold">$183.00</p></div>
+            <div class="bg-white rounded-lg p-2 text-center border"><p class="text-[10px] text-gray-400">Exit</p><p class="text-sm font-semibold">$205.00</p></div>
+            <div class="bg-white rounded-lg p-2 text-center border"><p class="text-[10px] text-gray-400">Qty</p><p class="text-sm font-semibold">100</p></div>
+            <div class="bg-white rounded-lg p-2 text-center border"><p class="text-[10px] text-gray-400">P&L</p><p class="text-sm font-semibold text-green-600">+$2,200</p></div>
+          </div>
+        </div>
+      </div>
+      <div class="surface">
+        <p class="label">Orphan</p>
+        <div class="bg-gray-50 rounded-xl p-5 border border-gray-100">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="text-lg font-semibold text-gray-900">CRWV</span>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-600">SHORT</span>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-600">loss</span>
+          </div>
+          <div class="grid grid-cols-4 gap-2">
+            <div class="bg-white rounded-lg p-2 text-center border"><p class="text-[10px] text-gray-400">Entry</p><p class="text-sm font-semibold">—</p></div>
+            <div class="bg-white rounded-lg p-2 text-center border"><p class="text-[10px] text-gray-400">Exit</p><p class="text-sm font-semibold">$118.04</p></div>
+            <div class="bg-white rounded-lg p-2 text-center border"><p class="text-[10px] text-gray-400">Qty</p><p class="text-sm font-semibold">100</p></div>
+            <div class="bg-white rounded-lg p-2 text-center border"><p class="text-[10px] text-gray-400">P&L</p><p class="text-sm font-semibold text-red-500">−$1,455</p></div>
+          </div>
+        </div>
+      </div>
+      <div class="surface">
+        <p class="label">Option</p>
+        <div class="bg-gray-50 rounded-xl p-5 border border-gray-100">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="text-base font-semibold text-gray-900">NVDA 160P</span>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700">LONG</span>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700">win</span>
+          </div>
+          <div class="grid grid-cols-4 gap-2">
+            <div class="bg-white rounded-lg p-2 text-center border"><p class="text-[10px] text-gray-400">Entry</p><p class="text-sm font-semibold">$0.41</p></div>
+            <div class="bg-white rounded-lg p-2 text-center border"><p class="text-[10px] text-gray-400">Exit</p><p class="text-sm font-semibold">$3.15</p></div>
+            <div class="bg-white rounded-lg p-2 text-center border"><p class="text-[10px] text-gray-400">Qty</p><p class="text-sm font-semibold">5</p></div>
+            <div class="bg-white rounded-lg p-2 text-center border"><p class="text-[10px] text-gray-400">P&L</p><p class="text-sm font-semibold text-green-600">+$1,370</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════ SHARE MODAL ═════════════════════════════ -->
+    <h2 class="text-lg font-semibold text-gray-900 mt-8 mb-1">9. ShareModal → share card <span class="file-ref">ShareModal.jsx:93</span></h2>
+    <p class="text-xs text-gray-500 mb-3">Reads <code>row.exit</code> (set by DailyView), falls back to reverse-engineering. Currently indirect — could read <code>avg_exit_price</code> directly (medium item #7).</p>
+    <div class="grid grid-cols-3 gap-4 mb-6">
+      <div class="surface">
+        <p class="label">Normal</p>
+        <div class="bg-white rounded-2xl shadow-xl p-5 border">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="font-bold text-gray-900">AAPL</span>
+            <span class="px-2 py-0.5 rounded bg-green-50 text-green-700 text-xs font-medium">LONG</span>
+            <span class="ml-auto text-xl">🟢</span>
+          </div>
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div><p class="text-gray-500">Entry</p><p class="font-semibold text-gray-900">$183.00</p></div>
+            <div><p class="text-gray-500">Exit</p><p class="font-semibold text-gray-900">$205.00</p></div>
+            <div><p class="text-gray-500">P&L</p><p class="font-semibold text-green-600">+$2,200</p></div>
+            <div><p class="text-gray-500">Return</p><p class="font-semibold">+12%</p></div>
+          </div>
+        </div>
+      </div>
+      <div class="surface">
+        <p class="label">Orphan</p>
+        <div class="bg-white rounded-2xl shadow-xl p-5 border">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="font-bold text-gray-900">CRWV</span>
+            <span class="px-2 py-0.5 rounded bg-red-50 text-red-600 text-xs font-medium">SHORT</span>
+            <span class="ml-auto text-xl">🔴</span>
+          </div>
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div><p class="text-gray-500">Entry</p><p class="font-semibold text-gray-900">—</p></div>
+            <div><p class="text-gray-500">Exit</p><p class="font-semibold text-gray-900">$118.04</p></div>
+            <div><p class="text-gray-500">P&L</p><p class="font-semibold text-red-500">−$1,455</p></div>
+            <div><p class="text-gray-500">Return</p><p class="font-semibold">—</p></div>
+          </div>
+        </div>
+      </div>
+      <div class="surface">
+        <p class="label">Option</p>
+        <div class="bg-white rounded-2xl shadow-xl p-5 border">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="font-bold text-gray-900">NVDA 160P</span>
+            <span class="px-2 py-0.5 rounded bg-green-50 text-green-700 text-xs font-medium">LONG</span>
+            <span class="ml-auto text-xl">🟢</span>
+          </div>
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div><p class="text-gray-500">Entry</p><p class="font-semibold text-gray-900">$0.41</p></div>
+            <div><p class="text-gray-500">Exit</p><p class="font-semibold text-gray-900">$3.15</p></div>
+            <div><p class="text-gray-500">P&L</p><p class="font-semibold text-green-600">+$1,370</p></div>
+            <div><p class="text-gray-500">Return</p><p class="font-semibold">+668%</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════ CURRENT INCONSISTENCIES ═════════════════ -->
+    <div class="bg-amber-50 border border-amber-200 rounded-xl p-5 mt-10">
+      <h3 class="text-sm font-semibold text-amber-900 mb-3">Remaining inconsistencies across surfaces</h3>
+      <ul class="text-sm text-amber-900 space-y-2 list-disc pl-5">
+        <li><strong>Exit price source of truth.</strong> DailyView still uses <code>buildExitInfo</code> (raw-trade scan). Everyone else now reads <code>avg_exit_price</code> from DB. ShareModal reads <code>row.exit</code> passed in from DailyView, so inherits the indirection.</li>
+        <li><strong>Journal's "Return %" column.</strong> Shows — for orphans because % needs entry; that's correct behaviour. But the % is computed from native P&L + cost basis, not <code>(exit-entry)/entry</code> — subtle inconsistency with ShareModal's Return % formula.</li>
+        <li><strong>Daily View still uses <code>buildExitInfo</code>.</strong> Fine for normal closed trades but it's a second implementation path that can drift from the builder.</li>
+      </ul>
+    </div>
+
+  </div>
+</body>
+</html>

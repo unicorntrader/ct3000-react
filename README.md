@@ -31,10 +31,10 @@ npm install
 Create `.env.local` at the repo root:
 
 ```bash
-# Client (baked into the browser bundle — REACT_APP_ prefix required by CRA)
-REACT_APP_SUPABASE_URL=https://your-project.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=ey...
-REACT_APP_SENTRY_DSN=https://...ingest.sentry.io/...   # optional
+# Client (baked into the browser bundle — VITE_ prefix required by Vite)
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=ey...
+VITE_SENTRY_DSN=https://...ingest.sentry.io/...   # optional
 
 # Server (serverless functions under api/)
 SUPABASE_URL=https://your-project.supabase.co
@@ -71,7 +71,7 @@ Push to `main`. Vercel auto-deploys on push. Branch deploys get preview URLs.
 
 Required Vercel env vars (Settings → Environment Variables → Production):
 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`,
-`STRIPE_WEBHOOK_SECRET`, `REACT_APP_SUPABASE_URL`, `REACT_APP_SUPABASE_ANON_KEY`.
+`STRIPE_WEBHOOK_SECRET`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 
 ---
 
@@ -240,7 +240,7 @@ else is behind the session + active-subscription gate in `src/App.jsx`.
 | Styling | Tailwind CSS | 3.3 |
 | Charts | Recharts | 3.8 |
 | State | React Context (no Redux/Zustand) | — |
-| Build | Create React App | 5.0.1 |
+| Build | Vite | 8.0.10 |
 | Client SDK | @supabase/supabase-js | 2.45 |
 | Server runtime | Node.js on Vercel | 18+ |
 | Payments | Stripe | 22.0 |

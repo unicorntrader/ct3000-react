@@ -30,5 +30,8 @@ yarn-error.log*
 # Vercel
 .vercel
 
+# Claude Code agent scratch (sub-agent worktrees, never committed)
+.claude/worktrees/
+
 # Supabase CLI
 supabase/.temp/
