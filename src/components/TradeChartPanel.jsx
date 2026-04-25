@@ -33,6 +33,7 @@ export default function TradeChartPanel({ trade, plan }) {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
   const [dataSource, setDataSource] = useState(null)
+  const [fallbackReason, setFallbackReason] = useState(null)
 
   // Default timeframe = auto-pick. User can override via the toolbar
   // buttons. Switching TF regenerates synthetic data; with real Alpaca
@@ -76,6 +77,7 @@ export default function TradeChartPanel({ trade, plan }) {
         return
       }
       setDataSource(data.source)
+      setFallbackReason(data.fallbackReason || null)
       setLoading(false)
 
       try {
@@ -302,7 +304,9 @@ export default function TradeChartPanel({ trade, plan }) {
           {!loading && dataSource === 'synthetic' && (
             <>
               <span className="text-gray-300">·</span>
-              <span className="italic text-amber-600 text-[11px]">synthetic data (no Alpaca coverage)</span>
+              <span className="italic text-amber-600 text-[11px]">
+                synthetic data{fallbackReason ? ` — ${fallbackReason}` : ''}
+              </span>
             </>
           )}
           {!loading && dataSource === 'alpaca' && (

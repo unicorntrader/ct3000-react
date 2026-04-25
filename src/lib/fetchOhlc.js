@@ -69,9 +69,10 @@ export async function fetchOhlcForTrade(trade, interval, { signal } = {}) {
 
   let bars = []
   let source = 'synthetic'
+  let fallbackReason = null
   try {
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.access_token) throw new Error('Not authenticated')
+    if (!session?.access_token) throw new Error('not authenticated')
 
     const params = new URLSearchParams({
       symbol: trade.symbol,
@@ -83,23 +84,27 @@ export async function fetchOhlcForTrade(trade, interval, { signal } = {}) {
       headers: { Authorization: `Bearer ${session.access_token}` },
       signal,
     })
-    if (!res.ok) throw new Error(`OHLC ${res.status}`)
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw new Error(`HTTP ${res.status}${body ? `: ${body.slice(0, 120)}` : ''}`)
+    }
     const json = await res.json()
     if (json.source === 'alpaca' && Array.isArray(json.bars) && json.bars.length) {
       bars = json.bars
       source = 'alpaca'
+    } else {
+      fallbackReason = json.reason || `Alpaca returned ${Array.isArray(json.bars) ? json.bars.length : 0} bars`
     }
   } catch (err) {
     if (err.name === 'AbortError') throw err
-    console.warn('[ohlc] real fetch failed, falling back to synthetic:', err?.message || err)
+    fallbackReason = err?.message || 'unknown error'
+    console.warn('[ohlc] real fetch failed, falling back to synthetic:', fallbackReason)
   }
 
   if (!bars.length) {
-    // Fallback: synthetic data. Same shape as the API response so the
-    // caller doesn't care which source it got.
     const mock = generateMockOhlc(trade, interval)
     if (!mock) return null
-    return { ...mock, source: 'synthetic' }
+    return { ...mock, source: 'synthetic', fallbackReason }
   }
 
   return {
