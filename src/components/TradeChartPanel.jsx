@@ -7,13 +7,17 @@ import {
   createSeriesMarkers,
   createTextWatermark,
 } from 'lightweight-charts'
-import { generateMockOhlc, pickAutoInterval, TIMEFRAMES } from '../lib/mockOhlc'
+import { pickAutoInterval, TIMEFRAMES } from '../lib/mockOhlc'
+import { fetchOhlcForTrade } from '../lib/fetchOhlc'
 import { fmtSymbol, fmtPrice } from '../lib/formatters'
 
 // Trade-review chart panel rendered inside TradeInlineDetail when the user
-// clicks "Show chart". Uses TradingView Lightweight Charts (v5) with
-// synthetic OHLC data — when /api/ohlc lands (Alpaca-backed), swap the
-// generateMockOhlc call for a real fetch.
+// clicks "Show chart". Uses TradingView Lightweight Charts (v5).
+//
+// Data path: fetchOhlcForTrade calls /api/ohlc (Alpaca-backed), with a
+// synthetic fallback for symbols Alpaca's free tier doesn't cover (options,
+// futures, some non-US tickers). The header label switches between
+// 'real bars' and 'synthetic data' so the user always knows which.
 //
 // Conventions follow the v5 official guide:
 //   * chart.addSeries(CandlestickSeries, { borderVisible: false, ... })
@@ -27,6 +31,8 @@ export default function TradeChartPanel({ trade, plan }) {
   const containerRef = useRef(null)
   const chartRef = useRef(null)
   const [error, setError] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [dataSource, setDataSource] = useState(null)
 
   // Default timeframe = auto-pick. User can override via the toolbar
   // buttons. Switching TF regenerates synthetic data; with real Alpaca
@@ -45,12 +51,34 @@ export default function TradeChartPanel({ trade, plan }) {
     if (!containerRef.current || !trade) return
 
     let chart
-    try {
-      const data = generateMockOhlc(trade, barInterval)
-      if (!data || !data.bars.length) {
-        setError('Not enough data to render this trade.')
+    let cancelled = false
+    const abort = new AbortController()
+
+    setLoading(true)
+    setError(null)
+    setDataSource(null)
+
+    ;(async () => {
+      let data
+      try {
+        data = await fetchOhlcForTrade(trade, barInterval, { signal: abort.signal })
+      } catch (err) {
+        if (cancelled || err.name === 'AbortError') return
+        console.error('[trade-chart] fetch failed:', err)
+        setError(err.message || 'Could not load chart data.')
+        setLoading(false)
         return
       }
+      if (cancelled) return
+      if (!data || !data.bars.length) {
+        setError('Not enough data to render this trade.')
+        setLoading(false)
+        return
+      }
+      setDataSource(data.source)
+      setLoading(false)
+
+      try {
 
       chart = createChart(containerRef.current, {
         height: 380,
@@ -231,14 +259,18 @@ export default function TradeChartPanel({ trade, plan }) {
       visibleFrom = Math.max(visibleFrom, data.bars[0].time)
       visibleTo = Math.min(visibleTo, data.bars[data.bars.length - 1].time)
       chart.timeScale().setVisibleRange({ from: visibleFrom, to: visibleTo })
-    } catch (err) {
-      console.error('[trade-chart] render failed:', err)
-      setError(err.message || 'Could not render chart.')
-      if (chart) chart.remove()
-      chartRef.current = null
-    }
+      } catch (err) {
+        if (cancelled) return
+        console.error('[trade-chart] render failed:', err)
+        setError(err.message || 'Could not render chart.')
+        if (chart) chart.remove()
+        chartRef.current = null
+      }
+    })()
 
     return () => {
+      cancelled = true
+      abort.abort()
       if (chartRef.current) {
         chartRef.current.remove()
         chartRef.current = null
@@ -261,8 +293,24 @@ export default function TradeChartPanel({ trade, plan }) {
           <span className="font-semibold">{fmtSymbol(trade)}</span>
           <span className="text-gray-300">·</span>
           <span className="text-gray-500">{barInterval.label}</span>
-          <span className="text-gray-300">·</span>
-          <span className="italic text-gray-400 text-[11px]">synthetic data — Alpaca wiring pending</span>
+          {loading && (
+            <>
+              <span className="text-gray-300">·</span>
+              <span className="text-gray-400 text-[11px] italic">loading…</span>
+            </>
+          )}
+          {!loading && dataSource === 'synthetic' && (
+            <>
+              <span className="text-gray-300">·</span>
+              <span className="italic text-amber-600 text-[11px]">synthetic data (no Alpaca coverage)</span>
+            </>
+          )}
+          {!loading && dataSource === 'alpaca' && (
+            <>
+              <span className="text-gray-300">·</span>
+              <span className="text-gray-400 text-[11px]">Alpaca · IEX</span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-1">
           {TIMEFRAMES.map(tf => (
