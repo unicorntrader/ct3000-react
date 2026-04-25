@@ -333,17 +333,26 @@ function DayBlock({ day, plannedTradesMap = {}, baseCurrency = 'USD', userId, on
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">{boughtCell}</td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm text-gray-900">{soldCell}</td>
                     <td className="hidden sm:table-cell px-4 py-3.5 text-sm">
-                      {row.posBefore != null && row.posAfter != null ? (
-                        <>
-                          <span className="text-xs text-gray-400">
-                            <PrivacyValue value={Math.round(row.posBefore).toLocaleString()} />
-                          </span>
-                          <span className="mx-1 text-xs text-gray-300">→</span>
-                          <span className="font-medium text-gray-700">
-                            <PrivacyValue value={Math.round(row.posAfter).toLocaleString()} />
-                          </span>
-                        </>
-                      ) : '—'}
+                      {row.posBefore != null && row.posAfter != null ? (() => {
+                        // Signed display: shorts render negative ("-30 → 0"),
+                        // longs positive ("30 → 0"). Matches IBKR's convention
+                        // and resolves the "30 → 0 looks like a long-trim"
+                        // ambiguity when the row's Dir is SHORT.
+                        const sign = row.direction === 'SHORT' ? -1 : 1;
+                        const before = Math.round(row.posBefore) * sign;
+                        const after  = Math.round(row.posAfter)  * sign;
+                        return (
+                          <>
+                            <span className="text-xs text-gray-400">
+                              <PrivacyValue value={before.toLocaleString()} />
+                            </span>
+                            <span className="mx-1 text-xs text-gray-300">→</span>
+                            <span className="font-medium text-gray-700">
+                              <PrivacyValue value={after.toLocaleString()} />
+                            </span>
+                          </>
+                        );
+                      })() : '—'}
                     </td>
                     <td className={`px-4 py-3.5 text-sm font-medium ${hasRealized ? ((rowPnl || 0) >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'}`}>
                       {hasRealized ? <PrivacyValue value={fmtPnl(rowPnl, rowPnlCurrency, 0)} /> : '—'}
