@@ -81,10 +81,17 @@ export function generateMockOhlc(trade, interval = null) {
   const intervalLabel = chosen.label;
   const stepMs = stepSec * 1000;
 
-  // Pad ~30% before and after the trade window so markers aren't at edges.
-  const pad = Math.max(hold * 0.3, stepMs * 6);
-  const startMs = openedAt - pad;
-  const endMs = closedAt + pad;
+  // Pad before/after the trade window. Two goals:
+  //   1. Markers don't sit at the edges
+  //   2. The chart shows enough surrounding bars to feel like a real chart
+  //      (a 21-bar daily chart looks bare; ~50+ bars feels right)
+  // Rule of thumb: at least 30 bars before, 10 bars after. For long holds,
+  // expand proportionally so the trade window itself isn't most of the
+  // chart. Real Alpaca data will use the same shape — just over-fetch.
+  const padBefore = Math.max(hold * 0.5, stepMs * 30);
+  const padAfter = Math.max(hold * 0.2, stepMs * 10);
+  const startMs = openedAt - padBefore;
+  const endMs = closedAt + padAfter;
 
   // Snap to the bar interval so candles align cleanly.
   const startTs = Math.floor(startMs / stepMs) * stepMs;
