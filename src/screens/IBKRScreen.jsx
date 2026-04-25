@@ -1,8 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
 import { supabase } from '../lib/supabaseClient';
+import { fmtPrice } from '../lib/formatters';
 import { useDataVersion, useInitialLoadTracker, useBumpDataVersion } from '../lib/DataVersionContext';
 import LoadError from '../components/LoadError';
+import PrivacyValue from '../components/PrivacyValue';
+
+// Compact "today 14:39" / "yesterday 09:42" / "Apr 23 16:13" formatter
+// for the new-fills preview list. Uses the user's local timezone --
+// trades.date_time is now stored as real UTC (post the 2026-04-25 tz fix)
+// so toLocaleString picks up the user's browser tz correctly.
+function formatFillTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  const isYest = d.toDateString() === yest.toDateString();
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (sameDay) return `today ${time}`;
+  if (isYest)  return `yesterday ${time}`;
+  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
+}
 
 // Wrap a sync/rebuild step's error with a "which step failed" tag so the
 // Sentry ticket and the UI both say something actionable. Also swallows
@@ -292,6 +312,8 @@ export default function IBKRScreen({ session }) {
         tradeCount: result.tradeCount,
         openPositionCount: result.openPositionCount,
         logicalCount: result.logicalCount,
+        newTradeCount: result.newTradeCount,
+        newTradesPreview: result.newTradesPreview || [],
         ...(warnings.length ? { warning: warnings.join('; ') } : {}),
       });
     } catch (err) {
@@ -467,12 +489,49 @@ export default function IBKRScreen({ session }) {
                 </>
               ) : (
                 <>
-                  <p className="text-sm font-semibold text-green-800 mb-2">Sync successful</p>
-                  <p className="text-sm text-green-700">{syncResult.tradeCount} trades saved to database</p>
-                  <p className="text-sm text-green-700">{syncResult.openPositionCount} open positions updated</p>
-                  {typeof syncResult.logicalCount === 'number' && (
-                    <p className="text-sm text-green-700">{syncResult.logicalCount} logical trades rebuilt</p>
+                  {/* Lead with the delta. The previous "49 trades saved"
+                      copy was misleading: most of those were the same
+                      30-day window being re-pulled. Users care about
+                      what's new since the last sync. */}
+                  {syncResult.newTradeCount === 0 ? (
+                    <>
+                      <p className="text-sm font-semibold text-green-800">Already up to date</p>
+                      <p className="text-sm text-green-700 mt-1">No new fills since your last sync.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-semibold text-green-800 mb-2">
+                        {syncResult.newTradeCount} new fill{syncResult.newTradeCount !== 1 ? 's' : ''} synced
+                      </p>
+                      {syncResult.newTradesPreview && syncResult.newTradesPreview.length > 0 && (
+                        <ul className="text-sm text-green-800 space-y-1 mb-1">
+                          {syncResult.newTradesPreview.map((t, i) => (
+                            <li key={i} className="flex items-center gap-3 font-mono text-xs">
+                              <span className="font-semibold w-16 truncate">{t.symbol}</span>
+                              <span className={`font-semibold w-10 ${t.buySell === 'BUY' ? 'text-green-700' : 'text-red-600'}`}>
+                                {t.buySell}
+                              </span>
+                              <span className="w-16 text-right">
+                                <PrivacyValue value={t.quantity != null ? t.quantity.toLocaleString() : '—'} />
+                              </span>
+                              <span className="w-20 text-right">@ {fmtPrice(t.price, t.currency)}</span>
+                              <span className="text-green-600 ml-auto">{formatFillTime(t.dateTime)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {syncResult.newTradeCount > (syncResult.newTradesPreview?.length || 0) && (
+                        <p className="text-xs text-green-600 italic">
+                          + {syncResult.newTradeCount - (syncResult.newTradesPreview?.length || 0)} more
+                        </p>
+                      )}
+                    </>
                   )}
+                  {/* Small footer with the round-numbers as context, not headline. */}
+                  <p className="text-xs text-green-600 mt-3">
+                    Window total: {syncResult.tradeCount} fills · {syncResult.openPositionCount} positions
+                    {typeof syncResult.logicalCount === 'number' ? ` · ${syncResult.logicalCount} logical trades` : ''}
+                  </p>
                   <p className="text-xs text-green-600 mt-2 italic">
                     Note: IBKR Flex Queries are batch reports — new executions typically appear 10–30 minutes after the fill, and same-day trades may only settle after 4pm ET. If a recent trade is missing, wait a bit and sync again.
                   </p>

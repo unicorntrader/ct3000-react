@@ -188,6 +188,8 @@ module.exports = async function handler(req, res) {
       openPositionCount: result.positionCount,
       logicalCount: result.logicalCount,
       rebuildWarnings: result.rebuildWarnings || [],
+      newTradeCount: result.newTradeCount,
+      newTradesPreview: result.newTradesPreview || [],
     });
   } catch (err) {
     console.error('[sync] error:', err.message);

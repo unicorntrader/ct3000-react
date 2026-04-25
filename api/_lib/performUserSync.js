@@ -163,6 +163,36 @@ async function performUserSync(userId, supabaseAdmin) {
   const openPositions = parseOpenPositions(xml);
   const baseCurrency = parseBaseCurrency(xml);
 
+  // Diff incoming trades against what's already in the DB so the sync
+  // response can tell the user what's actually NEW vs the same 30-day
+  // window of fills being re-pulled. Done BEFORE the upsert mutates
+  // state. Cheap: one SELECT scoped to the incoming ib_exec_id list.
+  const incomingExecIds = trades.map(t => t.ibExecID).filter(Boolean);
+  const newExecIds = new Set(incomingExecIds);
+  if (incomingExecIds.length > 0) {
+    const { data: existingRows, error: existingErr } = await supabaseAdmin
+      .from('trades')
+      .select('ib_exec_id')
+      .eq('user_id', userId)
+      .in('ib_exec_id', incomingExecIds);
+    if (existingErr) throw new Error(`New-trade diff query failed: ${existingErr.message}`);
+    for (const row of (existingRows || [])) newExecIds.delete(row.ib_exec_id);
+  }
+  // Compact preview of the most recent NEW fills, for the IBKR screen
+  // to render. Cap at 5 so the response payload stays small.
+  const newTradesPreview = trades
+    .filter(t => t.ibExecID && newExecIds.has(t.ibExecID))
+    .sort((a, b) => (b.dateTime || '').localeCompare(a.dateTime || ''))
+    .slice(0, 5)
+    .map(t => ({
+      symbol:    t.symbol,
+      buySell:   t.buySell,
+      quantity:  t.quantity ? Math.abs(parseFloat(t.quantity)) : null,
+      price:     t.tradePrice ? parseFloat(t.tradePrice) : null,
+      currency:  t.currency,
+      dateTime:  t.dateTime,
+    }));
+
   // Upsert trades (admin bypasses RLS so no JWT needed)
   if (trades.length > 0) {
     const rows = trades
@@ -258,6 +288,8 @@ async function performUserSync(userId, supabaseAdmin) {
     positionCount: openPositions.length,
     logicalCount: count,
     rebuildWarnings: warnings,
+    newTradeCount: newExecIds.size,
+    newTradesPreview,
   };
 }
 
