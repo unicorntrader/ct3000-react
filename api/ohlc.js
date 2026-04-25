@@ -64,11 +64,28 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: `Unsupported timeframe: ${timeframe}` });
   }
 
-  const apiKey = process.env.ALPACA_API_KEY_ID;
-  const apiSecret = process.env.ALPACA_API_SECRET_KEY;
-  if (!apiKey || !apiSecret) {
+  const rawKey = process.env.ALPACA_API_KEY_ID;
+  const rawSecret = process.env.ALPACA_API_SECRET_KEY;
+  if (!rawKey || !rawSecret) {
     console.error('[ohlc] missing ALPACA_API_KEY_ID / ALPACA_API_SECRET_KEY env vars');
     return res.status(500).json({ error: 'OHLC provider not configured' });
+  }
+  // Trim whitespace and validate ASCII. Pasted env vars sometimes pick up
+  // a leading invisible char (Cyrillic look-alikes from non-Latin keyboard
+  // layouts, RTL marks, NBSPs, etc.) which fetch then rejects with the
+  // unhelpful "Cannot convert argument to a ByteString" error. Surface the
+  // problem clearly here instead.
+  const apiKey = rawKey.trim();
+  const apiSecret = rawSecret.trim();
+  for (const [name, val] of [['ALPACA_API_KEY_ID', apiKey], ['ALPACA_API_SECRET_KEY', apiSecret]]) {
+    for (let i = 0; i < val.length; i++) {
+      const code = val.charCodeAt(i);
+      if (code > 127) {
+        const msg = `${name} contains a non-ASCII character at index ${i} (code U+${code.toString(16).toUpperCase().padStart(4, '0')}). Delete the env var in Vercel and re-paste it cleanly.`;
+        console.error('[ohlc]', msg);
+        return res.status(500).json({ error: msg });
+      }
+    }
   }
 
   // Sanitise symbol — Alpaca expects bare ticker for equities. If the
