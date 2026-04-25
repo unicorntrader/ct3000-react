@@ -140,12 +140,18 @@ export function generateMockOhlc(trade, interval = null) {
     const high = Math.max(open, close) + Math.abs(noise(i, 31)) * vol * 1.1;
     const low = Math.min(open, close) - Math.abs(noise(i, 53)) * vol * 1.1;
 
+    // Synthetic volume — louder around entry/exit, quieter in pad regions.
+    // Just for visual; real Alpaca path returns the real `v`.
+    const volBase = 80000 + Math.abs(noise(i, 91)) * 60000;
+    const inHold = t >= openedAt && t <= closedAt;
+    const volume = Math.round(volBase * (inHold ? 1.4 : 0.7));
     bars.push({
       time: timeSec,
       open: +open.toFixed(2),
       high: +high.toFixed(2),
       low: +low.toFixed(2),
       close: +close.toFixed(2),
+      volume,
     });
     prevClose = close;
   }

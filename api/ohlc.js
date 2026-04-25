@@ -132,6 +132,7 @@ module.exports = async function handler(req, res) {
       high: b.h,
       low: b.l,
       close: b.c,
+      volume: b.v ?? 0,
     }));
 
     return res.status(200).json({
