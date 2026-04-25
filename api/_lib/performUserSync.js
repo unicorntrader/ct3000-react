@@ -179,6 +179,7 @@ async function performUserSync(userId, supabaseAdmin) {
         quantity:               t.quantity ? parseFloat(t.quantity) : null,
         trade_price:            t.tradePrice ? parseFloat(t.tradePrice) : null,
         date_time:              t.dateTime,
+        exchange:               t.exchange,
         net_cash:               t.netCash ? parseFloat(t.netCash) : null,
         fifo_pnl_realized:      t.fifoPnlRealized ? parseFloat(t.fifoPnlRealized) : null,
         ib_commission:          t.ibCommission ? parseFloat(t.ibCommission) : null,
