@@ -109,13 +109,13 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 **User actions:**
 - Apply smart filters (combine with AND logic)
 - Click tab filters
-- Click a row → opens `TradeJournalDrawer`
+- Click a row → expands `TradeInlineDetail` inline beneath the row
 - Click share icon → opens `ShareModal`
 - Accept `location.state` filters from `PerformanceScreen` navigation (pre-filters by symbol + period)
 
-**On mount:** Fetches `logical_trades`, `planned_trades`, and `base_currency`. Plumbs plans into a `plansMap` keyed by `planned_trade_id`.
+**On mount:** Fetches `logical_trades WHERE status='closed'`, `planned_trades`, and `base_currency`. Plumbs plans into a `plansMap` keyed by `planned_trade_id`. Open positions belong on Daily View; Journal is closed-trade review only.
 
-**Tables touched:** `logical_trades` (read), `planned_trades` (read), `user_ibkr_credentials` (read base_currency). Writes via `TradeJournalDrawer` child.
+**Tables touched:** `logical_trades` (read closed-only), `planned_trades` (read), `user_ibkr_credentials` (read base_currency). Writes via `TradeInlineDetail` child (review_notes only).
 
 #### `src/screens/PerformanceScreen.jsx`
 **Purpose:** Analytics dashboard — KPIs, cumulative P&L curve, and "by slice" breakdowns.
@@ -183,19 +183,19 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 **Keyboard shortcuts:** Enter = match, N = no plan, Esc = close.
 **Tables touched:** `logical_trades` (read + update), `planned_trades` (read), `user_ibkr_credentials` (read base_currency).
 
-#### `src/components/TradeJournalDrawer.jsx`
-**Purpose:** Bottom drawer shown when clicking a trade row in `JournalScreen`. The "review one trade" surface.
+#### `src/components/TradeInlineDetail.jsx`
+**Purpose:** Inline expansion shown when clicking a trade row in `JournalScreen`. The "review one trade" surface. (Replaced the old `TradeJournalDrawer.jsx` bottom-drawer; now expands in-place beneath the row.)
 
 **Shows:**
 - Trade header (symbol, direction, status badge)
 - Stat cards: Entry · Exit · P&L · R-multiple
-- Adherence pill (if matched closed trade)
+- Adherence pill (if matched closed trade — `adherence_score` is precomputed during rebuild)
 - Plan vs actual comparison table (if matched)
 - Notes textarea
 
-**Keyboard:** Esc closes. Enter saves (but *only* when focus is outside INPUT/TEXTAREA/SELECT so typing in the notes still works normally).
+**Keyboard:** Esc collapses. Cmd/Ctrl-Enter saves the note.
 
-**Tables touched:** `logical_trades` (update `review_notes` and `adherence_score`), `planned_trades` (read via prop).
+**Tables touched:** `logical_trades` (update `review_notes`; `adherence_score` is set by the server during rebuild, not here), `planned_trades` (read via prop).
 
 #### `src/components/ShareModal.jsx`
 **Purpose:** Pre-fills an X/Twitter "share trade" card with symbol, direction, entry, exit, P&L, R, and a `#CT3000` hashtag.
@@ -364,23 +364,21 @@ post-2026-04-25 (DB grants revoked, except column-level UPDATE on
 
 **Current status:** Functional but **not wired to any UI path**. Unclear if it's a planned feature or abandoned. Logged as a question in the audit.
 
-#### `api/lib/supabaseAdmin.js`
+#### `api/_lib/supabaseAdmin.js`
 **Purpose:** Server-side Supabase client using `SUPABASE_SERVICE_ROLE_KEY`. Bypasses RLS. Used by every `api/*.js` file for privileged writes.
 
 ---
 
 ### Database migrations (`supabase/migrations/`)
 
-| File | What it did |
-|---|---|
-| `20260411_add_currency_to_logical_trades.sql` | Added `currency text` column to `logical_trades`. Currency code display support. |
-| `20260411_create_user_subscriptions.sql` | Created the `user_subscriptions` table with Stripe IDs, status, trial dates, demo flags. |
-| `20260413_add_rls_and_daily_notes.sql` | Enabled RLS + policies on `trades`, `logical_trades`, `planned_trades`, `open_positions`, `user_ibkr_credentials`, and created `daily_notes` table with RLS. |
-| `20260414_cleanup_demo_planned_trades.sql` | One-time cleanup: removed stale demo rows from `planned_trades` caused by a bug where WelcomeModal called seed-demo for real users. |
-| `20260414_cleanup_all_demo_rows.sql` | Broader cleanup across all 4 tables touched by seed-demo. |
-| `20260414_fix_missing_rls.sql` | Enabled RLS on `securities`, `anonymous_sessions`, `ghost_webhook_events`, `user_subscriptions`, `invited_users` — tables the earlier RLS migration had missed. Flagged by Supabase linter April 14. |
+The repo carries a **baseline schema snapshot** (`00000000000000_baseline_schema.sql`, dumped from prod) plus a growing list of dated incremental migrations. The full set isn't enumerated here — `ls supabase/migrations/` is the source of truth. Notable themes from the most recent migrations:
 
-> **Not in migrations:** the tables themselves (`trades`, `logical_trades`, `planned_trades`, `open_positions`, `user_ibkr_credentials`) were created via the Supabase dashboard, not via a checked-in migration. **There is no schema source of truth in the repo.** This is the root cause of the recurring "column doesn't exist" bugs we've hit.
+- **Subscription RLS hardening** — drop dormant self-write policies (`20260424_drop_self_write_subscription_policies.sql`).
+- **IBKR credential grants** — deny-by-default SELECT on raw secret columns + safe-column allow-list (`20260425_ibkr_credentials_safe_column_grant.sql`); revoke writes from browser roles, allow only `auto_sync_enabled` UPDATE (`20260425_ibkr_credentials_revoke_writes.sql`).
+- **Trade exchange-local timezone** — `trades.exchange` + `order_type` columns (`20260425_trades_add_exchange.sql`); per-asset-class re-interpretation backfill (`20260425_backfill_trade_timezones.sql`).
+- **Account-deletion privacy** — backfill old `account_deletions` rows to anonymous (`20260424_backfill_anonymize_account_deletions.sql`); the `api/cron-anonymize-churn.js` weekly job keeps it that way going forward.
+
+> The baseline file (`00000000000000_baseline_schema.sql`) is **reference-only** — a `pg_dump` snapshot. Don't apply it to a DB that already has the objects. Apply it once to a fresh project, then run dated migrations in filename order. See `CLAUDE.md` and the file's own header for details.
 
 ---
 
@@ -570,7 +568,7 @@ for trade in logical_trades:
 ```
 
 ### Adherence scoring
-See `src/lib/adherenceScore.js`. Four sub-scores (entry slippage, target capture, stop respect, quantity deviation) averaged to a 0–100 overall.
+See `api/_lib/adherenceScore.js`. Four sub-scores (entry slippage, target capture, stop respect, quantity deviation) averaged to a 0–100 overall. Computed server-side during `rebuildForUser` for closed matched LTs and persisted to `logical_trades.adherence_score`.
 
 ---
 
@@ -604,8 +602,7 @@ See `src/lib/adherenceScore.js`. Four sub-scores (entry slippage, target capture
 
 ---
 
-## Known inaccuracies in this doc (to fix)
+## Known inaccuracies in this doc (legacy notes)
 
-- **`planned_trades.notes` column** — referenced earlier in some parts of the app and in migration-adjacent docs. It does NOT exist. The canonical column is `thesis`. All code using `notes` has been fixed (as of April 15) but this doc should never imply the column exists.
-- **`user_ibkr_credentials` column names** — described from inference, not a schema file. Verify against live Supabase if you're about to write a migration.
-- **`adherence_score` is sometimes described as "computed on sync"** — it's NOT. Only `TradeJournalDrawer.handleSave` writes it today. This is the biggest open architectural item.
+- **`planned_trades.notes` column** — does NOT exist. The canonical column is `thesis`. Old docs / older code references should be ignored.
+- **`user_ibkr_credentials` column names** — verify against `supabase/migrations/00000000000000_baseline_schema.sql` + later migrations if you're about to write a migration. The baseline is the source of truth.

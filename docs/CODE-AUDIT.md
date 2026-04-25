@@ -1,6 +1,9 @@
 # Whole-code audit — CT3000
 
-**Date:** 2026-04-18. Scope: all `src/`, `api/`, core docs. Excludes `supabase/migrations/*` (historical) and build artifacts.
+**Original audit date:** 2026-04-18. **Last reconciled:** 2026-04-25
+(annotations + path corrections + RESOLVED markers).
+Scope: all `src/`, `api/`, core docs. Excludes `supabase/migrations/*`
+(historical) and build artifacts.
 
 **Method:** three parallel explore agents (logic, security, UX) each dumped ~20-25 findings. I verified the high-impact claims by reading the code myself and discarded the false positives (pattern-matched security clichés). What's left below is things I have high confidence in.
 
@@ -12,18 +15,13 @@
 
 ### 1. Dead code + misleading comment in FIFO builder's C;O branch
 
-**Where:** `src/lib/logicalTradeBuilder.js:130-131` (and the equivalent spot in `api/lib/logicalTradeBuilder.js`)
+**Where (current path):** `api/_lib/logicalTradeBuilder.js`. The historical `src/lib/logicalTradeBuilder.js` was deleted; FIFO is server-only now.
 
-```js
-const closeTrades = group.filter(t => (t.open_close_indicator || '') === 'C;O');
-const openTrades  = group.filter(t => (t.open_close_indicator || '') === 'C;O'); // same trades, different qty split
-```
+**Original finding:** two identically-filtered variables in the C;O reversal branch (`closeTrades` + an unused `openTrades`). Misleading comment about "different qty split" with no actual split logic.
 
-Two variables, identical filters. `openTrades` is **never referenced** after this line. The comment claims "different qty split" but there's no split logic — the C;O branch treats the whole group as one close followed by one open, and the new "open side" on line 162 uses `group` (not `openTrades`).
+**Status (2026-04-25):** behaviour-correctness for reversal trades is still a known approximation. The current builder treats the C;O group as "close N, then open N" using the whole group's quantity. For most users this is fine; for traders who do same-fill reversals it can mis-attribute small qty deltas. The standalone `logical_trade_executions` join table that *would* hold the precise per-LT split was empty in prod and has been dropped (see BACKLOG / today's commits).
 
-**Why blocking:** not a behavior bug *right now* (openTrades is dead code), but it's a landmine. Anyone reading this file will assume the two variables are doing different things and will modify one without the other, introducing a real bug. Also: this code ran on your CRWV trade history in the "truth-first SJ accounting" session and produced correct-looking output, which suggests the C;O path hasn't actually been stress-tested under realistic data.
-
-**Fix:** delete `openTrades`; fix the comment; actually think through whether we need to separate close-qty from open-qty (IBKR's `C;O` reversal semantics imply you might).
+**Fix path going forward:** if reversal precision becomes important, repopulate per-(trade, LT) `quantity_applied` data from `rebuildForUser` and use it in client-side position math. Not blocking the modern code path; flag is retained for visibility.
 
 ---
 
@@ -39,7 +37,7 @@ Two variables, identical filters. `openTrades` is **never referenced** after thi
 
 ### 3. `rebuild` is not atomic: delete-then-insert with no transaction
 
-**Where:** `api/rebuild.js:186-202`
+**Where (current path):** `api/_lib/rebuildForUser.js` (the rebuild logic moved out of `api/rebuild.js` into the shared helper; `api/rebuild.js` now just calls it).
 
 Already documented in `LIMITS-AUDIT.md` finding #3. Re-flagged here because it's the single most likely way a beta user loses data. Delete succeeds → insert fails (timeout, payload limit, schema mismatch) → user's `logical_trades` is empty until they re-sync successfully. Sentry will catch the error but the damage is done.
 
@@ -79,7 +77,7 @@ If either Supabase call rejects (not returns an error object — actually reject
 
 ### 6. Stale `planned_trade_id` on trades when a plan is deleted
 
-**Where:** `api/rebuild.js:28-70` (`applyPlanMatching`), preservation logic at `api/rebuild.js:140-156`
+**Where (current path):** `api/_lib/rebuildForUser.js` — `applyPlanMatching()` and the user_reviewed preservation block.
 
 If a user deletes a plan via direct Supabase call (or if the PlanSheet delete path has no `matchedCount > 0` block — we didn't verify), matched `logical_trades.planned_trade_id` values still point at the now-nonexistent plan row. Rebuild preserves these on user_reviewed trades, so they can outlive the plan.
 
@@ -133,15 +131,15 @@ Means any admin action taken via the admin UI leaves no audit trail. For beta us
 
 ### 11. Silent Supabase errors across multiple screens
 
-The error-checking convention in the codebase is inconsistent. Some places use `if (error) setSomeError(error.message)`, others `console.error` and swallow, others just destructure `{ data }` and ignore `error` entirely. Concrete instances the UX agent flagged (not individually verified, but representative):
+The error-checking convention in the codebase is inconsistent. Some places use `if (error) setSomeError(error.message)`, others `console.error` and swallow, others just destructure `{ data }` and ignore `error` entirely.
 
-- `src/screens/DailyViewScreen.jsx:519-525` — `handleResolve` silently returns on error
-- `src/screens/JournalScreen.jsx:173-182` — `loadPlaybooks` logs and shows empty state
-- `src/screens/SettingsScreen.jsx:45-62` — sets error state but no retry button
+Note: line numbers on the original concrete instances are stale (the `DailyViewScreen.handleResolve` cited has been removed; the trade resolution UX moved to `ReviewScreen`). The general pattern still exists across screens; needs one consistency pass.
 
 **User impact:** user takes an action, nothing happens, no way to know why. Looks broken.
 
 **Fix:** one pass to standardize. Decide on a single pattern (e.g., `if (error) toast.error(error.message)`) and apply uniformly. Medium-size refactor, 3-4 hours.
+
+**Current standard:** the documented "Data-loading pattern" in `CLAUDE.md` (try/catch around the load function, `LoadError` retry surface, Sentry context tagging) is the target shape. Most screens conform; an audit pass would find the stragglers.
 
 ---
 
@@ -181,17 +179,17 @@ UX agent flagged this as a privacy leak. **It's not — the user is viewing thei
 
 `pnl > 0` = win, `pnl <= 0` = loss. A trade that closed exactly at breakeven (rare but possible, especially for scratches) gets counted as a loss. Downward-biased win rate. Low impact, but worth `pnl >= 0` as the win test (or `!= 0 &&` for explicit no-breakeven counting).
 
-### 16. Sidebar win rate + "this month" stats are hardcoded `--`
+### 16. ~~Sidebar win rate + "this month" stats are hardcoded `--`~~ ✅ RESOLVED
 
-Documented in SETUP.md known gaps. Still present. Either wire real data or remove the fields.
+Sidebar wiring updated; placeholders replaced with real values.
 
 ### 17. PerformanceScreen empty-state could have a CTA
 
 "No closed trades in this period" gives no next action. Could say "Try a wider period" or "Import trades via IBKR." Pure UX polish.
 
-### 18. Sync response returns the full trades array then client reuploads it
+### 18. ~~Sync response returns the full trades array then client reuploads it~~ ✅ RESOLVED
 
-Already in `LIMITS-AUDIT.md` finding #7. Listed here to keep the backlog aware.
+`/api/sync` is now server-authoritative. Server upserts trades + replaces open_positions + updates credentials + rebuilds logical trades, all via `service_role`. Browser receives only a summary (`{ tradeCount, openPositionCount, logicalCount, newTradeCount, newTradesPreview, rebuildWarnings }`) and renders it. See `docs/backend.md` and `api/_lib/performUserSync.js` for the new flow.
 
 ---
 
@@ -208,23 +206,26 @@ The agents flagged these — I read the code and they're wrong:
 
 ---
 
-## Recommended execution order
+## Status of recommended execution order
 
-**Before beta (this week):**
-1. #1 — delete `openTrades` dead code + think through C;O split
-2. #4 — remove `fmtShort` default currency
-3. #5 — `try/finally` wrapper on the loading useEffects (at minimum PlansScreen since I just wrote it)
+This list was written for "before beta" planning and is now mostly
+historical. Updated status:
 
-**First post-beta sprint:**
-4. #3 — rebuild transaction/swap
-5. #6 — FK cascade on planned_trade_id
-6. #11 — silent-error audit pass
-
-**Post-launch backlog:**
-8. #2 — dedupe the two logicalTradeBuilder.js files
-9. #8 — webhook event dedup
-10. #9 — IBKR token encryption at rest
-11. #10 — wire admin_actions
+| Item | Original priority | Status |
+|---|---|---|
+| #2 — dedupe builder copies | high | ✅ done (FIFO is server-only) |
+| #18 — server-authoritative sync | high | ✅ done (`performUserSync`) |
+| #12 — timestamp normalization | high | ✅ done (`exchangeTimezone.js`) |
+| #16 — sidebar hardcoded stats | low | ✅ done |
+| #1 — C;O builder dead code | blocking | partial — see updated note above |
+| #4 — `fmtShort` default currency | high | TBD/needs verification (formatters.js content not re-checked in this pass) |
+| #5 — `try/finally` on data loads | high | mostly done (CLAUDE.md "Data-loading pattern" is the standard; spot-check stragglers) |
+| #3 — rebuild atomic delete-then-insert | high | open |
+| #6 — FK on `planned_trade_id` | high | open |
+| #11 — silent-error consistency | medium | partial / open |
+| #8 — Stripe webhook event dedup | medium | open |
+| #9 — IBKR token encryption at rest | medium | open (write-side closed via `/api/ibkr-credentials` + grants; rest-encryption still TODO) |
+| #10 — wire `admin_actions` | medium | open |
 
 ---
 

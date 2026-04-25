@@ -146,8 +146,11 @@ User & account:
 - `user_ibkr_credentials` — IBKR token, account_id, `last_sync_at`, `base_currency`
 - `user_subscriptions` — Stripe state, `is_comped`, `ibkr_connected`, `demo_seeded`
 - `invited_users` — beta invite tokens
-- `account_deletions` — churn log (feedback text, stripped after 90 days
-  per privacy policy — cleanup job TBD)
+- `account_deletions` — churn log. Email + `stripe_customer_id` are
+  no longer captured on new deletions (set to `null` in
+  `api/delete-account.js` after the 2026-04-25 privacy update). The
+  weekly `api/cron-anonymize-churn.js` job scrubs any pre-cutover
+  rows older than 90 days. Feedback text persists indefinitely.
 
 Ops:
 - `admin_actions` — admin moderation audit log
@@ -238,20 +241,23 @@ else is behind the session + active-subscription gate in `src/App.jsx`.
 
 ## Stack
 
-| Layer | Choice | Version |
+_Versions match `package.json` at the time of the last docs sync; check the file for the live values._
+
+| Layer | Choice | Version (semver range) |
 |---|---|---|
-| UI framework | React | 18.2 |
-| Routing | react-router-dom | 7.14 |
-| Styling | Tailwind CSS | 3.3 |
-| Charts | Recharts | 3.8 |
+| UI framework | React | ^18.2.0 |
+| Routing | react-router-dom | ^7.14.0 |
+| Styling | Tailwind CSS | ^3.3.0 |
+| Charts | Recharts | ^3.8.1 |
 | State | React Context (no Redux/Zustand) | — |
-| Build | Vite | 8.0.10 |
-| Client SDK | @supabase/supabase-js | 2.45 |
+| Build | Vite | ^8.0.10 |
+| Client SDK | @supabase/supabase-js | ^2.45.4 |
 | Server runtime | Node.js on Vercel | 18+ |
-| Payments | Stripe | 22.0 |
-| XML parsing | fast-xml-parser | 5.5 |
-| Error tracking | Sentry (@sentry/react + @sentry/node) | 10.48 / 10.49 |
-| Hosting | Vercel Hobby (function cap 12, using 8) | — |
+| Payments | Stripe | ^22.0.1 |
+| XML parsing | fast-xml-parser | ^5.7.1 |
+| Date / TZ | date-fns-tz | ^3.x |
+| Error tracking | Sentry (@sentry/react + @sentry/node) | ^10.48 / ^10.49 |
+| Hosting | Vercel Pro | — |
 | Database | Supabase (PostgreSQL) | — |
 | Auth | Supabase Auth | — |
 | External data | IBKR Flex Query (XML over HTTPS) | — |

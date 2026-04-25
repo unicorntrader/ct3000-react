@@ -4,11 +4,11 @@
 
 CT3000 is a three-tier web application:
 
-1. **React SPA** — all UI, routing, and client-side data logic
-2. **Vercel Serverless Function** (`/api/sync.js`) — a thin proxy between the browser and the IBKR Flex Web Service
-3. **Supabase** — PostgreSQL database and email/password Auth
+1. **React SPA** (Vite-built) — UI, routing, screen-level state, light reads from Supabase. Trade-data writes go through the API tier, not the browser.
+2. **Vercel Serverless Functions** (`/api/*`) — handle the IBKR integration, paid-route gating, Stripe lifecycle, account deletion, scheduled crons, and IBKR-credential writes.
+3. **Supabase** — PostgreSQL + email/password Auth + Row-Level Security and column-level grants.
 
-There is no traditional backend server. The SPA talks directly to Supabase using the JavaScript SDK, and calls the one serverless function for the IBKR integration.
+There is no long-running backend server. The SPA talks directly to Supabase for reads and a small set of safe writes (daily notes, the auto-sync toggle, plan CRUD). Anything sensitive — IBKR token writes, trade persistence, subscription enforcement — flows through the API tier under `service_role`.
 
 ---
 
@@ -20,43 +20,67 @@ There is no traditional backend server. The SPA talks directly to Supabase using
 │                                                                  │
 │  AuthScreen ──── supabase.auth.signIn/signUp/resetPassword ──┐  │
 │                                                               │  │
-│  IBKRScreen ─── fetch('/api/sync?token=...&queryId=...') ─┐  │  │
+│  IBKRScreen ─── POST /api/sync (Bearer JWT, empty body) ──┐  │  │
+│                ─── POST /api/ibkr-credentials (save) ─────┤  │  │
+│                ─── DELETE /api/ibkr-credentials (remove) ─┤  │  │
 │                                                            │  │  │
-│  All screens ──── supabase.from('table').select()/         │  │  │
-│                   insert()/upsert()/update()/delete()      │  │  │
+│  Screens ──── supabase.from('table').select() (RLS-       │  │  │
+│               filtered reads); writes only on safe        │  │  │
+│               surfaces (daily_notes, auto_sync_enabled,   │  │  │
+│               planned_trades, playbooks, weekly_reviews)  │  │  │
 └────────────────────────────────────────────────────────────┼──┼──┘
                                                              │  │
               ┌──────────────────────────────────────────────┘  │
               ▼                                                  │
-┌─────────────────────────────┐          ┌─────────────────────────┐
-│  /api/sync.js               │          │  Supabase               │
-│  Vercel Serverless (Node)   │          │  (PostgreSQL + Auth)    │
-│                             │          │                         │
-│  1. SendRequest → IBKR      │          │  Tables:                │
-│     FlexStatementService    │          │   trades                │
-│  2. Poll GetStatement       │          │   logical_trades        │
-│     (up to 10 retries)      │          │   planned_trades        │
-│  3. Regex-parse XML into    │          │   open_positions        │
-│     { trades[], open        │          │   user_ibkr_credentials │
-│       Positions[],          │          │                         │
-│       baseCurrency }        │          │  Auth:                  │
-│  4. Return JSON to browser  │          │   users (managed)       │
-└─────────────────┬───────────┘          └──────────┬──────────────┘
-                  │                                  │
-                  ▼                                  │
-   IBKR Flex Web Service                            │
-   (gdcdyn.interactivebrokers.com)                  │
-                                                    │
-                ┌───────────────────────────────────┘
-                │  After /api/sync returns JSON, the browser:
+┌──────────────────────────────────────┐  ┌─────────────────────────┐
+│  /api/sync.js   (Vercel Node fn)     │  │  Supabase               │
+│   - JWT auth                         │  │  (PostgreSQL + Auth)    │
+│   - requireActiveSubscription gate   │  │                         │
+│   - performUserSync(userId, admin):  │  │  Tables:                │
+│     1. read IBKR creds (service_role)│  │   trades                │
+│     2. SendRequest → IBKR Flex       │  │   logical_trades        │
+│     3. Poll GetStatement (≤10×3s)    │  │   planned_trades        │
+│     4. Reject Flex period > 35 days  │  │   open_positions        │
+│     5. Parse XML → exchange-local    │  │   user_ibkr_credentials │
+│        timestamp → real UTC          │  │   user_subscriptions    │
+│     6. Diff incoming ib_exec_ids     │  │   daily_notes           │
+│     7. Upsert trades                 │  │   account_deletions     │
+│     8. Replace open_positions        │  │   ...                   │
+│     9. Clear demo rows               │  │                         │
+│    10. Update creds (last_sync_at +  │  │  Auth:                  │
+│        account_id + base_currency)   │  │   users (managed)       │
+│    11. rebuildForUser → logical_     │  │                         │
+│        trades + plan match +         │  │  Grants:                │
+│        adherence                     │  │   browser SELECT only   │
+│   - Returns SUMMARY (counts +        │  │   on safe columns of    │
+│     newTradesPreview), no raw rows   │  │   user_ibkr_credentials │
+│                                      │  │   browser INSERT/UPDATE │
+│  /api/ibkr-credentials.js            │  │   /DELETE blocked on    │
+│   - POST {token, queryId}: validate, │  │   trade tables          │
+│     mask, upsert via service_role    │  │                         │
+│   - DELETE: remove creds row         │  │   service_role bypasses │
+│                                      │  │   all of the above      │
+│  /api/rebuild.js                     │  │                         │
+│   - JWT + sub-gate, calls            │  │                         │
+│     rebuildForUser                   │  │                         │
+└─────────────────┬────────────────────┘  └──────────┬──────────────┘
+                  │                                   │
+                  ▼                                   │
+   IBKR Flex Web Service                             │
+   (gdcdyn.interactivebrokers.com)                   │
+                                                     │
+                ┌────────────────────────────────────┘
+                │  After /api/sync returns the summary, the browser:
                 │
                 ▼
-  5. Upsert trades → Supabase `trades`
-  6. Delete + reinsert → Supabase `open_positions`
-  7. Update `user_ibkr_credentials` (last_sync_at, base_currency, account_id)
-  8. Fetch all trades → run logicalTradeBuilder (FIFO) → delete + insert `logical_trades`
-  9. Fetch logical_trades + planned_trades → run planMatcher → update `logical_trades`
+   - sets local lastSyncAt
+   - bumps DataVersionContext keys ('trades', 'positions', 'ibkrCreds')
+   - renders the new-fills count + preview list
+   - silent-refetches happen on watching screens via the version bump
 ```
+
+There is no client-side `.upsert(trades)` or `.insert(open_positions)`
+on the modern code path; that's all server-side under `service_role`.
 
 ---
 
@@ -99,7 +123,7 @@ There is no traditional backend server. The SPA talks directly to Supabase using
 |---|---|
 | `supabaseClient.js` | Creates and exports the Supabase client singleton. Reads `import.meta.env.VITE_SUPABASE_URL` and `import.meta.env.VITE_SUPABASE_ANON_KEY` (Vite-prefixed env vars; the historic `REACT_APP_` prefix was removed when the build moved off CRA). |
 | `logicalTradeBuilder.js` | Pure function. Takes raw `trades[]` and `userId`, returns `logical_trades[]` ready for Supabase insert. Groups executions by `ib_order_id` (or `ib_order_id + conid` for options), classifies open/close/C;O reversals, and applies FIFO cascade matching. |
-| `applyPlanMatching` (in `api/rebuild.js`) | Mutates `logicalTrades[]` in place with `matching_status` based on candidate plan count. Skips rows where `user_reviewed=true`. One match → `matched`, zero → `off_plan`, two or more → `needs_review`. (The standalone `src/lib/planMatcher.js` was removed with the 3-state rename — matching is now only done server-side.) |
+| `applyPlanMatching` (in `api/_lib/rebuildForUser.js`) | Mutates `logicalTrades[]` in place with `matching_status` based on candidate plan count. Skips rows where `user_reviewed=true`. One match → `matched`, zero → `off_plan`, two or more → `needs_review`. Computes `adherence_score` for closed matched LTs via `api/_lib/adherenceScore.js`. Plan matching is server-only — the standalone `src/lib/planMatcher.js` was removed long ago. |
 
 ---
 
