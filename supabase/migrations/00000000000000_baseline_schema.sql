@@ -1,7 +1,7 @@
 -- =============================================================================
 -- BASELINE SCHEMA SNAPSHOT
 -- =============================================================================
--- Captured 2026-04-17 from prod Supabase (project: dpluygkfzoinkfuelxix)
+-- Regenerated 2026-04-25 from prod Supabase (project: dpluygkfzoinkfuelxix)
 -- via: pg_dump --schema-only --schema=public --no-owner --no-privileges
 --
 -- PURPOSE:
@@ -26,7 +26,11 @@
 --     -f supabase/migrations/00000000000000_baseline_schema.sql
 -- =============================================================================
 
-\restrict xunVbFQ1pM4yDioQSrW0DOimKgpSZD9zECaP0in4df0euBd5bq1reWUh1dCvdFS
+--
+-- PostgreSQL database dump
+--
+
+\restrict oX1tZWTsxgLLkmOvOixpyBVces7NBefLINZ6KqLD9PdUGnw9hJxdyCMWappNe1o
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.3
@@ -57,9 +61,56 @@ CREATE SCHEMA public;
 COMMENT ON SCHEMA public IS 'standard public schema';
 
 
+--
+-- Name: rls_auto_enable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rls_auto_enable() RETURNS event_trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog'
+    AS $$
+DECLARE
+  cmd record;
+BEGIN
+  FOR cmd IN
+    SELECT *
+    FROM pg_event_trigger_ddl_commands()
+    WHERE command_tag IN ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+      AND object_type IN ('table','partitioned table')
+  LOOP
+     IF cmd.schema_name IS NOT NULL AND cmd.schema_name IN ('public') AND cmd.schema_name NOT IN ('pg_catalog','information_schema') AND cmd.schema_name NOT LIKE 'pg_toast%' AND cmd.schema_name NOT LIKE 'pg_temp%' THEN
+      BEGIN
+        EXECUTE format('alter table if exists %s enable row level security', cmd.object_identity);
+        RAISE LOG 'rls_auto_enable: enabled RLS on %', cmd.object_identity;
+      EXCEPTION
+        WHEN OTHERS THEN
+          RAISE LOG 'rls_auto_enable: failed to enable RLS on %', cmd.object_identity;
+      END;
+     ELSE
+        RAISE LOG 'rls_auto_enable: skip % (either system schema or not in enforced list: %.)', cmd.object_identity, cmd.schema_name;
+     END IF;
+  END LOOP;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: account_deletions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account_deletions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    deleted_at timestamp with time zone DEFAULT now() NOT NULL,
+    email text,
+    stripe_customer_id text,
+    what_didnt_work text,
+    what_would_you_change text
+);
+
 
 --
 -- Name: admin_actions; Type: TABLE; Schema: public; Owner: -
@@ -77,21 +128,6 @@ CREATE TABLE public.admin_actions (
 
 
 --
--- Name: anonymous_sessions; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.anonymous_sessions (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    user_id uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT now(),
-    expires_at timestamp with time zone DEFAULT (now() + '48:00:00'::interval),
-    converted_at timestamp with time zone,
-    converted_to_user_id uuid,
-    is_active boolean DEFAULT true
-);
-
-
---
 -- Name: app_settings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -100,6 +136,23 @@ CREATE TABLE public.app_settings (
     key text NOT NULL,
     value text NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: daily_adherence; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.daily_adherence (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    date_key date NOT NULL,
+    adherence_score numeric,
+    matched_count integer DEFAULT 0 NOT NULL,
+    off_plan_count integer DEFAULT 0 NOT NULL,
+    needs_review_count integer DEFAULT 0 NOT NULL,
+    trade_count integer DEFAULT 0 NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -153,61 +206,25 @@ CREATE TABLE public.invited_users (
 
 
 --
--- Name: logical_trade_executions; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.logical_trade_executions (
-    id bigint NOT NULL,
-    trade_id bigint NOT NULL,
-    logical_trade_id bigint NOT NULL,
-    execution_type character varying(8) NOT NULL,
-    quantity_applied numeric(15,4) NOT NULL,
-    created_at timestamp with time zone DEFAULT now()
-);
-
-
---
--- Name: logical_trade_executions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.logical_trade_executions_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: logical_trade_executions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.logical_trade_executions_id_seq OWNED BY public.logical_trade_executions.id;
-
-
---
 -- Name: logical_trades; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.logical_trades (
     id bigint NOT NULL,
     user_id uuid NOT NULL,
-    account_id character varying(32),
     symbol character varying(32) NOT NULL,
     conid bigint,
     asset_category character varying(8) NOT NULL,
     opening_ib_order_id character varying(64),
     direction character varying(5) NOT NULL,
-    opened_at character varying(20) NOT NULL,
-    closed_at character varying(20),
+    opened_at timestamp with time zone,
+    closed_at timestamp with time zone,
     status character varying(16) DEFAULT 'open'::character varying,
     total_opening_quantity numeric(15,4) DEFAULT 0,
     total_closing_quantity numeric(15,4) DEFAULT 0,
     remaining_quantity numeric(15,4) DEFAULT 0,
     total_realized_pnl numeric(15,4) DEFAULT 0,
-    is_reversal boolean DEFAULT false,
     matching_status character varying(20) DEFAULT 'unmatched'::character varying,
-    source_notes text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     avg_entry_price numeric,
@@ -216,7 +233,10 @@ CREATE TABLE public.logical_trades (
     currency text,
     is_demo boolean DEFAULT false,
     review_notes text,
-    adherence_score numeric(5,2)
+    adherence_score numeric(5,2),
+    user_reviewed boolean DEFAULT false NOT NULL,
+    avg_exit_price numeric,
+    multiplier numeric DEFAULT 1
 );
 
 
@@ -438,12 +458,13 @@ CREATE TABLE public.securities (
     conid bigint NOT NULL,
     symbol character varying(32) NOT NULL,
     asset_category character varying(8),
-    description character varying(128),
+    description text,
     multiplier integer DEFAULT 1,
     currency character varying(8),
     underlying_conid bigint,
     underlying_symbol character varying(32),
-    created_at timestamp with time zone DEFAULT now()
+    created_at timestamp with time zone DEFAULT now(),
+    company_name text
 );
 
 
@@ -464,7 +485,7 @@ CREATE TABLE public.trades (
     open_close_indicator character varying(10) NOT NULL,
     quantity numeric(15,4) NOT NULL,
     trade_price numeric(15,6) NOT NULL,
-    date_time character varying(20) NOT NULL,
+    date_time timestamp with time zone NOT NULL,
     net_cash numeric(15,4),
     fifo_pnl_realized numeric(15,4),
     ib_commission numeric(15,6),
@@ -478,7 +499,9 @@ CREATE TABLE public.trades (
     put_call character varying(10),
     created_at timestamp with time zone DEFAULT now(),
     fx_rate_to_base double precision DEFAULT 1.0,
-    is_demo boolean DEFAULT false
+    is_demo boolean DEFAULT false,
+    exchange character varying(16),
+    order_type character varying(16)
 );
 
 
@@ -516,7 +539,10 @@ CREATE TABLE public.user_ibkr_credentials (
     updated_at timestamp with time zone DEFAULT now(),
     token_masked text,
     query_id_masked text,
-    base_currency text
+    base_currency text,
+    last_sync_error text,
+    last_sync_failed_at timestamp with time zone,
+    auto_sync_enabled boolean DEFAULT true NOT NULL
 );
 
 
@@ -553,7 +579,6 @@ CREATE TABLE public.user_subscriptions (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     is_comped boolean DEFAULT false,
-    has_seen_welcome boolean DEFAULT false,
     ibkr_connected boolean DEFAULT false,
     demo_seeded boolean DEFAULT false
 );
@@ -574,13 +599,6 @@ CREATE TABLE public.weekly_reviews (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: logical_trade_executions id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.logical_trade_executions ALTER COLUMN id SET DEFAULT nextval('public.logical_trade_executions_id_seq'::regclass);
 
 
 --
@@ -640,19 +658,19 @@ ALTER TABLE ONLY public.user_ibkr_credentials ALTER COLUMN id SET DEFAULT nextva
 
 
 --
+-- Name: account_deletions account_deletions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_deletions
+    ADD CONSTRAINT account_deletions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: admin_actions admin_actions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.admin_actions
     ADD CONSTRAINT admin_actions_pkey PRIMARY KEY (id);
-
-
---
--- Name: anonymous_sessions anonymous_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.anonymous_sessions
-    ADD CONSTRAINT anonymous_sessions_pkey PRIMARY KEY (id);
 
 
 --
@@ -669,6 +687,22 @@ ALTER TABLE ONLY public.app_settings
 
 ALTER TABLE ONLY public.app_settings
     ADD CONSTRAINT app_settings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: daily_adherence daily_adherence_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.daily_adherence
+    ADD CONSTRAINT daily_adherence_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: daily_adherence daily_adherence_user_id_date_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.daily_adherence
+    ADD CONSTRAINT daily_adherence_user_id_date_key_key UNIQUE (user_id, date_key);
 
 
 --
@@ -717,22 +751,6 @@ ALTER TABLE ONLY public.invited_users
 
 ALTER TABLE ONLY public.invited_users
     ADD CONSTRAINT invited_users_token_key UNIQUE (token);
-
-
---
--- Name: logical_trade_executions logical_trade_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.logical_trade_executions
-    ADD CONSTRAINT logical_trade_executions_pkey PRIMARY KEY (id);
-
-
---
--- Name: logical_trade_executions logical_trade_executions_trade_id_logical_trade_id_executio_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.logical_trade_executions
-    ADD CONSTRAINT logical_trade_executions_trade_id_logical_trade_id_executio_key UNIQUE (trade_id, logical_trade_id, execution_type);
 
 
 --
@@ -856,6 +874,20 @@ ALTER TABLE ONLY public.weekly_reviews
 
 
 --
+-- Name: idx_account_deletions_deleted_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_account_deletions_deleted_at ON public.account_deletions USING btree (deleted_at DESC);
+
+
+--
+-- Name: idx_daily_adherence_user_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_daily_adherence_user_date ON public.daily_adherence USING btree (user_id, date_key DESC);
+
+
+--
 -- Name: idx_logical_trades_matching; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -921,11 +953,11 @@ ALTER TABLE ONLY public.admin_actions
 
 
 --
--- Name: anonymous_sessions anonymous_sessions_converted_to_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: daily_adherence daily_adherence_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.anonymous_sessions
-    ADD CONSTRAINT anonymous_sessions_converted_to_user_id_fkey FOREIGN KEY (converted_to_user_id) REFERENCES auth.users(id);
+ALTER TABLE ONLY public.daily_adherence
+    ADD CONSTRAINT daily_adherence_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
 
 
 --
@@ -942,22 +974,6 @@ ALTER TABLE ONLY public.daily_notes
 
 ALTER TABLE ONLY public.invited_users
     ADD CONSTRAINT invited_users_redeemed_by_fkey FOREIGN KEY (redeemed_by) REFERENCES auth.users(id);
-
-
---
--- Name: logical_trade_executions logical_trade_executions_logical_trade_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.logical_trade_executions
-    ADD CONSTRAINT logical_trade_executions_logical_trade_id_fkey FOREIGN KEY (logical_trade_id) REFERENCES public.logical_trades(id) ON DELETE CASCADE;
-
-
---
--- Name: logical_trade_executions logical_trade_executions_trade_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.logical_trade_executions
-    ADD CONSTRAINT logical_trade_executions_trade_id_fkey FOREIGN KEY (trade_id) REFERENCES public.trades(id) ON DELETE CASCADE;
 
 
 --
@@ -1073,10 +1089,24 @@ ALTER TABLE ONLY public.weekly_reviews
 
 
 --
+-- Name: invited_users Anon can read unredeemed invites; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Anon can read unredeemed invites" ON public.invited_users FOR SELECT TO authenticated, anon USING ((redeemed_at IS NULL));
+
+
+--
 -- Name: app_settings Anyone can read app_settings; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "Anyone can read app_settings" ON public.app_settings FOR SELECT USING (true);
+
+
+--
+-- Name: invited_users Authenticated user can redeem an invite; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Authenticated user can redeem an invite" ON public.invited_users FOR UPDATE TO authenticated USING ((redeemed_at IS NULL)) WITH CHECK ((redeemed_at IS NOT NULL));
 
 
 --
@@ -1129,13 +1159,6 @@ CREATE POLICY "Users can delete own trades" ON public.trades FOR DELETE USING ((
 
 
 --
--- Name: anonymous_sessions Users can insert own anon session; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Users can insert own anon session" ON public.anonymous_sessions FOR INSERT WITH CHECK ((auth.uid() = user_id));
-
-
---
 -- Name: daily_notes Users can insert own daily_notes; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -1182,13 +1205,6 @@ CREATE POLICY "Users can insert own trades" ON public.trades FOR INSERT WITH CHE
 --
 
 CREATE POLICY "Users can insert own weekly_reviews" ON public.weekly_reviews FOR INSERT WITH CHECK ((auth.uid() = user_id));
-
-
---
--- Name: anonymous_sessions Users can select own anon session; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Users can select own anon session" ON public.anonymous_sessions FOR SELECT USING ((auth.uid() = user_id));
 
 
 --
@@ -1248,13 +1264,6 @@ CREATE POLICY "Users can select own weekly_reviews" ON public.weekly_reviews FOR
 
 
 --
--- Name: anonymous_sessions Users can update own anon session; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Users can update own anon session" ON public.anonymous_sessions FOR UPDATE USING ((auth.uid() = user_id));
-
-
---
 -- Name: daily_notes Users can update own daily_notes; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -1311,15 +1320,6 @@ CREATE POLICY "Users see own credentials" ON public.user_ibkr_credentials USING 
 
 
 --
--- Name: logical_trade_executions Users see own logical trade executions; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Users see own logical trade executions" ON public.logical_trade_executions USING ((EXISTS ( SELECT 1
-   FROM public.logical_trades lt
-  WHERE ((lt.id = logical_trade_executions.logical_trade_id) AND (lt.user_id = auth.uid())))));
-
-
---
 -- Name: logical_trades Users see own logical trades; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -1371,22 +1371,35 @@ CREATE POLICY "Users see own trades" ON public.trades USING ((auth.uid() = user_
 
 
 --
+-- Name: account_deletions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.account_deletions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: admin_actions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.admin_actions ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: anonymous_sessions; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.anonymous_sessions ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: app_settings; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: daily_adherence; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.daily_adherence ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: daily_adherence daily_adherence_select_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY daily_adherence_select_own ON public.daily_adherence FOR SELECT USING ((auth.uid() = user_id));
+
 
 --
 -- Name: daily_notes; Type: ROW SECURITY; Schema: public; Owner: -
@@ -1405,12 +1418,6 @@ ALTER TABLE public.ghost_webhook_events ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.invited_users ENABLE ROW LEVEL SECURITY;
-
---
--- Name: logical_trade_executions; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.logical_trade_executions ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: logical_trades; Type: ROW SECURITY; Schema: public; Owner: -
@@ -1482,5 +1489,5 @@ ALTER TABLE public.weekly_reviews ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict xunVbFQ1pM4yDioQSrW0DOimKgpSZD9zECaP0in4df0euBd5bq1reWUh1dCvdFS
+\unrestrict oX1tZWTsxgLLkmOvOixpyBVces7NBefLINZ6KqLD9PdUGnw9hJxdyCMWappNe1o
 
