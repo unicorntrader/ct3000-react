@@ -254,7 +254,7 @@ _Versions match `package.json` at the time of the last docs sync; check the file
 | Client SDK | @supabase/supabase-js | ^2.45.4 |
 | Server runtime | Node.js on Vercel | 18+ |
 | Payments | Stripe | ^22.0.1 |
-| XML parsing | fast-xml-parser | ^5.7.1 |
+| XML parsing | hand-rolled regex (in `api/_lib/performUserSync.js`) | — |
 | Date / TZ | date-fns-tz | ^3.x |
 | Error tracking | Sentry (@sentry/react + @sentry/node) | ^10.48 / ^10.49 |
 | Hosting | Vercel Pro | — |

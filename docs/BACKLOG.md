@@ -161,10 +161,11 @@ given the other mitigations already in place.
   but wants to live in `app_settings.admin_emails` or an env var
   before adding more admin users.
 
-- **`fast-xml-parser` CVE (GHSA-gh4j-gqv2-49f6).** Current pinned
-  version < 5.7.0 has an XML-comment/CDATA injection issue in
-  `XMLBuilder`. We only use the parser, not the builder, so real
-  exposure is near-zero. Bump to `^5.7.0` at next dependency-sweep.
+- ~~**`fast-xml-parser` CVE (GHSA-gh4j-gqv2-49f6).**~~ Resolved: the
+  package was uninstalled on 2026-04-25 — turned out it was never
+  actually imported. IBKR Flex XML is parsed by hand-rolled regex
+  in `api/_lib/performUserSync.js`. If we ever need a real parser
+  (better entity decoding, non-self-closing tags, etc.), revisit.
 
 - **Stale entry above:** the "90-day cleanup cron on
   `account_deletions`" item under "Pre-public-launch infrastructure"

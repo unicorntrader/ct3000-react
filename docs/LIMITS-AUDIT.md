@@ -94,9 +94,9 @@ exceeded with the addition of `/api/ibkr-credentials`).
 **Fix sketch:** move the DB writes into sync.js itself (server-side), return a count, not the data.
 
 ### 8. XML parse + entire-document-in-memory
-**Where:** `api/sync.js:14-22` (fetch), `api/sync.js:113-150` (regex parse).
+**Where:** `api/_lib/performUserSync.js` `parseTrades` / `parseOpenPositions` (regex over the whole XML body).
 **Risk:** OK to about 100k trades (~20MB XML). Vercel serverless memory default is 1024MB, plenty for now. But memory scales linearly with trade count.
-**Fix sketch:** not urgent. If we ever hit whale users, switch to a streaming XML parser (sax-js or fast-xml-parser streaming).
+**Fix sketch:** not urgent. If we ever hit whale users, switch to a streaming XML parser (sax-js, or pull `fast-xml-parser`'s streaming mode back in — note the package was uninstalled on 2026-04-25 because the regex parser was the only one in use).
 
 ### 9. No virtualization on JournalScreen's trade list
 **Where:** `src/screens/JournalScreen.jsx:710` — `filtered.map(trade => …)`.
