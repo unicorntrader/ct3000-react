@@ -96,7 +96,7 @@ export default function TradeChartPanel({ trade, plan }) {
       }
       if (cancelled) return
       if (!data || !data.bars.length) {
-        setError('Not enough data to render this trade.')
+        setError(data?.error || 'Not enough data to render this trade.')
         setLoading(false)
         return
       }

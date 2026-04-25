@@ -62,9 +62,16 @@ function snapToNearestBar(bars, targetMs) {
  *          source: 'alpaca' | 'synthetic'
  */
 export async function fetchOhlcForTrade(trade, interval, { signal } = {}) {
-  if (!trade?.opened_at || !trade?.closed_at || !trade?.symbol) return null
+  // Bail early with specific diagnostics instead of a generic null. Lets
+  // the chart panel surface the actual reason the trade can't be charted.
+  if (!trade?.symbol) return { bars: [], error: 'Trade is missing a symbol' }
+  if (!trade?.opened_at) return { bars: [], error: 'Trade is missing opened_at' }
+  if (!trade?.closed_at) return { bars: [], error: 'Trade is missing closed_at' }
+  if (trade.avg_entry_price == null) return { bars: [], error: 'Trade is missing avg_entry_price' }
   const openedAt = new Date(trade.opened_at).getTime()
   const closedAt = new Date(trade.closed_at).getTime()
+  if (Number.isNaN(openedAt)) return { bars: [], error: `Bad opened_at: ${trade.opened_at}` }
+  if (Number.isNaN(closedAt)) return { bars: [], error: `Bad closed_at: ${trade.closed_at}` }
   const { from, to } = computeWindow(trade, interval)
 
   let bars = []
@@ -103,7 +110,12 @@ export async function fetchOhlcForTrade(trade, interval, { signal } = {}) {
 
   if (!bars.length) {
     const mock = generateMockOhlc(trade, interval)
-    if (!mock) return null
+    if (!mock) {
+      return {
+        bars: [],
+        error: `No data available — Alpaca returned 0 bars${fallbackReason ? ` (${fallbackReason})` : ''} and synthetic fallback couldn't be built (likely missing avg_exit_price).`,
+      }
+    }
     return { ...mock, source: 'synthetic', fallbackReason }
   }
 
