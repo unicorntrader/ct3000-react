@@ -509,9 +509,17 @@ export default function HomeScreen({ session }) {
                       {dir.toUpperCase()}
                     </span>
                     <span className="text-sm text-gray-600 flex-1 truncate">
-                      {fmtPrice(plan.planned_entry_price, currency)}
+                      {plan.planned_quantity != null
+                        ? <PrivacyValue value={Number(plan.planned_quantity).toLocaleString()} />
+                        : <span className="italic text-gray-400">set qty</span>}
+                      <span className="text-gray-300 mx-1.5">@</span>
+                      {plan.planned_entry_price != null
+                        ? fmtPrice(plan.planned_entry_price, currency)
+                        : <span className="italic text-gray-400">set entry</span>}
                       <span className="text-gray-300 mx-1.5">→</span>
-                      <span className="text-green-600">{fmtPrice(plan.planned_target_price, currency)}</span>
+                      {plan.planned_target_price != null
+                        ? <span className="text-green-600">{fmtPrice(plan.planned_target_price, currency)}</span>
+                        : <span className="italic text-gray-400">set target</span>}
                     </span>
                     <span className={`text-xs font-semibold shrink-0 ${rrColor}`}>
                       {rr != null ? `${rr}R` : '—'}
