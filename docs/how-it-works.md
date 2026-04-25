@@ -103,37 +103,47 @@ This is the most interesting flow in the whole app. Four handoffs:
 
 **Step 1 — The user enters IBKR credentials.**
 They go to the IBKR screen in our app, paste their Flex Query token and
-Query ID (two strings from IBKR's portal), and hit Save. We store a
-masked version for display ("••••1234") and the real version encrypted.
+Query ID (two strings from IBKR's portal), and hit Save. The browser
+sends those to our `api/ibkr-credentials` endpoint, which validates,
+stores a masked display version ("••••1234"), and writes the raw
+secrets to the database from the server. The browser is not allowed to
+write the raw token — database grants explicitly forbid it.
 
 **Step 2 — They hit Sync Now.**
-Our serverless function `api/sync.js` runs. It calls IBKR's Flex web
-service with the user's token, gets back an XML document listing every
-trade in the last 30 days. We parse that XML, pick out each execution
-("bought 100 NVDA at 142.50 on April 3rd at 10:15am"), and write those
-as rows into our `trades` table. This is the "raw data" layer — each
-row is a single fill, exactly as IBKR reported it.
+The browser POSTs to `api/sync` with the user's session token. The
+server checks the token, checks the user's subscription is active or
+trialing, then calls IBKR's Flex web service with the saved token,
+parses the XML (every fill in the last 30 days), and writes everything
+to the database server-side: raw fills into the `trades` table, current
+positions into `open_positions`, last-sync timestamp onto the
+credentials row. The browser doesn't touch any of those tables itself
+during a sync; it just gets back a summary ("3 new fills, 49 total in
+window") and renders it.
 
 **Step 3 — Raw trades become "logical trades."**
 A single trade in trader-language ("I bought NVDA, then sold it three
 days later") is often *multiple* rows in IBKR's data (one for each
 partial fill, one for the exit, etc.). So we have a second table,
 `logical_trades`, which groups those raw rows into round-trip stories
-using FIFO (First In First Out) matching. This happens in a second
-serverless function, `api/rebuild.js`, which gets called automatically
-after every Sync. The `logical_trades` table is what every screen in
-the app actually reads.
+using FIFO (First In First Out) matching. This happens server-side as
+the last step of the same Sync — there's no separate "rebuild" call
+the browser has to make. The `logical_trades` table is what every
+screen in the app actually reads. (There is also a standalone
+`api/rebuild` endpoint for re-running just the FIFO step without a
+fresh IBKR pull.)
 
 **Step 4 — Plans get matched to trades.**
 If the user wrote a plan for NVDA *before* they took the trade, and the
-symbol/direction/timing match up, Rebuild links the two. Matched trades
-also get an "adherence score" (0–100) measuring how closely the actual
-execution followed the plan — entry slippage, stop respect, target hit,
-size deviation, averaged into one number.
+symbol/direction/asset class match up, the rebuild step links the two.
+Matched closed trades also get an "adherence score" (0–100) measuring
+how closely the actual execution followed the plan — entry slippage,
+stop respect, target hit, size deviation, averaged into one number.
+This is computed inside the same rebuild pass; nothing for the user to
+trigger manually.
 
-The net result: one Sync button, and five minutes later the whole app is
-populated with your real trading history, properly organised, matched
-against your plans, scored for discipline.
+The net result: one Sync button, and a few seconds later the whole app
+is populated with your real trading history, properly organised,
+matched against your plans, scored for discipline.
 
 ---
 

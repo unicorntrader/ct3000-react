@@ -13,27 +13,33 @@
 ```
 Browser IBKRScreen.handleSync
     │
-    ├─ POST /api/sync  (Vercel serverless)
-    │     ├─ IBKR SendRequest
-    │     ├─ IBKR GetStatement (poll up to 10× × 3s = 30s)
-    │     ├─ Regex-parse entire XML
-    │     ├─ Clear demo rows
-    │     └─ Returns full trades[] + openPositions[] as JSON
-    │
-    ├─ supabase.from('trades').upsert(tradesToUpsert)   ← single call, all rows
-    ├─ supabase.from('open_positions').delete + insert
-    ├─ supabase.from('user_ibkr_credentials').update(last_sync_at)
-    │
-    └─ POST /api/rebuild  (Vercel serverless)
-          ├─ .from('trades').select('*')                ← 1000-row cap applies
-          ├─ .from('logical_trades').select(...)        ← 1000-row cap applies
-          ├─ buildLogicalTrades() in memory
-          ├─ .from('planned_trades').select('*')
-          ├─ .from('logical_trades').delete(user_id=…)
-          └─ .from('logical_trades').insert(logical)    ← single call
+    └─ POST /api/sync  (Vercel serverless, 60s timeout, JWT-authed, sub-gated)
+          ├─ requireActiveSubscription
+          ├─ IBKR SendRequest
+          ├─ IBKR GetStatement (poll up to 10× × 3s = 30s)
+          ├─ Regex-parse entire XML
+          ├─ Diff incoming ib_exec_ids → new vs already-known
+          ├─ supabase.from('trades').upsert(rows)            ← server, service_role
+          ├─ supabase.from('open_positions').delete + insert ← server, service_role
+          ├─ Clear demo rows
+          ├─ Update user_ibkr_credentials                    ← server, service_role
+          └─ rebuildForUser(userId, supabaseAdmin)
+                ├─ .from('trades').select('*')              ← 1000-row cap applies
+                ├─ .from('logical_trades').select(...)      ← 1000-row cap applies
+                ├─ buildLogicalTrades() in memory
+                ├─ .from('planned_trades').select('*')
+                ├─ .from('logical_trades').delete(user_id=…)
+                └─ .from('logical_trades').insert(logical)  ← single call
 ```
 
-The client doing the DB writes is a quirk of this flow — sync.js parses and *returns* the trades; the browser writes them. That means **two** timeout surfaces (sync function + browser network) and **two** places the user can lose connectivity mid-write.
+`api/rebuild.js` exists as a standalone endpoint that just calls
+`rebuildForUser`; useful for "rebuild without a fresh IBKR pull". The
+day-to-day path is `/api/sync`, which inlines the rebuild as the last
+step.
+
+All persistence happens server-side via the service-role client — the
+browser does NOT issue trade-data writes during sync. Single timeout
+surface (the sync function itself).
 
 ---
 
@@ -50,11 +56,11 @@ The client doing the DB writes is a quirk of this flow — sync.js parses and *r
 **Trigger:** first user with >1000 raw IBKR executions. That is *very* low for an active day trader — a few weeks of activity.
 **Fix sketch:** either raise the project-wide `db.settings.max_rows` in Supabase (simplest), or add `.range(0, 9999)` / paginate per query.
 
-### 2. No `maxDuration` set on Vercel functions
-**Where:** `vercel.json` has no `functions` block. Hobby default is 10s, Pro default is 60s.
-**Risk:** `getStatement` alone polls up to 10 × 3s = **30 s** on a cold IBKR queue. On Hobby this 504s guaranteed. Even on Pro, a large XML parse + demo cleanup can push past 60s.
-**What the user sees:** Vercel returns 504 (HTML error page), client `JSON.parse` fails, toast says *"HTTP 504 — non-JSON response: <!DOCTYPE …"*. Unclear the function timed out.
-**Fix sketch:** set `"functions": { "api/sync.js": { "maxDuration": 60 }, "api/rebuild.js": { "maxDuration": 60 } }` in `vercel.json` (Pro plan). Alternatively cut `getStatement` retries or move to streaming.
+### 2. ~~No `maxDuration` set on Vercel functions~~ — RESOLVED
+`vercel.json` now sets `maxDuration: 60` on `sync`, `rebuild`,
+`debug-flex-xml`, and `cron-sync`; `cron-anonymize-churn` gets 30s.
+The project is on Vercel Pro (Hobby's 12-function cap was hit and
+exceeded with the addition of `/api/ibkr-credentials`).
 
 ### 3. No rebuild transaction — users can end up with zero logical trades
 **Where:** `api/rebuild.js:186-197` — delete then insert, no transaction wrapping, no savepoint.

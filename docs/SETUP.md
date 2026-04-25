@@ -24,46 +24,68 @@ CT3000 is a personal trading journal and analytics platform built for Interactiv
 
 ```
 ct3000-react/
-├── api/
-│   └── sync.js              # Vercel serverless function: IBKR XML fetch + parse
-├── public/
-│   └── index.html           # HTML shell, loads DM Sans font
+├── index.html               # Vite entry HTML at repo root
+├── vite.config.js           # Vite build / dev config
+├── api/                     # Vercel serverless functions
+│   ├── sync.js                       # Server-authoritative IBKR sync
+│   ├── rebuild.js                    # Standalone rebuild endpoint
+│   ├── ibkr-credentials.js           # POST/DELETE for IBKR token + queryId
+│   ├── stripe-webhook.js             # Stripe lifecycle handler
+│   ├── create-checkout-session.js
+│   ├── billing-portal.js
+│   ├── delete-account.js             # GDPR full-wipe
+│   ├── redeem-invite.js
+│   ├── seed-demo.js
+│   ├── cron-sync.js                  # Nightly auto-sync
+│   ├── cron-anonymize-churn.js       # 90-day churn-data scrub
+│   ├── maintenance-status.js
+│   └── _lib/                         # Shared helpers (Vercel-ignored)
+│       ├── supabaseAdmin.js
+│       ├── stripe.js
+│       ├── sentry.js
+│       ├── requireActiveSubscription.js
+│       ├── performUserSync.js
+│       ├── rebuildForUser.js
+│       ├── logicalTradeBuilder.js    # FIFO matcher
+│       ├── adherenceScore.js
+│       └── exchangeTimezone.js       # IBKR venue → IANA tz map
+├── public/                  # Static assets served from /
 ├── src/
-│   ├── index.js             # React entry point
-│   ├── index.css            # Global styles (slide-up, slide-right, toggle, overlay)
-│   ├── App.jsx              # Root: auth gate + tab router + global sheet state
+│   ├── index.jsx            # React entry point (Sentry init, BrowserRouter)
+│   ├── index.css            # Global styles + Tailwind directives
+│   ├── App.jsx              # Auth gate + React Router routes
 │   ├── components/
-│   │   ├── AuthScreen.jsx   # Login / signup / password-reset form
-│   │   ├── Header.jsx       # Sticky desktop nav bar
-│   │   ├── MobileNav.jsx    # Fixed bottom nav (mobile only)
-│   │   ├── Sidebar.jsx      # Slide-right profile + IBKR status panel
-│   │   ├── PlanSheet.jsx    # Slide-up modal: create a new trade plan
-│   │   └── ReviewSheet.jsx  # Slide-up wizard: resolve unmatched/ambiguous trades
+│   │   ├── AuthScreen.jsx   # Login / signup / forgot-password form
+│   │   ├── Header.jsx
+│   │   ├── MobileNav.jsx
+│   │   ├── Sidebar.jsx
+│   │   ├── PlanSheet.jsx
+│   │   └── ...
 │   ├── screens/
-│   │   ├── HomeScreen.jsx       # Dashboard: stats cards, open positions, active plans
-│   │   ├── PlansScreen.jsx      # All planned trades list with R:R calculations
-│   │   ├── DailyViewScreen.jsx  # Day-grouped trade table with exec drill-down
-│   │   ├── JournalScreen.jsx    # Filterable trade journal with R-multiple
-│   │   ├── PerformanceScreen.jsx # KPIs, cumulative P&L chart, by-symbol/direction/asset
-│   │   ├── IBKRScreen.jsx       # IBKR credentials + manual sync trigger
-│   │   └── SettingsScreen.jsx   # Account info, base currency, coming-soon features
+│   │   ├── HomeScreen.jsx
+│   │   ├── PlansScreen.jsx
+│   │   ├── DailyViewScreen.jsx
+│   │   ├── JournalScreen.jsx
+│   │   ├── PerformanceScreen.jsx
+│   │   ├── IBKRScreen.jsx
+│   │   ├── ReviewScreen.jsx
+│   │   ├── ResetPasswordScreen.jsx   # Recovery-link landing page
+│   │   ├── SettingsScreen.jsx
+│   │   ├── PaywallScreen.jsx
+│   │   ├── TermsScreen.jsx
+│   │   └── PrivacyScreen.jsx
 │   └── lib/
-│       ├── supabaseClient.js      # Supabase client singleton
-│       ├── formatters.js          # Formatting + multi-currency helpers
-│       ├── adherenceScore.js      # Plan-vs-trade adherence calc (mirrored server-side)
-│       ├── BaseCurrencyContext.js # Provides the user's base currency to descendants
-│       └── PrivacyContext.js      # Global toggle for masking dollar amounts
-├── api/
-│   ├── sync.js                    # Vercel serverless: IBKR fetch + XML parse
-│   ├── rebuild.js                 # Vercel serverless: rebuild logical_trades from trades
-│   └── lib/
-│       ├── logicalTradeBuilder.js # FIFO matcher (server-side only; browser never runs FIFO)
-│       ├── adherenceScore.js      # CommonJS mirror of src/lib/adherenceScore.js
-│       └── supabaseAdmin.js       # Service-role Supabase client
+│       ├── supabaseClient.js          # Reads import.meta.env.VITE_* vars
+│       ├── formatters.js              # Formatting + multi-currency helpers
+│       ├── BaseCurrencyContext.jsx
+│       ├── DataVersionContext.jsx     # Cross-screen silent refetch
+│       ├── PrivacyContext.jsx         # Privacy-mask toggle
+│       └── constants.js
+├── supabase/migrations/     # Dated SQL migrations (run in filename order)
 ├── package.json
 ├── tailwind.config.js
 ├── postcss.config.js
-├── vercel.json              # Vercel build config (CRA, output: build/)
+├── vercel.json              # framework: vite, outputDirectory: dist
 └── docs/                    # This documentation
 ```
 
@@ -99,8 +121,8 @@ npm install
 Create a `.env` file at the project root (never commit this file):
 
 ```env
-REACT_APP_SUPABASE_URL=https://xxxxxxxxxxxxxxxxxxxx.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+VITE_SUPABASE_URL=https://xxxxxxxxxxxxxxxxxxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 Both values are found in your Supabase project under **Settings > API**.
@@ -123,7 +145,12 @@ The app opens at `http://localhost:3000`. The `/api/sync` endpoint does **not** 
 
 ### 6. Sync trades
 
-Click **Sync now** on the IBKR screen. The app calls `/api/sync`, which fetches XML from IBKR, parses it, upserts trades and open positions to Supabase, rebuilds logical trades via FIFO, and runs the plan matcher.
+Click **Sync now** on the IBKR screen. The browser sends a Bearer-JWT
+POST to `/api/sync`. The server authenticates, gates on active
+subscription, fetches IBKR XML, parses, persists trades + positions,
+updates credentials, runs FIFO + plan-matching, and returns a summary
+showing how many fills are new since the last sync. The browser does
+not write trade data itself.
 
 ---
 
@@ -132,28 +159,24 @@ Click **Sync now** on the IBKR screen. The app calls `/api/sync`, which fetches 
 ### Run the frontend only
 
 ```bash
-npm start          # Starts CRA dev server on port 3000
+npm start          # Starts the Vite dev server on port 3000
+# (npm run dev is the same; both alias to `vite`)
 ```
 
-### Test the sync API locally
+### Test the API locally
 
 Install Vercel CLI and run:
 
 ```bash
 npm install -g vercel
-vercel dev         # Runs both the React frontend AND /api/sync on port 3000
+vercel dev         # Runs both the Vite frontend AND /api/* on port 3000
 ```
 
 ### Build for production
 
 ```bash
-npm run build      # Outputs to build/
-```
-
-### Lint (CRA built-in ESLint)
-
-```bash
-npm test           # Also runs ESLint as part of CRA test runner
+npm run build      # Vite builds to dist/
+npm run preview    # Local preview of the built bundle
 ```
 
 ---
@@ -180,12 +203,14 @@ The app is designed for **Vercel**. The `vercel.json` declares:
 ```json
 {
   "buildCommand": "npm run build",
-  "outputDirectory": "build",
-  "framework": "create-react-app"
+  "outputDirectory": "dist",
+  "framework": "vite"
 }
 ```
 
-Vercel automatically picks up `/api/sync.js` as a serverless function.
+Vercel automatically picks up every `.js` file under `/api/` as a
+serverless function. Files under `api/_lib/` (underscore-prefixed) are
+not counted as functions — they're shared helpers.
 
 ### Deploy steps
 
@@ -202,10 +227,17 @@ After the first deployment, set the environment variables in the Vercel dashboar
 
 | Name | Value |
 |---|---|
-| `REACT_APP_SUPABASE_URL` | Your Supabase project URL |
-| `REACT_APP_SUPABASE_ANON_KEY` | Your Supabase anon key |
-| `REACT_APP_SENTRY_DSN` | Sentry browser DSN (optional — errors + ErrorBoundary) |
+| `VITE_SUPABASE_URL` | Your Supabase project URL (browser-exposed) |
+| `VITE_SUPABASE_ANON_KEY` | Your Supabase anon key (browser-exposed) |
+| `VITE_SENTRY_DSN` | Sentry browser DSN (optional — errors + ErrorBoundary) |
+| `SUPABASE_URL` | Same URL as above (server-side) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service-role key for server endpoints |
+| `STRIPE_SECRET_KEY` | Stripe API key (server-side) |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
 | `SENTRY_DSN` | Sentry server DSN for `/api/*` functions (optional) |
+| `CRON_SECRET` | Bearer token used by Vercel's cron scheduler |
+| `ALLOWED_ORIGIN` | Production app URL (CORS allow-list) |
+| `APP_URL` | Same URL — used in Stripe return URLs |
 
 **Sentry setup:**
 
@@ -227,7 +259,7 @@ See `docs/deployment.md` for full details.
 ## Troubleshooting
 
 **"Supabase env vars not set. Auth will not function."**
-You have not created the `.env` file or the variable names are incorrect. They must be `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_ANON_KEY`.
+You have not created the `.env` file or the variable names are incorrect. They must be `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (Vite-prefixed). The historic `REACT_APP_` prefix is no longer accepted.
 
 **Sync fails with "SendRequest failed"**
 Your IBKR Flex Token or Query ID is wrong, or the Flex Web Service is not enabled in IBKR. Double-check both under Client Portal > Flex Queries.
@@ -248,11 +280,13 @@ The sync step deletes all `logical_trades` for the user before reinserting. If y
 
 ## Known gaps
 
-- **No automated/scheduled sync** — the "Auto-sync: Daily after US market close" toggle in IBKRScreen is visual-only; no cron job exists yet.
-- **Daily notes are local state only** — notes entered in DailyViewScreen are not persisted to Supabase; they reset on page reload.
-- **Sidebar win rate and "this month" stats are hardcoded `--`** — the Sidebar does not fetch real data for those fields.
 - **PlanSheet always sets `asset_category: 'STK'`** — options and FX plans cannot be created through the UI.
-- **No trade detail / edit screen** — clicking a journal row does nothing.
 - **Settings Display / Notifications / Data sections are "Coming soon"** — no implementation exists.
-- **Password reset redirectTo URL** — `AuthScreen` uses `window.location.origin + '/reset-password'`, but there is no `/reset-password` route in the SPA. This requires a Supabase email template with a deep-link or additional routing logic.
-- **No Row Level Security (RLS) documented** — Supabase RLS policies are required for security but are not tracked in the repo.
+
+### Resolved (kept for context)
+
+- ~~Daily notes are local state only~~ — now persisted via the `daily_notes` table (DailyViewScreen upserts on save).
+- ~~Sidebar win rate / "this month" stats are hardcoded~~ — see Sidebar implementation; no longer hardcoded placeholders.
+- ~~No automated/scheduled sync~~ — `api/cron-sync.js` runs nightly via Vercel's cron scheduler. The IBKRScreen Auto-sync toggle controls per-user opt-in.
+- ~~No `/reset-password` route in the SPA~~ — route exists at the top of `App.jsx`; component is `src/screens/ResetPasswordScreen.jsx`. Recovery email lands on it, user sets a new password via `supabase.auth.updateUser({ password })`.
+- ~~No RLS documented~~ — Row Level Security policies live in `supabase/migrations/` (baseline + dated migrations). Service-role-only tables enforced; user-scoped tables use `auth.uid() = user_id` policies; sensitive columns (`ibkr_token`, `query_id_30d`) are revoked from browser SELECT entirely.

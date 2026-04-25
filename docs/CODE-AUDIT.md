@@ -145,20 +145,19 @@ The error-checking convention in the codebase is inconsistent. Some places use `
 
 ---
 
-### 12. Timestamp normalization strips timezone offset instead of converting
+### 12. ~~Timestamp normalization strips timezone offset instead of converting~~ — RESOLVED
 
-**Where:** `src/lib/logicalTradeBuilder.js:64-78` (and server copy)
+**Then:** `src/lib/logicalTradeBuilder.js` (since deleted) had a slice-and-append that asserted UTC on whatever string it received.
 
-```js
-const core = dt.slice(0, 19);     // "2026-04-18T10:30:45"
-return `${core}Z`;                 // "2026-04-18T10:30:45Z" — asserts UTC
-```
+**Now:** the FIFO builder lives only at `api/_lib/logicalTradeBuilder.js`. The trade-time pipeline is:
+- `api/_lib/exchangeTimezone.js` maps IBKR venue → IANA tz.
+- `ibkrDateToUtcIso(dateTime, exchange)` in `performUserSync` parses the
+  IBKR `YYYYMMDD;HHMMSS` value as exchange-local wall clock and converts
+  to a real UTC ISO string before persisting.
+- `trades.exchange` is now stored alongside the timestamp.
 
-If the input was `"2026-04-18T10:30:45-05:00"` (EST), we slice off the offset and label it UTC — the stored time is effectively shifted by 5 hours.
-
-**Does it matter in practice?** IBKR Flex XML emits the compact `YYYYMMDD;HHMMSS` format without any timezone. `sync.js`'s `ibkrDateToIso` converts those to `"YYYY-MM-DDTHH:MM:SS"` (no offset) before storing. Our own round-trip produces no offset, so the strip doesn't bite on IBKR-sourced data. It only bites if some other code path ever inserts an offset-bearing timestamp — today, nothing does.
-
-**Fix:** cheap defensive check — `new Date(dt).toISOString()` instead of the slice-and-append. Handles both offset and non-offset inputs. 10 minutes.
+Historical rows were re-interpreted via
+`supabase/migrations/20260425_backfill_trade_timezones.sql`.
 
 ---
 

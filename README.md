@@ -125,8 +125,6 @@ Core trading data:
 - `logical_trades` — FIFO-matched positions; includes `adherence_score`,
   `matching_status` (`matched` / `needs_review` / `off_plan`), `planned_trade_id`,
   `user_reviewed`, `multiplier`
-- `logical_trade_executions` — join table linking `trades` to their
-  `logical_trades` parent (FIFO provenance)
 - `open_positions` — current open positions from IBKR
 - `securities` — instrument metadata cache (conid, symbol, multiplier,
   currency, underlying_*)
@@ -164,26 +162,33 @@ service-role-only.
 
 ### Serverless functions (under `api/`)
 
-All endpoints are POST and return JSON. Auth is via Bearer token unless
-noted otherwise.
+All endpoints are POST (or DELETE where noted) and return JSON. Auth is
+via Bearer Supabase JWT unless noted otherwise.
 
 | Endpoint | Purpose |
 |---|---|
-| `/api/sync` | Pulls trades + positions from IBKR Flex, clears demo data |
-| `/api/rebuild` | Rebuilds `logical_trades` from raw trades; applies plan matching + adherence scoring |
+| `/api/sync` | **Server-authoritative.** Authenticates JWT, gates on active subscription, fetches IBKR Flex XML, parses, upserts `trades`, replaces `open_positions`, clears demo rows, updates `user_ibkr_credentials`, calls rebuild. Returns a summary `{ tradeCount, openPositionCount, logicalCount, newTradeCount, newTradesPreview, rebuildWarnings }` — no raw trades to the browser. |
+| `/api/rebuild` | Rebuilds `logical_trades` from raw trades; applies plan matching + adherence scoring. Subscription-gated. |
+| `/api/ibkr-credentials` | POST upsert / DELETE remove a user's IBKR Flex token + queryId. Server-only writes via service_role; the browser cannot insert/update/delete this table directly. |
 | `/api/stripe-webhook` | Handles subscription lifecycle events (Stripe signature auth, not Bearer) |
 | `/api/create-checkout-session` | Creates Stripe customer + Checkout session with 7-day trial |
 | `/api/billing-portal` | Creates Stripe Billing Portal session for self-service |
-| `/api/delete-account` | Full GDPR wipe — captures feedback, deletes all user data, then the auth record |
+| `/api/delete-account` | Full GDPR wipe — captures feedback (email + stripe_customer_id NOT recorded post-2026-04-25), deletes all user data, then the auth record |
 | `/api/redeem-invite` | Redeems an invite token and creates a comped account |
 | `/api/seed-demo` | Populates demo data for new users pre-IBKR-connect |
+| `/api/cron-sync` | Nightly cron (CRON_SECRET auth). Loops users with auto-sync on, skips inactive subscriptions. |
+| `/api/cron-anonymize-churn` | Weekly cron. Strips `email` + `stripe_customer_id` from `account_deletions` rows older than 90 days. |
+| `/api/maintenance-status` | Public, no auth. Returns the global maintenance flag from `app_settings`. |
 
-Helpers in `api/_lib/` (ignored by Vercel's function-count via the
-underscore-prefix convention): `supabaseAdmin.js`, `stripe.js`,
-`sentry.js`, `logicalTradeBuilder.js`, `adherenceScore.js`.
+Helpers in `api/_lib/` (underscore-prefix → not counted as functions by
+Vercel): `supabaseAdmin.js`, `stripe.js`, `sentry.js`,
+`logicalTradeBuilder.js`, `rebuildForUser.js`, `performUserSync.js`,
+`requireActiveSubscription.js`, `exchangeTimezone.js`,
+`adherenceScore.js`.
 
-Function timeouts (in `vercel.json`): `sync` and `rebuild` get 60s, others
-use the Vercel default.
+Function timeouts (in `vercel.json`): `sync`, `rebuild`,
+`debug-flex-xml`, `cron-sync` get 60s; `cron-anonymize-churn` gets 30s;
+others use the Vercel default.
 
 ### Client screens (under `src/screens/`)
 
@@ -333,11 +338,13 @@ if (loading)   return <Spinner />;
 │   ├── lib/                    client helpers + contexts
 │   ├── screens/                top-level page components
 │   ├── App.jsx                 auth gate + routing
-│   └── index.js                entry point (Sentry init, BrowserRouter)
+│   └── index.jsx               entry point (Sentry init, BrowserRouter)
 ├── supabase/
 │   └── migrations/             SQL migrations (apply in filename order)
 ├── docs/                       architecture notes, backlog, audits
-├── public/                     static assets
+├── public/                     static assets (referenced as /...)
+├── index.html                  Vite entry HTML at repo root
+├── vite.config.js              Vite build / dev config
 └── vercel.json                 function config + SPA rewrites
 ```
 

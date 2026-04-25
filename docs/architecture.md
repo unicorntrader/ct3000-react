@@ -66,7 +66,7 @@ There is no traditional backend server. The SPA talks directly to Supabase using
 
 | File | Responsibility |
 |---|---|
-| `src/index.js` | Mounts the React root into `#root` |
+| `src/index.jsx` | Mounts the React root into `#root`. Bundled by Vite — entry HTML is `/index.html` at repo root with a `<script type="module" src="/src/index.jsx">`. |
 | `src/App.jsx` | Checks Supabase session; renders `AuthScreen` or `AppShell` |
 | `src/App.jsx / AppShell` | Owns active tab state, sidebar/sheet visibility, `planRefreshKey`. Renders `Header`, `Sidebar`, `PlanSheet`, `ReviewSheet`, `MobileNav`, and the active screen. |
 
@@ -77,9 +77,9 @@ There is no traditional backend server. The SPA talks directly to Supabase using
 | `home` | `HomeScreen.jsx` | Shows 4 stat cards (today's P&L, open positions, active plans, 30d win rate), open positions list (sortable by size or date), active plans cards. Shows amber review banner when `unmatched`/`ambiguous` logical trades exist. |
 | `plans` | `PlansScreen.jsx` | Lists all `planned_trades` ordered by `created_at` desc. Computes R:R, risk $, reward $ per plan. Opens `PlanSheet` via parent callback. |
 | `daily` | `DailyViewScreen.jsx` | Groups `logical_trades` by day. Each day block has a trade table with expandable raw-execution sub-table. Supports inline resolve for unmatched/ambiguous trades. |
-| `sj` | `JournalScreen.jsx` | Filterable view of all `logical_trades` with R-multiple column (requires a matched `planned_trade`). Shows closed-trade stats. |
+| `sj` | `JournalScreen.jsx` | Filterable view of `logical_trades WHERE status='closed'` with R-multiple column (requires a matched `planned_trade`). Open-position activity belongs in Daily View; Journal is the closed-trade review surface only. |
 | `perf` | `PerformanceScreen.jsx` | Period-filtered performance analytics: KPI cards, Recharts cumulative P&L line chart, by-symbol sortable table, by-direction bars, by-asset-class bars. All P&L is converted to base currency via `fx_rate_to_base`. |
-| `ibkr` | `IBKRScreen.jsx` | Two states: disconnected (credential entry form + test button) and connected (masked creds, last sync timestamp, sync-now button). Orchestrates the full 9-step sync pipeline. |
+| `ibkr` | `IBKRScreen.jsx` | Two states: disconnected (credential entry form + test button) and connected (masked creds, last sync timestamp, sync-now button, auto-sync toggle, rebuild button). Save/remove route through `/api/ibkr-credentials`; sync POSTs to `/api/sync` and renders the summary response (new-fills count + preview list). No client-side DB writes during sync. |
 | `settings` | `SettingsScreen.jsx` | Reads `base_currency` and `account_id` from `user_ibkr_credentials`. All other settings rows are "Coming soon". |
 
 ### Components
@@ -97,7 +97,7 @@ There is no traditional backend server. The SPA talks directly to Supabase using
 
 | File | Responsibility |
 |---|---|
-| `supabaseClient.js` | Creates and exports the Supabase client singleton. Reads `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_ANON_KEY` (also accepts `NEXT_PUBLIC_` prefix variants for future Next.js migration). |
+| `supabaseClient.js` | Creates and exports the Supabase client singleton. Reads `import.meta.env.VITE_SUPABASE_URL` and `import.meta.env.VITE_SUPABASE_ANON_KEY` (Vite-prefixed env vars; the historic `REACT_APP_` prefix was removed when the build moved off CRA). |
 | `logicalTradeBuilder.js` | Pure function. Takes raw `trades[]` and `userId`, returns `logical_trades[]` ready for Supabase insert. Groups executions by `ib_order_id` (or `ib_order_id + conid` for options), classifies open/close/C;O reversals, and applies FIFO cascade matching. |
 | `applyPlanMatching` (in `api/rebuild.js`) | Mutates `logicalTrades[]` in place with `matching_status` based on candidate plan count. Skips rows where `user_reviewed=true`. One match → `matched`, zero → `off_plan`, two or more → `needs_review`. (The standalone `src/lib/planMatcher.js` was removed with the 3-state rename — matching is now only done server-side.) |
 
@@ -107,29 +107,51 @@ There is no traditional backend server. The SPA talks directly to Supabase using
 
 ### Browser ↔ Supabase (direct SDK calls)
 
-Every screen and most components call Supabase directly using the `supabase` client exported from `src/lib/supabaseClient.js`. Calls are authenticated via the session JWT managed by the Supabase Auth SDK.
+Most read-paths (and a small number of writes — daily notes, the
+auto-sync toggle, Stripe-status polling) call Supabase directly using
+the `supabase` client exported from `src/lib/supabaseClient.js`. Calls
+are authenticated via the session JWT managed by the Supabase Auth
+SDK and gated by RLS + column grants.
+
+Trading-data writes (`trades`, `open_positions`, `logical_trades`,
+`user_ibkr_credentials` raw secrets) do NOT go through the browser
+client. They flow through the server endpoints below.
 
 ### Browser ↔ `/api/sync`
 
-Single GET request from `IBKRScreen.handleSync()` (and `handleTestSync()`):
+`POST /api/sync` from `IBKRScreen.handleSync()` with
+`Authorization: Bearer <Supabase-JWT>` and an empty body. The endpoint
+authenticates, gates on active subscription, fetches IBKR Flex XML,
+parses, persists `trades` + `open_positions`, updates credentials,
+runs `rebuildForUser`, and returns a summary:
 
-```
-GET /api/sync?token=<ibkrToken>&queryId=<queryId>
-```
-
-Returns:
 ```json
 {
   "success": true,
-  "tradeCount": 42,
-  "openPositionCount": 3,
-  "trades": [...],
-  "openPositions": [...],
-  "baseCurrency": "USD"
+  "mode": "sync",
+  "tradeCount": 49,
+  "openPositionCount": 14,
+  "logicalCount": 16,
+  "rebuildWarnings": [],
+  "newTradeCount": 3,
+  "newTradesPreview": [ { "symbol": "...", "buySell": "BUY", ... } ]
 }
 ```
 
-The IBKR token and query ID are retrieved from Supabase (`user_ibkr_credentials`) immediately before the fetch — they are never stored in browser memory or local storage between sessions.
+The browser does not receive raw trades; it just renders the
+summary and bumps `DataVersionContext` so other screens silently
+refetch. Test mode (`{ token, queryId }` in body) verifies user-typed
+credentials without persisting.
+
+See `docs/backend.md` for the full flow.
+
+### Browser ↔ `/api/ibkr-credentials`
+
+`POST { token, queryId }` to upsert; `DELETE` to remove. Same
+JWT auth. Server validates + masks + writes via `service_role`. The
+browser cannot insert / update / delete `user_ibkr_credentials`
+directly; `auto_sync_enabled` is the lone exception (column-level
+UPDATE grant, used by the toggle).
 
 ### `/api/sync` ↔ IBKR Flex Web Service
 
@@ -142,14 +164,23 @@ Two HTTPS GET calls to `gdcdyn.interactivebrokers.com`:
 
 ## Navigation pattern
 
-CT3000 uses **tab-based routing with no URL changes**. The active screen is controlled by an `activeTab` string state in `AppShell`. There is no React Router. This means:
+CT3000 uses **React Router 7** with a keep-alive layer in `AppShell`:
+every visited screen stays mounted after first visit and tab switches
+toggle CSS `display` rather than unmounting. First visit pays the
+fetch cost (one spinner); subsequent visits are instant with preserved
+state.
 
-- The URL always stays at `/`
-- Browser back/forward does not navigate between tabs
-- Deep-linking to a specific tab is not supported
+- URL changes per route (`/`, `/plans`, `/daily`, `/journal`,
+  `/performance`, `/ibkr`, `/settings`, `/review`).
+- Public routes that bypass the auth gate: `/terms`, `/privacy`,
+  `/reset-password`.
+- Deep-linking works: `/daily` opens Daily View directly.
+- Cross-screen mutations bump a `DataVersionContext` counter; watching
+  screens silently refetch without flashing a spinner.
 
-The navigation entry points are:
+Navigation entry points:
 - Desktop: `Header` nav buttons (5 tabs visible)
 - Mobile: `MobileNav` bottom bar (5 tabs visible)
-- Global access: `Sidebar` links to `ibkr` and `settings` tabs
-- Programmatic: `onTabChange` callback passed to screens (e.g. HomeScreen links to `daily` and `plans`)
+- Global access: `Sidebar` links to `/ibkr` and `/settings`
+- Programmatic: `useNavigate()` for cross-screen jumps (e.g. HomeScreen
+  → `/daily`, plan rows → `/plans` with `state.openPlanId`)

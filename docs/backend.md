@@ -1,276 +1,278 @@
-# Backend — `/api/sync.js`
+# Backend — server endpoints
 
-## Overview
+CT3000 runs on Vercel serverless functions under `/api/`. The browser
+talks to these via Bearer-Supabase-JWT-authenticated POST/DELETE
+requests; persistence and IBKR access live exclusively in the server
+process. There is no browser-side write to the trading-data tables on
+the modern code path.
 
-`api/sync.js` is the only server-side code in the project. It is a Vercel Serverless Function written in Node.js (CommonJS). Its sole job is to act as an authenticated proxy between the browser and the Interactive Brokers Flex Web Service XML API.
-
-The function never touches the Supabase database. All database writes happen in the browser (inside `IBKRScreen.handleSync()`) after this function returns its JSON payload.
-
----
-
-## File location and entry point
-
-**File:** `/api/sync.js`
-
-Vercel automatically treats any `.js` file inside the `/api/` directory as a serverless function and exposes it at the matching URL path (`/api/sync`).
-
-**Exported handler:**
-
-```js
-module.exports = async function handler(req, res) { ... }
-```
+This document covers the most commonly-touched endpoints. For a flat
+list of every endpoint see the table in `README.md`.
 
 ---
 
-## HTTP interface
+## `/api/sync` — server-authoritative IBKR sync
+
+**File:** `api/sync.js`. Delegates to `api/_lib/performUserSync.js`.
+
+The full IBKR pull-and-persist flow runs server-side. The browser sends
+a JWT, gets a summary back, and updates UI state. It does not touch
+`trades` / `open_positions` / `logical_trades` directly during a sync
+anymore.
 
 ### Request
 
 ```
-GET /api/sync?token=<flexToken>&queryId=<flexQueryId>
+POST /api/sync
+Authorization: Bearer <Supabase-JWT>
+Content-Type: application/json
 ```
 
-| Query parameter | Required | Description |
-|---|---|---|
-| `token` | Yes | IBKR Flex Web Service Token (from Client Portal > Flex Queries > Flex Web Service Configuration) |
-| `queryId` | Yes | The numeric ID of the Activity Flex Query configured in IBKR |
+Body is normally empty. Two paths:
 
-CORS headers are set to `*` for all origins so the browser can call this from any domain (including `localhost`):
+- **Normal sync (empty body)** — server reads the user's saved IBKR
+  credentials from `user_ibkr_credentials` via `service_role`, fetches
+  Flex XML, parses, and persists.
+- **Test mode (`{ token, queryId }` in body)** — used during initial
+  IBKR-connect on `IBKRScreen` before credentials are saved. Verifies
+  the credentials end-to-end and returns counts; does NOT persist
+  anything.
 
-```
-Access-Control-Allow-Origin: *
-Access-Control-Allow-Methods: GET, OPTIONS
-Access-Control-Allow-Headers: Content-Type
-```
+### Auth + paywall
 
-`OPTIONS` preflight requests are handled and return `200`.
+Two gates before any IBKR call:
 
-Only `GET` is accepted; any other method returns `405 Method not allowed`.
+1. `supabaseAdmin.auth.getUser(jwt)` validates the bearer token.
+   Failure → 401.
+2. `requireActiveSubscription(user.id, supabaseAdmin)` checks the
+   user's `user_subscriptions` row. Returns OK for `is_comped=true`,
+   `subscription_status='active'`, or `'trialing'` whose `trial_ends_at`
+   / `current_period_ends_at` is in the future. Otherwise → **402** with
+   a user-facing reason. Mirrors `isActive()` in `src/App.jsx`.
 
-### Successful response — `200 OK`
+Source: `api/_lib/requireActiveSubscription.js`.
+
+### Persistence flow (normal sync)
+
+1. Read IBKR token + queryId from `user_ibkr_credentials`. Both required.
+2. `sendRequest(token, queryId)` → IBKR returns a `<ReferenceCode>`.
+3. `getStatement(refCode, token)` polls IBKR (10× × 3s) until the
+   report is ready or the IBKR Flex `Status` is non-`Warn` terminal.
+4. Validate the Flex Query period. Reject if it covers > 35 days.
+5. Parse `<Trade>` and `<OpenPosition>` elements; extract
+   `baseCurrency` from `<AccountInformation>`.
+6. **Diff incoming `ib_exec_id`s against existing rows** so the response
+   can report new-vs-already-known trades.
+7. Upsert `trades` (conflict on `user_id, ib_exec_id`).
+8. Replace `open_positions` (delete-then-insert pattern, scoped by
+   `user_id`).
+9. Clear demo rows on `logical_trades`, `open_positions`,
+   `planned_trades`, `playbooks`.
+10. Update `user_subscriptions.ibkr_connected = true`.
+11. Update `user_ibkr_credentials` — `last_sync_at`, `account_id`,
+    `base_currency`, clear `last_sync_error` / `last_sync_failed_at`.
+12. Call `rebuildForUser(userId, supabaseAdmin)` to regenerate
+    `logical_trades` from raw trades.
+
+On error after step 6, `last_sync_error` and `last_sync_failed_at`
+get written to the credentials row so the UI can surface the failure.
+
+### Successful response
 
 ```json
 {
   "success": true,
-  "tradeCount": 42,
-  "openPositionCount": 3,
-  "baseCurrency": "USD",
-  "trades": [
-    {
-      "ibExecID": "...",
-      "ibOrderID": "...",
-      "accountId": "U1234567",
-      "conid": "265598",
-      "symbol": "AAPL",
-      "assetCategory": "STK",
-      "buySell": "BUY",
-      "openCloseIndicator": "O",
-      "quantity": "100",
-      "tradePrice": "185.50",
-      "dateTime": "20260408;093045",
-      "netCash": "-18550.00",
-      "fifoPnlRealized": "0",
-      "ibCommission": "-1.00",
-      "ibCommissionCurrency": "USD",
-      "currency": "USD",
-      "fxRateToBase": "1",
-      "transactionType": "ExchTrade",
-      "notes": "",
-      "multiplier": "1",
-      "strike": "",
-      "expiry": "",
-      "putCall": ""
-    }
-  ],
-  "openPositions": [
-    {
-      "accountId": "U1234567",
-      "conid": "265598",
-      "symbol": "AAPL",
-      "assetCategory": "STK",
-      "position": "100",
-      "avgCost": "185.50",
-      "marketValue": "18600.00",
-      "unrealizedPnl": "50.00",
-      "currency": "USD"
-    }
+  "mode": "sync",
+  "tradeCount": 49,
+  "openPositionCount": 14,
+  "logicalCount": 16,
+  "rebuildWarnings": [],
+  "newTradeCount": 3,
+  "newTradesPreview": [
+    { "symbol": "NBIS", "buySell": "BUY", "quantity": 30,
+      "price": 148.29, "currency": "USD",
+      "dateTime": "2026-04-25T17:36:00.000Z" }
   ]
 }
 ```
 
-### Error response — `500`
+Note: `dateTime` is real UTC (post the 2026-04-25 timezone fix). The
+browser renders in user-local TZ via `toLocaleString`.
+
+### Test-mode response (when `body.token + body.queryId` provided)
 
 ```json
 {
-  "success": false,
-  "error": "Timed out waiting for IBKR statement after 10 attempts"
+  "success": true,
+  "mode": "test",
+  "tradeCount": 49,
+  "openPositionCount": 14,
+  "baseCurrency": "USD"
 }
 ```
 
-### Missing parameter response — `400`
+No DB writes occurred.
 
-```json
-{
-  "error": "Missing token or queryId params."
-}
+### Error responses
+
+| Scenario | Code | Notes |
+|---|---|---|
+| Missing/invalid Authorization | 401 | |
+| Inactive subscription | 402 | `error` field carries human reason |
+| Flex Query period > 35 days | 400 | `flexPeriodDays` echoed back |
+| Could not parse Flex period | 400 | |
+| IBKR rejected request / timeout | 500 | `error` carries IBKR message |
+| Any other server error | 500 | `last_sync_error` written to creds |
+
+### Trade timezone parsing
+
+IBKR Flex `dateTime` values arrive as exchange-local wall-clock time
+(no timezone annotation). `api/_lib/exchangeTimezone.js` maps each
+known venue (NASDAQ, NYSE, DARK, IBKRATS, LSE, IDEALFX, …) to an IANA
+timezone; `ibkrDateToUtcIso(dateTime, exchange)` converts to true UTC
+before storing.
+
+The `trades.exchange` and `trades.order_type` columns are persisted
+alongside the timestamp, so future rebuilds / display layers can use
+exchange-precise tz lookups instead of bucketing by asset class.
+
+### Browser handler
+
+`src/screens/IBKRScreen.jsx::handleSync` is now ~40 lines:
+
 ```
+POST /api/sync (with JWT)
+  ↓
+parse summary response
+  ↓
+update local lastSyncAt + bump('trades','positions','ibkrCreds')
+  ↓
+render newTradesPreview list and totals footer
+```
+
+No client-side DB writes during sync.
 
 ---
 
-## Internal functions
+## `/api/rebuild`
 
-### `httpsGet(url)`
+**File:** `api/rebuild.js`. Delegates to `api/_lib/rebuildForUser.js`.
 
-A thin Promise wrapper around Node's built-in `https.get`. Accumulates chunks and resolves with the full response body string. No external HTTP libraries are used.
+Same auth + subscription pattern as sync. Calls `rebuildForUser` to:
 
-### `sleep(ms)`
+1. Fetch all `trades` for the user (full history, not windowed).
+2. Read existing `logical_trades` to preserve user-reviewed decisions
+   across rebuilds (`opening_ib_order_id` is the join key).
+3. Call `buildLogicalTrades(rawTrades, userId)` (FIFO matcher in
+   `api/_lib/logicalTradeBuilder.js`).
+4. Apply plan matching against `planned_trades`; compute adherence
+   scores via `api/_lib/adherenceScore.js`.
+5. Backfill `planned_trades.currency` where the plan didn't set one.
+6. Replace the user's `logical_trades` rows.
 
-Promise-based delay used between IBKR polling retries.
+Returns `{ success: true, count, warnings }`.
 
-### `sendRequest(token, queryId)`
+`/api/sync` calls `rebuildForUser` directly (in-process), so the HTTP
+endpoint is mainly used for "rebuild without a fresh IBKR pull"
+scenarios.
 
-Calls the IBKR `FlexStatementService.SendRequest` endpoint. Extracts the `<ReferenceCode>` from the XML response using a regex. Throws with the status text if the reference code is absent.
+---
 
-**URL format:**
-```
-https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.SendRequest?t=<token>&q=<queryId>&v=3
-```
+## `/api/ibkr-credentials` — IBKR token write/delete
 
-### `getStatement(refCode, token, maxRetries = 10, waitMs = 3000)`
+**File:** `api/ibkr-credentials.js`. Added 2026-04-25 to close the
+last browser-write surface on `user_ibkr_credentials`.
 
-Polls `FlexStatementService.GetStatement` until one of three conditions is met:
-
-1. `<FlexStatementResponse` with `<Status>Success</Status>` or `<Status>Complete</Status>` → data is embedded, return XML
-2. Response contains `<FlexQueryResponse` or `<FlexStatement ` → also valid, return XML
-3. Neither condition after `maxRetries` attempts → throw timeout error
-
-Between each "still processing" response it waits `waitMs` milliseconds (default 3 seconds).
-
-### `parseBaseCurrency(xml)`
-
-Extracts the `baseCurrency` attribute from the `<FlexStatement ...>` tag using a regex:
+### POST
 
 ```
-/<FlexStatement[^>]+baseCurrency="([^"]+)"/
+POST /api/ibkr-credentials
+Authorization: Bearer <Supabase-JWT>
+Content-Type: application/json
+
+{ "token": "...", "queryId": "..." }
 ```
 
-Returns `null` if the attribute is absent.
+- Validates token length 8–256, queryId length 1–16.
+- Computes masked variants (`token_masked`, `query_id_masked`).
+- Upserts `user_ibkr_credentials` via `service_role` (conflict on
+  `user_id`).
+- Returns `{ success: true, tokenMasked, queryIdMasked }`.
 
-### `parseTrades(xml)`
+### DELETE
 
-Iterates all self-closing `<Trade ... />` elements using a global regex. For each match, extracts the following attribute fields:
+```
+DELETE /api/ibkr-credentials
+Authorization: Bearer <Supabase-JWT>
+```
 
-| Attribute | Field name in output |
+Removes the user's credentials row. Returns `{ success: true }`.
+
+### Why server-only
+
+The DB grants on `user_ibkr_credentials` were tightened to deny
+INSERT / UPDATE / DELETE for `anon` and `authenticated`, with one
+narrow exception: column-level UPDATE on `auto_sync_enabled` (the
+toggle on the IBKR screen). All other writes must go through this
+endpoint, which uses `service_role`.
+
+Source migrations:
+- `supabase/migrations/20260425_ibkr_credentials_safe_column_grant.sql`
+  — deny-by-default SELECT, allow only safe columns (masked +
+  metadata).
+- `supabase/migrations/20260425_ibkr_credentials_revoke_writes.sql` —
+  revoke INSERT/UPDATE/DELETE; column-grant UPDATE on `auto_sync_enabled`.
+
+---
+
+## Shared helpers (`api/_lib/`)
+
+| File | Purpose |
 |---|---|
-| `ibExecID` | Unique execution ID — used as upsert key in Supabase |
-| `ibOrderID` | Order ID — used to group executions into logical trades |
-| `accountId` | IBKR account number |
-| `conid` | Contract ID |
-| `symbol` | Ticker symbol |
-| `assetCategory` | `STK`, `OPT`, `FXCFD`, `CASH`, etc. |
-| `buySell` | `BUY` or `SELL` |
-| `openCloseIndicator` | `O`, `C`, `C;O`, or empty |
-| `quantity` | Number of shares/contracts |
-| `tradePrice` | Execution price |
-| `dateTime` | IBKR format: `"20260408;100300"` |
-| `netCash` | Net cash impact |
-| `fifoPnlRealized` | FIFO P&L reported by IBKR |
-| `ibCommission` | Commission |
-| `ibCommissionCurrency` | Commission currency |
-| `currency` | Trade currency |
-| `fxRateToBase` | FX rate to account base currency at execution time |
-| `transactionType` | `ExchTrade`, etc. |
-| `notes` | IBKR-populated notes |
-| `multiplier` | Contract multiplier (options/futures) |
-| `strike` | Strike price (options) |
-| `expiry` | Expiry date (options) |
-| `putCall` | `P` or `C` (options) |
+| `supabaseAdmin.js` | `service_role` client factory |
+| `stripe.js` | Stripe SDK wrapper |
+| `sentry.js` | `captureServerError` helper |
+| `requireActiveSubscription.js` | Subscription gate, mirrors `isActive()` |
+| `performUserSync.js` | End-to-end sync flow used by `/api/sync` and `/api/cron-sync` |
+| `rebuildForUser.js` | FIFO + plan-matching rebuild used by `/api/rebuild`, `performUserSync`, and `/api/cron-sync` |
+| `logicalTradeBuilder.js` | Pure FIFO logic; no DB calls |
+| `adherenceScore.js` | Plan vs. fills scoring (0–100) |
+| `exchangeTimezone.js` | IBKR venue → IANA tz map + `ibkrDateToUtcIso` |
 
-Returns an array of plain objects. All values are strings as extracted from XML; numeric conversion happens in `IBKRScreen.jsx`.
+The `_` prefix excludes them from Vercel's serverless-function count.
 
-### `parseOpenPositions(xml)`
+---
 
-Iterates all self-closing `<OpenPosition ... />` elements. Extracted fields:
+## Cron functions
 
-| Attribute | Notes |
-|---|---|
-| `accountId` | |
-| `conid` | |
-| `symbol` | |
-| `assetCategory` | |
-| `position` | Number of shares/contracts held |
-| `avgCost` | Falls back to `openPrice` if absent |
-| `marketValue` | Falls back to `positionValue` if absent |
-| `unrealizedPnl` | Falls back to `fifoPnlUnrealized` if absent |
-| `currency` | |
+| Endpoint | Schedule | Purpose |
+|---|---|---|
+| `/api/cron-sync` | nightly (per `vercel.json`) | Loops every user with auto-sync enabled and an active subscription, runs `performUserSync`. CRON_SECRET auth. |
+| `/api/cron-anonymize-churn` | weekly | Strips `email` + `stripe_customer_id` from `account_deletions` rows older than 90 days. Idempotent. |
+
+Both auth via `Authorization: Bearer ${CRON_SECRET}` header (set on the
+Vercel project + sent automatically by Vercel's cron scheduler).
 
 ---
 
 ## IBKR Flex Query requirements
 
-For `parseTrades` to work correctly, the Flex Query configured in IBKR must include the **Trades** section with at minimum these fields enabled:
+The Flex Query configured in IBKR must include the **Trades** section
+with these fields, at minimum:
 
-`ibExecID`, `ibOrderID`, `accountId`, `conid`, `symbol`, `assetCategory`, `buySell`, `openCloseIndicator`, `quantity`, `tradePrice`, `dateTime`, `netCash`, `fifoPnlRealized`, `ibCommission`, `ibCommissionCurrency`, `currency`, `fxRateToBase`, `transactionType`, `notes`, `multiplier`, `strike`, `expiry`, `putCall`
+`ibExecID`, `ibOrderID`, `accountId`, `conid`, `symbol`, `assetCategory`,
+`buySell`, `openCloseIndicator`, `quantity`, `tradePrice`, `dateTime`,
+`netCash`, `fifoPnlRealized`, `ibCommission`, `ibCommissionCurrency`,
+`currency`, `fxRateToBase`, `transactionType`, `notes`, `multiplier`,
+`strike`, `expiry`, `putCall`, `exchange`, `orderType`.
 
-For `parseOpenPositions`, the **Open Positions** section must include:
+The **Open Positions** section must include:
 
-`accountId`, `conid`, `symbol`, `assetCategory`, `position`, `avgCost`, `marketValue`, `unrealizedPnl`, `currency`
+`accountId`, `conid`, `symbol`, `assetCategory`, `position`, `avgCost`,
+`marketValue`, `unrealizedPnl`, `currency`.
 
-The `baseCurrency` attribute is automatically included on the `<FlexStatement>` element.
+The `<AccountInformation>` element should carry the `currency`
+attribute (used for the user's account base currency).
 
----
-
-## Error handling
-
-| Scenario | Behaviour |
-|---|---|
-| IBKR returns no `<ReferenceCode>` | `sendRequest` throws; handler returns `500` with error message |
-| IBKR report still generating after 10 polls | `getStatement` throws timeout; handler returns `500` |
-| Unexpected XML structure | `getStatement` throws; handler returns `500` |
-| Missing `token` or `queryId` params | Handler returns `400` before calling IBKR |
-| Any uncaught error | `catch (err)` returns `500` with `err.message` |
-
----
-
-## How to extend
-
-### Add a new parsed field from the Trade element
-
-In `parseTrades`, add a new call to `get('attributeName')` inside the push block (around line 82). Then add the corresponding column mapping in `IBKRScreen.jsx` inside the `tradesToUpsert` `.map()` callback (around line 126), and add the column to the Supabase `trades` table.
-
-### Add a new parsed section (e.g. Cash Transactions)
-
-1. Add a new parse function following the same regex pattern as `parseTrades`:
-   ```js
-   function parseCashTransactions(xml) {
-     const items = [];
-     const regex = /<CashTransaction\s([^>]+)\/>/g;
-     let match;
-     while ((match = regex.exec(xml)) !== null) {
-       const attrs = match[1];
-       const get = (field) => { ... };
-       items.push({ ... });
-     }
-     return items;
-   }
-   ```
-2. Call it in the handler and include the result in the response JSON.
-3. Handle the new data in `IBKRScreen.handleSync()`.
-
-### Change the retry policy
-
-Adjust the `maxRetries` (default `10`) and `waitMs` (default `3000` ms) parameters in the `getStatement` call inside the handler function. The maximum wait time is `maxRetries × waitMs` = 30 seconds by default.
-
-### Add authentication to the sync endpoint
-
-Currently the endpoint is open (any caller with a valid IBKR token and query ID can use it). To restrict access, add a Supabase JWT check:
-
-```js
-const { createClient } = require('@supabase/supabase-js');
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-const authHeader = req.headers['authorization'];
-const { data: { user }, error } = await supabase.auth.getUser(authHeader?.split(' ')[1]);
-if (!user) return res.status(401).json({ error: 'Unauthorized' });
-```
-
-⚠️ This requires adding `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as server-side (non-`REACT_APP_` prefixed) environment variables in Vercel.
+The query period must be ≤ 35 calendar days. The shipping config is
+"Last 30 Calendar Days".

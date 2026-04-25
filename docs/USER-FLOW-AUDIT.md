@@ -35,7 +35,7 @@ Last reviewed 2026-04-20 after the anonymous-demo ("Try demo") flow was retired.
 Admin creates an `invited_users` row with a token → user clicks link → `AuthScreen` reads token from URL → `handleInviteSignup` → `/api/redeem-invite` creates auth user + `user_subscriptions` row (`subscription_status='active'`, `is_comped=true`, `demo_seeded=false`) → redeemer signs in → App.jsx peeks → seeds demo → banner shows.
 
 ### Door 4 — Password reset
-`AuthScreen.handleReset` → `supabase.auth.resetPasswordForEmail` → Supabase sends magic link with `redirectTo=/reset-password`. **The app has no `/reset-password` route.** The wildcard catch sends them home. Supabase's JS client does auto-consume the hash tokens, so the session is typically established, but there's no custom UI to actually set a new password. **Known gap, documented in SETUP.md.**
+`AuthScreen.handleReset` → `supabase.auth.resetPasswordForEmail` → Supabase sends a recovery email with `redirectTo=${origin}/reset-password` → the link lands on `src/screens/ResetPasswordScreen.jsx` (route declared in `App.jsx` before the auth/subscription gates so a signed-out user can reach it). The screen waits for the `PASSWORD_RECOVERY` auth event (with a `getSession` fallback for hash-already-processed cases), enforces the same password policy as signup (≥8 chars, one digit, one uppercase or special), calls `supabase.auth.updateUser({ password })`, and redirects to `/`. Invalid / expired links surface an "invalid reset link" state with a back-to-login button.
 
 ---
 
@@ -53,11 +53,11 @@ Admin creates an `invited_users` row with a token → user clicks link → `Auth
 
 ## 4. Known gaps
 
-### `/reset-password` has no landing route
-See SETUP.md "Known gaps." Supabase handles the auth hash automatically but there's no custom UI to set a new password. User gets logged in and has to navigate to settings manually (where there's also no change-password UI). Worth fixing before broad public launch.
-
 ### Window-focus refetch is aggressive
 `App.jsx` re-fetches `user_subscriptions` every time the tab regains focus. Small DB hit; no user impact. Could be debounced or scoped to when the tab has been backgrounded for more than N minutes.
+
+### Resolved
+- ~~`/reset-password` has no landing route~~ — implemented as `src/screens/ResetPasswordScreen.jsx`, routed at the top of `App.jsx` before the auth gates. Recovery email lands on it; user sets a new password via `supabase.auth.updateUser`.
 
 ---
 

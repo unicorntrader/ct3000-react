@@ -24,10 +24,10 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 
 ### Core app structure
 
-#### `src/index.js`
-**Purpose:** React entry point. Mounts `<App>` into `#root`, wraps it in `BrowserRouter`, initializes Sentry.
+#### `src/index.jsx`
+**Purpose:** React entry point. Mounts `<App>` into `#root`, wraps it in `BrowserRouter`, initializes Sentry from `import.meta.env.VITE_SENTRY_DSN`.
 **Dependencies:** `./App`, `@sentry/react`, `react-router-dom`.
-**Used by:** `public/index.html`.
+**Used by:** `/index.html` at repo root, via `<script type="module" src="/src/index.jsx">` (Vite convention).
 **Data touched:** None.
 
 #### `src/index.css`
@@ -224,7 +224,7 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 ### Helper libraries (`src/lib/`)
 
 #### `src/lib/supabaseClient.js`
-**Purpose:** Single Supabase client instance, configured from `REACT_APP_SUPABASE_URL` + `REACT_APP_SUPABASE_ANON_KEY`.
+**Purpose:** Single Supabase client instance, configured from `import.meta.env.VITE_SUPABASE_URL` + `import.meta.env.VITE_SUPABASE_ANON_KEY` (Vite-prefixed env vars).
 **Used by:** Every file that touches the DB.
 
 #### `src/lib/PrivacyContext.js`
@@ -243,89 +243,74 @@ Built with React + Supabase + Stripe + Vercel serverless functions.
 | `fmtDate(iso)` | Short date, no year: `Apr 11`. |
 | `fmtDateLong(iso)` | Long date with year: `Apr 11, 2026`. |
 
-#### `src/lib/logicalTradeBuilder.js`
-**Purpose:** Convert raw IBKR executions into "logical trades" — one row per position lifecycle (open → close) — using FIFO matching.
-
-**Export:** `buildLogicalTrades(rawTrades, userId, accountId)`
-
-**Algorithm:**
-1. Sort raw trades by `date_time`
-2. Group by "order key" (`ib_order_id` for most, `ib_order_id + conid` for options)
-3. For each group, classify: pure open / pure close / close-then-open reversal
-4. Pure opens → create new logical trade (`status='open'`)
-5. Pure closes → FIFO match against the oldest open position for that symbol, move quantity + P&L into it
-6. Reversals → close the oldest open, then create a fresh open
-7. Compute `avg_entry_price` (weighted), `total_realized_pnl`, `fx_rate_to_base` (weighted)
-8. Return the array ready to upsert
-
-**Used by:** `api/rebuild.js` (server-side).
-
-#### `src/lib/planMatcher.js`
-**Purpose:** Match logical trades to planned trades. Three-way result: matched / unmatched / ambiguous.
-
-**Matching criteria:** `symbol + direction + asset_category` (uppercase, trimmed).
-
-**Outcome per trade:**
-- Exactly 1 plan matches → `matching_status = 'matched'`, `planned_trade_id` set
-- 0 plans match → `matching_status = 'off_plan'` (terminal)
-- 2+ plans match → `matching_status = 'needs_review'` (user picks in ReviewSheet)
-
-Rows where `user_reviewed = true` (user made an explicit choice) are preserved and never overwritten.
-
-**Used by:** `api/rebuild.js`.
-
-#### `src/lib/adherenceScore.js`
-**Purpose:** Compute a 0–100 adherence score comparing a planned trade to what actually happened.
-
-**Export:** `computeAdherenceScore(plan, trade)`
-
-**Sub-scores:**
-1. **Entry slippage** — 1% off = 5 points deducted, max 100
-2. **Target achievement** — linear from entry→target; hit target = 100; against the trade = 0
-3. **Stop respect** — binary: respected = 100, violated = 0
-4. **Quantity deviation** — proportional; 10% off = 90, 50% off = 50
-
-**Averaged** into an overall 0–100 score. Missing plan fields are skipped (no penalty). Exit price is back-calculated from `total_realized_pnl / closingQty`.
-
-**Known architectural gap:** This is called client-side in `TradeJournalDrawer` on save, and client-side in `JournalScreen` for the table display. It is NOT called during sync in `api/rebuild.js` — so `adherence_score` in the DB stays `null` for most matched trades until the user manually opens each drawer.
+_Note: the `src/lib/logicalTradeBuilder.js`, `src/lib/planMatcher.js`,
+and `src/lib/adherenceScore.js` modules previously documented here
+have been removed. FIFO matching, plan matching, and adherence scoring
+are now exclusively server-side under `api/_lib/`. See `api/_lib/`
+section below._
 
 ---
 
 ### API routes (`api/`)
 
 #### `api/sync.js`
-**Purpose:** The IBKR sync endpoint. Fetches Flex XML, parses, writes raw trades + open positions + base currency. Then calls `rebuild` to recompute logical trades.
+**Purpose:** Server-authoritative IBKR sync. Authenticates JWT, gates on
+active subscription, fetches Flex XML, parses, persists trades +
+positions, updates credentials, runs rebuild, returns a summary.
 
 **Flow:**
-1. Verify Bearer token → extract `userId`
-2. Load IBKR credentials from `user_ibkr_credentials`
-3. Call IBKR Flex Query API (`SendRequest` → `GetStatement` polling)
-4. Parse XML: trades, open positions, `AccountInformation currency` = base currency
-5. Upsert raw `trades` by `(user_id, ib_exec_id)`
-6. Delete + re-insert `open_positions` (snapshot replace)
-7. Update `user_ibkr_credentials` with `last_sync_at`, `account_id`, `base_currency`
-8. Call `/api/rebuild.js` internally → rebuild logical trades
-9. Return success with counts
+1. Verify Bearer Supabase JWT → resolve `user.id`
+2. `requireActiveSubscription(user.id, supabaseAdmin)` — 402 if not active/trialing/comped
+3. (test mode if `body.token + body.queryId` present) — verify creds against IBKR, return counts, no DB writes
+4. (normal sync) Delegate to `performUserSync(user.id, supabaseAdmin)`:
+   - Read IBKR token + queryId from `user_ibkr_credentials`
+   - `SendRequest` → `GetStatement` polling
+   - Parse XML; reject if Flex period > 35 days
+   - Diff incoming `ib_exec_id`s against existing rows (for the new-fills count)
+   - Upsert raw `trades` by `(user_id, ib_exec_id)`
+   - Delete + re-insert `open_positions` (snapshot replace)
+   - Clear demo rows on `logical_trades`, `open_positions`, `planned_trades`, `playbooks`
+   - Set `user_subscriptions.ibkr_connected = true`
+   - Update `user_ibkr_credentials.last_sync_at` + `account_id` + `base_currency` + clear failure state
+   - Call `rebuildForUser(userId, supabaseAdmin)` to regenerate `logical_trades`
+5. Return summary `{ tradeCount, openPositionCount, logicalCount, rebuildWarnings, newTradeCount, newTradesPreview }`
 
 **Uses:** `supabaseAdmin` (service-role), bypasses RLS.
-**Tables written:** `trades`, `open_positions`, `user_ibkr_credentials`, (via rebuild) `logical_trades`.
+**Tables written:** `trades`, `open_positions`, `user_ibkr_credentials`,
+`user_subscriptions.ibkr_connected`, `logical_trades` (via rebuild).
+The browser does NOT write any of these during sync.
 
 #### `api/rebuild.js`
-**Purpose:** Rebuild `logical_trades` from existing raw `trades` + apply plan matching.
+**Purpose:** Standalone "rebuild logical_trades from existing raw trades"
+endpoint. Same JWT auth + subscription gate as sync. Calls
+`rebuildForUser(userId, supabaseAdmin)`.
 
-**Flow:**
-1. Verify Bearer token
-2. Fetch all `trades` for user (server-side, fast)
-3. Call `buildLogicalTrades()`
-4. Fetch `planned_trades`
-5. Apply plan matching inline
+`rebuildForUser` (in `api/_lib/`):
+1. Fetch all `trades` for user
+2. Read existing `logical_trades` to preserve user-reviewed decisions
+3. Call `buildLogicalTrades(rawTrades, userId)` (FIFO)
+4. Fetch `planned_trades`; apply plan matching + compute adherence
+5. Backfill `planned_trades.currency` where missing
 6. Delete + insert `logical_trades`
-7. Return success + counts + warnings (missing FX rate, missing currency)
+7. Return `{ count, warnings }`
 
-**⚠️ Known gap:** Does NOT call `computeAdherenceScore`. `adherence_score` stays null for new rows even after matching. This is the single biggest architectural todo.
+`/api/sync` calls `rebuildForUser` directly (in-process), so this
+endpoint is mainly for "rebuild without a fresh IBKR pull".
 
-**Tables written:** `logical_trades`.
-**Tables read:** `trades`, `planned_trades`.
+**Tables written:** `logical_trades`, `planned_trades.currency`.
+**Tables read:** `trades`, `planned_trades`, existing `logical_trades`.
+
+#### `api/ibkr-credentials.js`
+**Purpose:** Server-only path for saving / removing IBKR credentials.
+Closes the last browser-write surface on `user_ibkr_credentials`.
+
+**POST** `{ token, queryId }`: validate, mask, upsert via `service_role`. Returns `{ success, tokenMasked, queryIdMasked }`.
+
+**DELETE**: remove the user's credentials row.
+
+The browser cannot insert / update / delete this table directly
+post-2026-04-25 (DB grants revoked, except column-level UPDATE on
+`auto_sync_enabled` for the toggle).
 
 #### `api/seed-demo.js`
 **Purpose:** Seed demo data for newly signed-up users on first sign-in so they have something to explore before connecting IBKR.
@@ -441,10 +426,10 @@ Rows where `user_reviewed = true` (user made an explicit choice) are preserved a
 4. User runs sync (Flow B)
 5. Raw trades → `trades` table
 6. Rebuild → logical trade created with matching `symbol + direction + asset_category`
-7. `planMatcher` finds the plan → `matching_status='matched'`, `planned_trade_id` set
-8. **JournalScreen** → click the trade row → `TradeJournalDrawer` opens
-9. Drawer shows plan vs actual, computes adherence score live
-10. User types notes, hits Save → writes `review_notes` + `adherence_score`
+7. `applyPlanMatching` (in `api/_lib/rebuildForUser.js`) finds the plan → `matching_status='matched'`, `planned_trade_id` set, and `adherence_score` computed via `computeAdherenceScore(plan, lt)` for closed trades
+8. **JournalScreen** → click the trade row → `TradeInlineDetail` expands inline
+9. Detail shows plan vs actual + the precomputed adherence score
+10. User types notes, hits Save → writes `review_notes`
 
 ### Flow E: Manual review (unmatched / ambiguous)
 
@@ -488,21 +473,24 @@ Rows where `user_reviewed = true` (user made an explicit choice) are preserved a
                │                    │  last_sync_at)  │
                │                    └─────────────────┘
                ▼
-     ┌──────────────────────────┐
-     │     /api/rebuild.js      │
-     │  (build logical trades)  │
-     └──────────┬───────────────┘
+     ┌──────────────────────────────────┐
+     │  api/_lib/rebuildForUser.js      │
+     │  (called inline by /api/sync     │
+     │   AND directly by /api/rebuild)  │
+     └──────────┬───────────────────────┘
                 │
                 │ buildLogicalTrades()
                 │ ─ group by order
                 │ ─ FIFO match opens ↔ closes
-                │ ─ compute avg entry, realized pnl, fx rate
+                │ ─ compute avg entry, exit, realized pnl, fx rate
                 │
-                │ planMatcher()
+                │ applyPlanMatching()
                 │ ─ match symbol + direction + asset_category
-                │ ─ set matching_status
+                │ ─ set matching_status, planned_trade_id
+                │ ─ computeAdherenceScore(plan, lt) for closed matched LTs
                 │
-                │ ⚠️ ADHERENCE NOT COMPUTED HERE
+                │ preserve user_reviewed=true rows across rebuilds
+                │   via opening_ib_order_id + conid key
                 │
                 ▼
      ┌──────────────────────────┐
@@ -514,26 +502,26 @@ Rows where `user_reviewed = true` (user made an explicit choice) are preserved a
      │   ─ fx_rate_to_base      │
      │   ─ matching_status      │
      │   ─ planned_trade_id     │
-     │   ─ adherence_score      │  ← set only via TradeJournalDrawer save
-     │   ─ review_notes         │
+     │   ─ adherence_score      │  ← set during rebuild for matched closed LTs
+     │   ─ review_notes         │  ← user-entered via TradeInlineDetail
      └────────┬─────────────────┘
               │
               ├─────────────────┬──────────────┬────────────┐
               ▼                 ▼              ▼            ▼
         ┌──────────┐  ┌────────────────┐  ┌────────┐  ┌──────────┐
         │ Journal  │  │  Performance   │  │ Home   │  │ Daily    │
-        │ (table)  │  │  (KPIs/chart)  │  │ (stats)│  │ View     │
+        │ (closed) │  │  (KPIs/chart)  │  │ (stats)│  │ View     │
         └────┬─────┘  └────────────────┘  └────────┘  └──────────┘
              │
              ▼
      ┌──────────────────┐
-     │ TradeJournal     │
-     │ Drawer           │
-     │ ─ notes          │
-     │ ─ adherence calc │
+     │ TradeInlineDetail│
+     │ ─ stats          │
+     │ ─ plan vs actual │
+     │ ─ adherence pill │
+     │ ─ notes editor   │
      │ ─ save writes:   │
-     │   review_notes + │
-     │   adherence_score│
+     │   review_notes   │
      └──────────────────┘
 ```
 
@@ -545,9 +533,9 @@ Rows where `user_reviewed = true` (user made an explicit choice) are preserved a
 |---|---|---|
 | `auth.users` | App, all screens (via `session`) | `AuthScreen`, `api/redeem-invite` |
 | `user_subscriptions` | App (polling), `PaywallScreen` | `api/stripe-webhook`, `api/create-checkout-session`, `api/redeem-invite`, `WelcomeModal` (flag) |
-| `user_ibkr_credentials` | `IBKRScreen`, `Sidebar`, `SettingsScreen`, `HomeScreen`, `JournalScreen`, `PerformanceScreen`, `DailyViewScreen`, `ReviewSheet`, `PlanSheet` | `IBKRScreen`, `api/sync.js` |
-| `trades` (raw) | `api/rebuild.js`, `DailyViewScreen` | `api/sync.js` (upsert) |
-| `logical_trades` | `HomeScreen`, `DailyViewScreen`, `JournalScreen`, `PerformanceScreen`, `TradeJournalDrawer`, `ReviewSheet`, `PlanSheet` (history), `api/rebuild.js` | `api/rebuild.js` (upsert), `TradeJournalDrawer` (review_notes + adherence_score), `ReviewSheet` (matching_status + planned_trade_id), `DailyViewScreen` (resolution) |
+| `user_ibkr_credentials` | `IBKRScreen`, `Sidebar`, `SettingsScreen`, `HomeScreen`, `JournalScreen`, `PerformanceScreen`, `DailyViewScreen`, `ReviewSheet`, `PlanSheet` (masked + metadata cols only — raw `ibkr_token` / `query_id_30d` are revoked from browser SELECT) | `api/ibkr-credentials.js` (POST upsert, DELETE), `api/sync.js` (last_sync_at + account_id + base_currency), `api/cron-sync.js` (failure state). Browser direct write limited to `auto_sync_enabled` toggle. |
+| `trades` (raw) | `api/_lib/rebuildForUser.js`, `DailyViewScreen` | `api/sync.js` (upsert via `performUserSync`) |
+| `logical_trades` | `HomeScreen`, `DailyViewScreen`, `JournalScreen`, `PerformanceScreen`, `TradeInlineDetail`, `ReviewScreen`, `PlanSheet` (history), server rebuild | server rebuild (`rebuildForUser` — drops + re-inserts), `TradeInlineDetail` (review_notes), `ReviewScreen` (matching_status + planned_trade_id + user_reviewed), `DailyViewScreen` (resolve action) |
 | `planned_trades` | `PlansScreen`, `PlanSheet`, `JournalScreen`, `ReviewSheet`, `api/rebuild.js`, `api/seed-demo.js` | `PlanSheet` (CRUD), `api/seed-demo.js` |
 | `open_positions` | `HomeScreen`, `DailyViewScreen` | `api/sync.js` (delete + re-insert), `api/seed-demo.js` |
 | `daily_notes` | `DailyViewScreen` | `DailyViewScreen` (upsert) |
