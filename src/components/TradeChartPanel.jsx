@@ -422,9 +422,38 @@ export default function TradeChartPanel({ trade, plan }) {
   }
 
   if (error) {
+    // Map specific technical errors to a friendly title + body. The
+    // technical reason still shows underneath in small text so we can
+    // triage if a user reports something unexpected.
+    let title = 'Chart unavailable'
+    let body = "We couldn't build a chart for this trade."
+    if (/opened_at/i.test(error)) {
+      title = 'Entry timing unknown'
+      body = "This trade closed a position that was opened before your IBKR import history began, so we don't know the exact entry timestamp to anchor a chart against. Charts require both entry and exit timing."
+    } else if (/closed_at/i.test(error)) {
+      title = 'Exit timing unknown'
+      body = 'This trade is flagged closed but is missing its close timestamp. Re-running sync usually backfills it.'
+    } else if (/avg_entry_price/i.test(error)) {
+      title = 'Fill data incomplete'
+      body = "We're missing the average entry price for this trade. This can happen on partial imports — re-running sync usually fixes it."
+    } else if (/symbol/i.test(error)) {
+      title = 'No symbol on this trade'
+      body = "Without a ticker we can't fetch historical bars."
+    } else if (/Bad (opened_at|closed_at)/i.test(error)) {
+      title = 'Bad timestamp on this trade'
+      body = "One of the timestamps couldn't be parsed. This is unusual — please flag it so we can investigate."
+    } else if (/Alpaca returned 0 bars|No data available/i.test(error)) {
+      title = 'No historical bars available'
+      body = "Alpaca's free IEX feed has no bars for this symbol in the trade's window. Common for thinly-traded tickers, options, futures, or non-US listings."
+    }
     return (
-      <div className="px-4 py-6 text-center text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl bg-white">
-        {error}
+      <div className="px-6 py-8 text-center bg-white border border-dashed border-gray-200 rounded-xl">
+        <svg className="w-6 h-6 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <p className="text-sm font-medium text-gray-700 mb-1">{title}</p>
+        <p className="text-xs text-gray-500 max-w-md mx-auto">{body}</p>
+        <p className="text-[10px] text-gray-300 mt-3 font-mono">reason: {error}</p>
       </div>
     )
   }
