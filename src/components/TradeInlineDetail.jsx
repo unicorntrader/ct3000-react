@@ -66,11 +66,21 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
   const pnl = isOpen_trade ? null : (trade.total_realized_pnl || 0)
   const isWin = (pnl || 0) > 0
   const isMatchedClosed = trade.status === 'closed' && trade.matching_status === 'matched'
-  // A trade is "resolved" once the system or user has committed to either a
-  // plan link or a "no plan" outcome. Resolved trades can be reset so they
-  // re-enter the review queue.
-  const isResolved = trade.status === 'closed' && (
-    trade.matching_status === 'matched' || trade.matching_status === 'off_plan'
+  // Reset-match visibility — three cases:
+  //   matched                          → always show (user might have linked
+  //                                       the wrong plan, or want to revisit
+  //                                       a 1-candidate auto-match)
+  //   off_plan + user_reviewed=true    → show. The user dismissed candidate
+  //                                       plans in /review; those plans still
+  //                                       exist and re-queueing the trade
+  //                                       resurfaces them.
+  //   off_plan + user_reviewed=false   → hide. Matcher set this because zero
+  //                                       plans predated the trade. Under the
+  //                                       no-retroactive-planning rule (see
+  //                                       CLAUDE.md), this state is terminal.
+  const canResetMatch = trade.status === 'closed' && (
+    trade.matching_status === 'matched' ||
+    (trade.matching_status === 'off_plan' && trade.user_reviewed === true)
   )
   const currency = trade.currency || 'USD'
 
@@ -205,7 +215,7 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
               </span>
             )}
             <span className="text-xs text-gray-400 ml-1">{dateDisplay}</span>
-            {isResolved && (
+            {canResetMatch && (
               <button
                 onClick={e => { e.stopPropagation(); handleResetMatch(); }}
                 className="ml-auto text-xs text-gray-400 hover:text-blue-600 underline decoration-dotted underline-offset-2"

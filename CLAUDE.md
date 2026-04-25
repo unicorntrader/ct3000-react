@@ -70,6 +70,27 @@ Always use the canonical DB column names. Do not use old aliases.
 | Target price | `planned_target_price` | `target_price`, `target` |
 | Quantity | `planned_quantity` | `shares`, `quantity` |
 
+## Plan matching rules (read this once)
+- **No retroactive planning, ever.** A plan can only match a trade that was
+  opened *after* the plan was created. The matcher in
+  `api/_lib/rebuildForUser.js` enforces this with
+  `plan.created_at <= trade.opened_at`. This is a product rule, not just a
+  data rule — do not propose features that let a user write a plan after
+  the fact and link it to an existing trade.
+- **`off_plan` has two flavours, distinguished by `user_reviewed`:**
+  - `off_plan` + `user_reviewed=false` → **terminal.** The matcher set this
+    because zero plans predated the trade. Re-running the matcher would
+    return the same answer. UI must not offer a "send back to review" path
+    here.
+  - `off_plan` + `user_reviewed=true` → **recoverable.** The trade had 2+
+    candidate plans, user opened /review and clicked "No plan." Those
+    plans still exist and re-queueing the trade resurfaces them, so a
+    "Reset match" CTA is meaningful here.
+- **Reset-match visibility, in one line:**
+  show iff `matched` OR (`off_plan` AND `user_reviewed=true`).
+  It clears `planned_trade_id`, sets `matching_status='needs_review'` and
+  `user_reviewed=false`, so the next rebuild re-runs matching.
+
 ## Conventions
 - All Supabase queries must include `.eq('user_id', ...)` — no exceptions
 - `select('*')` is safe; explicit column lists will 400 if a column doesn't exist yet
