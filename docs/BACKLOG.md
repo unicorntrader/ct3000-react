@@ -172,3 +172,38 @@ given the other mitigations already in place.
   `8a056efb`) plus a one-time backfill
   (`20260424_backfill_anonymize_account_deletions.sql`). Remove when
   next editing this section.
+
+## Schema cleanup (deferred from 2026-04-25 dead-column audit)
+
+The 2026-04-25 audit found columns and a table that are written by
+the codebase but never read. As a first pass, the writes were
+removed (commits 86d0... onwards). The schema still carries the dead
+storage. Drop it when convenient:
+
+- **`logical_trades.account_id`** — written by `logicalTradeBuilder`,
+  never read. The same value lives on `trades.account_id` and
+  `user_ibkr_credentials.account_id`. Safe to drop.
+- **`logical_trades.is_reversal`** — boolean flag set on `C;O`
+  reversal LTs. Never queried. Could be repurposed (UI badge "this
+  was a flip") if desired; otherwise drop.
+- **`logical_trades.source_notes`** — text written by the builder
+  with explanations like "opened before your earliest imported
+  trade". Never displayed. Could be surfaced in `TradeInlineDetail`
+  if useful; otherwise drop.
+- **`logical_trade_executions` (entire table)** — read by Daily View
+  pre-2026-04-25, written by no code in this repo, found empty in
+  prod. The DV read has been removed. Drop the table unless we plan
+  to repurpose it for proper FIFO provenance / reversal-aware
+  position math (would require populating it from
+  `rebuildForUser`).
+
+Migration when ready:
+
+```sql
+alter table public.logical_trades
+  drop column if exists account_id,
+  drop column if exists is_reversal,
+  drop column if exists source_notes;
+
+drop table if exists public.logical_trade_executions;
+```

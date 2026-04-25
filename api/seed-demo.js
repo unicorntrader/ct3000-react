@@ -75,7 +75,8 @@ module.exports = async function handler(req, res) {
 
   // ── Step 2: Build logical trades ──
 
-  // Closed trade helper
+  // Closed trade helper. (logical_trades.is_reversal was previously
+  // written here; dropped in the 2026-04-25 dead-column cleanup.)
   const lt = (overrides) => ({
     user_id: userId,
     asset_category: 'STK',
@@ -85,7 +86,6 @@ module.exports = async function handler(req, res) {
     fx_rate_to_base: 1,
     currency: 'USD',
     matching_status: 'needs_review',
-    is_reversal: false,
     planned_trade_id: null,
     is_demo: true,
     ...overrides,
@@ -103,7 +103,6 @@ module.exports = async function handler(req, res) {
     fx_rate_to_base: 1,
     currency: 'USD',
     matching_status: 'off_plan',
-    is_reversal: false,
     planned_trade_id: null,
     is_demo: true,
     ...overrides,

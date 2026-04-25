@@ -112,8 +112,11 @@ function buildLogicalTrades(rawTrades, userId) {
     const symbol = firstTrade.symbol;
     const assetCategory = firstTrade.asset_category;
     const currency = firstTrade.currency || null;
-    const accountId = firstTrade.account_id;
     const conid = firstTrade.conid;
+    // logical_trades.account_id, .is_reversal, .source_notes were
+    // written here historically but never read anywhere in the app.
+    // Skipped on the 2026-04-25 dead-column cleanup. The trades table
+    // still carries account_id per execution; that's where it's needed.
 
     const indicators = group.map(t => (t.open_close_indicator || '').trim());
     const hasOpen = indicators.some(i => i.includes('O') || i === '');
@@ -151,7 +154,6 @@ function buildLogicalTrades(rawTrades, userId) {
       const qty = Math.abs(sumField(group, 'quantity'));
       const newTrade = {
         user_id: userId,
-        account_id: accountId,
         symbol,
         conid,
         asset_category: assetCategory,
@@ -168,10 +170,8 @@ function buildLogicalTrades(rawTrades, userId) {
         total_realized_pnl: 0,
         fx_rate_to_base: weightedAvgFxRate(group),
         multiplier: getMultiplier(group),
-        is_reversal: true,
         matching_status: 'needs_review',
         planned_trade_id: null,
-        source_notes: `C;O reversal from order ${firstTrade.ib_order_id}`,
       };
       logicalTrades.push(newTrade);
       getOpenForSymbol(symbol).push(newTrade);
@@ -220,7 +220,6 @@ function buildLogicalTrades(rawTrades, userId) {
       } else {
         const newTrade = {
           user_id: userId,
-          account_id: accountId,
           symbol,
           conid,
           asset_category: assetCategory,
@@ -237,10 +236,8 @@ function buildLogicalTrades(rawTrades, userId) {
           total_realized_pnl: pnl,
           fx_rate_to_base: newFxRate,
           multiplier: getMultiplier(group),
-          is_reversal: false,
           matching_status: 'needs_review',
           planned_trade_id: null,
-          source_notes: null,
         };
         logicalTrades.push(newTrade);
         existingOpens.push(newTrade);
@@ -264,7 +261,6 @@ function buildLogicalTrades(rawTrades, userId) {
         const qty = Math.abs(sumField(group, 'quantity'));
         const orphan = {
           user_id: userId,
-          account_id: accountId,
           symbol,
           conid,
           asset_category: assetCategory,
@@ -289,10 +285,8 @@ function buildLogicalTrades(rawTrades, userId) {
           total_realized_pnl: sumField(group, 'fifo_pnl_realized'),
           fx_rate_to_base: weightedAvgFxRate(group),
           multiplier: getMultiplier(group),
-          is_reversal: false,
           matching_status: 'needs_review',
           planned_trade_id: null,
-          source_notes: 'This position was opened before your earliest imported trade, so the entry price and open date aren\'t known. The P&L is accurate — it comes straight from IBKR.',
         };
         logicalTrades.push(orphan);
       } else {
@@ -358,11 +352,6 @@ function buildLogicalTrades(rawTrades, userId) {
           // Use IBKR's fifo_pnl_realized for the whole group -- it already
           // accounts for both the known and pre-window portions.
           lastClosedLt.total_realized_pnl = totalPnl;
-          lastClosedLt.source_notes =
-            `${orphanQty} of these share${orphanQty !== 1 ? 's were' : ' was'} ` +
-            `opened before your earliest imported trade. The entry price ` +
-            `for that portion isn't known, but the P&L is accurate — ` +
-            `it comes straight from IBKR.`;
         }
         // If closingQty > 0 AND lastClosedLt is null (no LT was closed
         // this pass), that's the pure-orphan case already handled by

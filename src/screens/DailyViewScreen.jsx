@@ -506,7 +506,6 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
   const baseCurrency = useBaseCurrency();
   const [trades, setTrades] = useState([]);
   const [rawTrades, setRawTrades] = useState([]);
-  const [tradeToLt, setTradeToLt] = useState({});
   const [plannedTradesMap, setPlannedTradesMap] = useState({});
   const [dailyNotes, setDailyNotes] = useState({});
   const [loading, setLoading] = useState(true);
@@ -571,34 +570,15 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
         if (plansRes.error) throw plansRes.error;
         if (notesRes.error) throw notesRes.error;
 
-        // Second round: resolve which LT each raw trade belongs to. The join
-        // table is RLS-scoped via logical_trades.user_id so no .eq('user_id')
-        // is needed (and there isn't one to filter on anyway).
-        const tradeIds = (rawRes.data || []).map(t => t.id).filter(Boolean);
-        let lteRows = [];
-        if (tradeIds.length > 0) {
-          const lteRes = await supabase
-            .from('logical_trade_executions')
-            .select('trade_id, logical_trade_id, quantity_applied')
-            .in('trade_id', tradeIds);
-          if (lteRes.error) throw lteRes.error;
-          lteRows = lteRes.data || [];
-        }
-        // A single trade can map to multiple LTs (the rare "flip" case: one
-        // sell closes LT_A and opens LT_B). Attribute the trade to whichever
-        // LT has the largest quantity_applied -- good enough for the 99% case.
-        const perTrade = {};
-        for (const lte of lteRows) {
-          const prev = perTrade[lte.trade_id];
-          const q = parseFloat(lte.quantity_applied) || 0;
-          if (!prev || q > prev.q) perTrade[lte.trade_id] = { ltId: lte.logical_trade_id, q };
-        }
-        const tToLt = {};
-        for (const [tradeId, entry] of Object.entries(perTrade)) tToLt[tradeId] = entry.ltId;
+        // logical_trade_executions used to be queried here as a primary
+        // path for trade -> LT attribution. Removed 2026-04-25 after a
+        // schema audit found the table is empty and no code in this repo
+        // writes to it. The conid + time-window fallback (resolveLt
+        // below) was always doing the actual work; the LTE round-trip
+        // was a wasted network call.
 
         setTrades(logicalRes.data || []);
         setRawTrades(rawRes.data || []);
-        setTradeToLt(tToLt);
         const map = {};
         for (const p of (plansRes.data || [])) map[p.id] = p;
         setPlannedTradesMap(map);
@@ -650,9 +630,10 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
     };
 
     const resolveLt = (rawTrade, ms) => {
-      const viaLte = tradeToLt[rawTrade.id];
-      if (viaLte && ltById[viaLte]) return viaLte;
-      // Fallback: match by conid + time within an LT's open window.
+      // Match a raw trade to its parent LT by conid + time within the
+      // LT's open window. (Used to be a two-step path with the LTE join
+      // as the primary lookup, but that table is dead in this repo --
+      // see load() comment.)
       const candidates = ltsByConid[rawTrade.conid] || [];
       for (const lt of candidates) {
         const startMs = lt.opened_at ? new Date(lt.opened_at).getTime() : 0;
@@ -802,7 +783,7 @@ export default function DailyViewScreen({ session, refreshKey = 0 }) {
     );
 
     return result;
-  }, [rawTrades, tradeToLt, ltById, ltsByConid, search, dateFilter, sortAsc, dailyNotes, assetFilters]);
+  }, [rawTrades, ltById, ltsByConid, search, dateFilter, sortAsc, dailyNotes, assetFilters]);
 
   const uniqueDates = useMemo(() => {
     const set = new Set();
