@@ -5,10 +5,9 @@ import * as Sentry from '@sentry/react';
 import './index.css';
 import App from './App';
 
-// Vite envs are exposed via import.meta.env. envPrefix in vite.config.js
-// also accepts REACT_APP_ during the CRA-to-Vite transition window so a
-// dev or Vercel project that has not renamed env vars yet keeps working.
-const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN || import.meta.env.REACT_APP_SENTRY_DSN;
+// Vite envs are exposed via import.meta.env. Vars must be VITE_-prefixed
+// at build time to be embedded in the client bundle.
+const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
 Sentry.init({
   dsn: SENTRY_DSN,
   environment: import.meta.env.MODE,

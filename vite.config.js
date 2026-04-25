@@ -9,16 +9,15 @@ import react from '@vitejs/plugin-react';
 // Supabase + Stripe integrations -- just a maintained build tool.
 //
 // Notes for future-me:
-// - envPrefix accepts both VITE_ and REACT_APP_ during the migration so
-//   we don't have to flip every Vercel project env var on the same day.
-//   Once Vercel is fully renamed to VITE_*, drop REACT_APP_ here.
-// - server.port pins the dev server to 3000 to match the CRA muscle
-//   memory + Vercel `vercel dev` proxy expectations.
+// - envPrefix is the standard VITE_ prefix. The post-migration transition
+//   period (where REACT_APP_ was also accepted) ended once all Vercel
+//   project env vars were renamed.
+// - server.port pins the dev server to 3000 to match Vercel `vercel dev`
+//   proxy expectations.
 // - build.outDir is `dist` (Vite default). vercel.json was updated to
 //   point at it; CRA's `build/` directory is no longer produced.
 export default defineConfig({
   plugins: [react()],
-  envPrefix: ['VITE_', 'REACT_APP_'],
   server: {
     port: 3000,
   },
