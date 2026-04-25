@@ -1,7 +1,8 @@
 # Dependencies
 node_modules/
 
-# Production build
+# Production build (Vite output dir is dist/; CRA legacy was build/)
+dist/
 build/
 
 # Environment variables
