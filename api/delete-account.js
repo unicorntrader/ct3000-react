@@ -176,6 +176,27 @@ module.exports = async function handler(req, res) {
       // intentional: don't fail the whole deletion on storage cleanup error
     }
 
+    // ── Delete the Stripe customer (best-effort) ─────────────────────────
+    // Cancels any remaining Stripe subscriptions automatically (Stripe
+    // closes them as part of customer deletion). Done before auth.users
+    // delete so we still have stripe_customer_id available; failure here
+    // is non-fatal — Sentry-captured but doesn't block account deletion
+    // since the user's data is already gone from our side.
+    if (sub?.stripe_customer_id) {
+      try {
+        await stripe.customers.del(sub.stripe_customer_id);
+        console.log(`[delete-account] deleted Stripe customer ${sub.stripe_customer_id} for ${userId}`);
+      } catch (stripeErr) {
+        // 404 from Stripe (customer already gone) is not actually an error
+        if (stripeErr?.statusCode === 404) {
+          console.log(`[delete-account] Stripe customer ${sub.stripe_customer_id} already gone — skipping`);
+        } else {
+          console.warn('[delete-account] Stripe customer delete failed:', stripeErr?.message || stripeErr);
+          await captureServerError(stripeErr, { userId, step: 'stripe-customer-del', route: 'delete-account' });
+        }
+      }
+    }
+
     // ── Finally, delete the auth.users record ────────────────────────────
     // Done LAST so a mid-wipe failure leaves a recoverable state (user can
     // still log in, we can retry). Once this succeeds, the token they're

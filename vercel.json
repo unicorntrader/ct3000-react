@@ -6,14 +6,16 @@
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/sync.js":               { "maxDuration": 60 },
-    "api/rebuild.js":            { "maxDuration": 60 },
-    "api/debug-flex-xml.js":     { "maxDuration": 60 },
-    "api/cron-sync.js":          { "maxDuration": 60 },
-    "api/cron-anonymize-churn.js": { "maxDuration": 30 }
+    "api/sync.js":                   { "maxDuration": 60 },
+    "api/rebuild.js":                { "maxDuration": 60 },
+    "api/debug-flex-xml.js":         { "maxDuration": 60 },
+    "api/cron-sync.js":              { "maxDuration": 60 },
+    "api/cron-anonymize-churn.js":   { "maxDuration": 30 },
+    "api/cron-reconcile-stripe.js":  { "maxDuration": 60 }
   },
   "crons": [
-    { "path": "/api/cron-sync",            "schedule": "0 2 * * *" },
-    { "path": "/api/cron-anonymize-churn", "schedule": "0 3 * * 0" }
+    { "path": "/api/cron-sync",              "schedule": "0 2 * * *" },
+    { "path": "/api/cron-anonymize-churn",   "schedule": "0 3 * * 0" },
+    { "path": "/api/cron-reconcile-stripe",  "schedule": "0 * * * *" }
   ]
 }
