@@ -17,6 +17,59 @@ function getRawBody(req) {
   });
 }
 
+const tsFromUnix = (s) => (s ? new Date(s * 1000).toISOString() : null);
+
+// Build the upsert/update payload for a user_subscriptions row from a Stripe
+// subscription object.
+//
+// Always writes Stripe mirror columns (stripe_*) so admin / debugging can
+// see Stripe's actual state regardless of comp.
+//
+// Gate columns (subscription_status / trial_ends_at / current_period_ends_at)
+// are written ONLY for non-comped users. For comped users they're owned by
+// the comp model (status='active', dates pinned to 2099) and must not be
+// overwritten by a Stripe event — that's how a phantom Stripe subscription
+// can exist alongside an active comp without revoking access.
+//
+// isCompedOverride: pass it if the caller already looked up is_comped (saves
+// a round-trip in the updated/deleted handlers). Otherwise we look it up.
+async function buildWritePayload({ userId, customerId, subscription, isCompedOverride }) {
+  let isComped = isCompedOverride;
+  if (isComped === undefined) {
+    const { data } = await supabaseAdmin
+      .from('user_subscriptions')
+      .select('is_comped')
+      .eq('user_id', userId)
+      .maybeSingle();
+    isComped = !!data?.is_comped;
+  }
+
+  const status = subscription.status;
+  const trialEnd = tsFromUnix(subscription.trial_end);
+  const periodEnd = tsFromUnix(subscription.current_period_end);
+  const canceledAt = tsFromUnix(subscription.canceled_at);
+
+  const payload = {
+    // Linkage — always written
+    stripe_customer_id: customerId,
+    stripe_subscription_id: subscription.id,
+    // Mirror — always written, regardless of comp
+    stripe_subscription_status: status,
+    stripe_trial_end: trialEnd,
+    stripe_current_period_end: periodEnd,
+    stripe_canceled_at: canceledAt,
+    stripe_synced_at: new Date().toISOString(),
+  };
+
+  if (!isComped) {
+    payload.subscription_status = status;
+    payload.trial_ends_at = trialEnd;
+    payload.current_period_ends_at = periodEnd;
+  }
+
+  return payload;
+}
+
 async function handler(req, res) {
   console.log('[webhook] invoked — method:', req.method);
 
@@ -93,92 +146,44 @@ async function handler(req, res) {
         // Fetch subscription from Stripe to get accurate status + dates
         console.log('[webhook] retrieving subscription:', subscriptionId);
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-        const status = subscription.status;
-        const periodEnd = subscription.current_period_end
-          ? new Date(subscription.current_period_end * 1000).toISOString() : null;
-        const trialEnd = subscription.trial_end
-          ? new Date(subscription.trial_end * 1000).toISOString() : null;
-        console.log('[webhook] subscription status:', status, '| trialEnd:', trialEnd, '| periodEnd:', periodEnd);
-
-        // Comped users: record the Stripe linkage (customer + subscription
-        // ids) but never touch subscription_status / trial_ends_at /
-        // current_period_ends_at — those are owned by the comp and must
-        // not be downgraded. Without recording the linkage, a phantom
-        // Stripe subscription created during a checkout would silently
-        // keep billing the user's card with no surface for the app to
-        // cancel it (billing portal can't open without a customer id).
-        // Recording it lets admin / billing-portal cancel from our side.
-        const { data: existingRow } = await supabaseAdmin
-          .from('user_subscriptions')
-          .select('is_comped')
-          .eq('user_id', userId)
-          .maybeSingle();
-        if (existingRow?.is_comped) {
-          console.log('[webhook] user is comped — recording linkage only for userId:', userId);
-          const { error: linkageErr } = await supabaseAdmin
-            .from('user_subscriptions')
-            .update({
-              stripe_customer_id: customerId,
-              stripe_subscription_id: subscriptionId,
-            })
-            .eq('user_id', userId);
-          if (linkageErr) {
-            console.error('[webhook] linkage update FAILED — userId:', userId, '| error:', linkageErr.message);
-            return res.status(500).json({ error: linkageErr.message });
-          }
-          console.log('[webhook] linkage recorded for comped userId:', userId);
-          break;
-        }
-
+        const payload = await buildWritePayload({ userId, customerId, subscription });
         const { error: upsertErr } = await supabaseAdmin
           .from('user_subscriptions')
-          .upsert(
-            {
-              user_id: userId,
-              stripe_customer_id: customerId,
-              stripe_subscription_id: subscriptionId,
-              subscription_status: status,
-              trial_ends_at: trialEnd,
-              current_period_ends_at: periodEnd,
-            },
-            { onConflict: 'user_id' }
-          );
+          .upsert({ user_id: userId, ...payload }, { onConflict: 'user_id' });
         if (upsertErr) {
           console.error('[webhook] upsert FAILED — userId:', userId, '| error:', upsertErr.message);
           return res.status(500).json({ error: upsertErr.message });
         }
-        console.log('[webhook] upsert SUCCESS — userId:', userId, '| status:', status, '| trialEnd:', trialEnd, '| periodEnd:', periodEnd);
+        console.log('[webhook] upsert SUCCESS — userId:', userId, '| keys:', Object.keys(payload).join(','));
         break;
       }
 
       case 'customer.subscription.updated': {
         const subscription = event.data.object;
-        const periodEnd = subscription.current_period_end
-          ? new Date(subscription.current_period_end * 1000).toISOString() : null;
-        const trialEnd = subscription.trial_end
-          ? new Date(subscription.trial_end * 1000).toISOString() : null;
         console.log('[webhook] subscription.updated — id:', subscription.id, '| status:', subscription.status);
 
         const { data: subRow } = await supabaseAdmin
           .from('user_subscriptions')
-          .select('is_comped')
+          .select('user_id, is_comped')
           .eq('stripe_subscription_id', subscription.id)
           .maybeSingle();
-        if (subRow?.is_comped) {
-          console.log('[webhook] user is comped — skipping update for subscription:', subscription.id);
+        if (!subRow) {
+          console.log('[webhook] no row matching subscription_id — ignoring:', subscription.id);
           break;
         }
 
+        const payload = await buildWritePayload({
+          userId: subRow.user_id,
+          customerId: subscription.customer,
+          subscription,
+          isCompedOverride: subRow.is_comped,
+        });
         const { error: updateErr } = await supabaseAdmin
           .from('user_subscriptions')
-          .update({
-            subscription_status: subscription.status,
-            trial_ends_at: trialEnd,
-            current_period_ends_at: periodEnd,
-          })
+          .update(payload)
           .eq('stripe_subscription_id', subscription.id);
         if (updateErr) console.error('[webhook] update error:', updateErr.message);
-        else console.log('[webhook] updated subscription status:', subscription.status);
+        else console.log('[webhook] updated — keys:', Object.keys(payload).join(','));
         break;
       }
 
@@ -188,20 +193,26 @@ async function handler(req, res) {
 
         const { data: delRow } = await supabaseAdmin
           .from('user_subscriptions')
-          .select('is_comped')
+          .select('user_id, is_comped')
           .eq('stripe_subscription_id', subscription.id)
           .maybeSingle();
-        if (delRow?.is_comped) {
-          console.log('[webhook] user is comped — skipping cancel for subscription:', subscription.id);
+        if (!delRow) {
+          console.log('[webhook] no row matching subscription_id — ignoring:', subscription.id);
           break;
         }
 
+        const payload = await buildWritePayload({
+          userId: delRow.user_id,
+          customerId: subscription.customer,
+          subscription,
+          isCompedOverride: delRow.is_comped,
+        });
         const { error: deleteErr } = await supabaseAdmin
           .from('user_subscriptions')
-          .update({ subscription_status: 'canceled' })
+          .update(payload)
           .eq('stripe_subscription_id', subscription.id);
         if (deleteErr) console.error('[webhook] delete update error:', deleteErr.message);
-        else console.log('[webhook] marked subscription as canceled');
+        else console.log('[webhook] cancel handled — keys:', Object.keys(payload).join(','));
         break;
       }
 
