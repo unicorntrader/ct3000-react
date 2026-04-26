@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useBumpDataVersion } from '../lib/DataVersionContext'
 import { fmtPrice, fmtPnl, fmtDateLong, fmtSymbol } from '../lib/formatters'
 import TradeChartPanel from './TradeChartPanel'
-import TradeScreenshot from './TradeScreenshot'
+import { useTradeScreenshot, ScreenshotActions, ScreenshotThumbnail } from './TradeScreenshot'
 
 // Rendered inline underneath a trade row in the Smart Journal table. Same
 // content the old TradeJournalDrawer used to show, but with no overlay, no
@@ -27,6 +27,7 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [chartOpen, setChartOpen] = useState(false)
+  const screenshot = useTradeScreenshot(trade, onSaved)
   const bump = useBumpDataVersion()
 
   // Refs so the keyboard effect can call the latest handler without having it
@@ -197,9 +198,15 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
   handleSaveRef.current = handleSave
 
   return (
-    <div className="px-6 py-5 bg-gray-50 border-y border-gray-100">
-      {/* Full-width header — symbol, direction, win/loss, date, reset */}
-      <div className="flex items-center flex-wrap gap-2 mb-3 max-w-5xl">
+    <div className="px-6 py-5 bg-gray-50 border-y border-gray-100 max-w-5xl">
+      {/* Full-width vertical stack — no 2-col grid. Each section sits on its
+          own row so nothing leaves a blank gap next to it. Order top-to-bottom
+          mirrors the review workflow: identify → act → see metrics → see plan
+          vs actual → look at the chart screenshot → write notes → look at the
+          generated chart. */}
+
+      {/* Header — symbol, direction, win/loss, date, reset */}
+      <div className="flex items-center flex-wrap gap-2 mb-4">
         <span className="text-base font-semibold text-gray-900">{fmtSymbol(trade)}</span>
         <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
           trade.direction === 'LONG' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
@@ -227,10 +234,9 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
         )}
       </div>
 
-      {/* Action row — chart + screenshot. Sits right under the header so the
-          two key actions are visible without scrolling past the stats/notes. */}
+      {/* Actions — chart toggle + screenshot upload/replace/remove. */}
       {!isOpen_trade && (
-        <div onClick={e => e.stopPropagation()} className="flex flex-wrap items-center gap-3 mb-5 max-w-5xl">
+        <div onClick={e => e.stopPropagation()} className="flex flex-wrap items-center gap-2 mb-5">
           {!chartOpen ? (
             <button
               onClick={() => setChartOpen(true)}
@@ -252,88 +258,97 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
               Hide chart
             </button>
           )}
-          <TradeScreenshot trade={trade} onSaved={onSaved} />
+          <ScreenshotActions state={screenshot} />
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl">
-        {/* Left column: stats + plan vs actual */}
-        <div>
-          {/* Stats row */}
-          <div className="grid grid-cols-5 gap-2 mb-5">
-            <StatCard label="Entry" value={fmtPrice(trade.avg_entry_price, currency)} />
-            <StatCard label="Exit" value={actualExit != null ? fmtPrice(actualExit, currency) : '—'} />
-            <StatCard
-              label="P&L"
-              value={pnl != null ? fmtPnl(pnl, currency) : '—'}
-              color={pnl == null ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}
-            />
-            <StatCard
-              label="R"
-              value={rMultiple ?? '—'}
-              color={rMultiple ? (parseFloat(rMultiple) >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'}
-            />
-            <StatCard
-              label="Adherence"
-              value={adherence != null ? adherence : '—'}
-              color={
-                adherence == null ? 'text-gray-400'
-                : adherence >= 75 ? 'text-green-600'
-                : adherence >= 50 ? 'text-amber-600'
-                : 'text-red-500'
-              }
-            />
-          </div>
+      {/* Stats — 5 cards full width */}
+      <div className="grid grid-cols-5 gap-2 mb-5">
+        <StatCard label="Entry" value={fmtPrice(trade.avg_entry_price, currency)} />
+        <StatCard label="Exit" value={actualExit != null ? fmtPrice(actualExit, currency) : '—'} />
+        <StatCard
+          label="P&L"
+          value={pnl != null ? fmtPnl(pnl, currency) : '—'}
+          color={pnl == null ? 'text-gray-400' : isWin ? 'text-green-600' : 'text-red-500'}
+        />
+        <StatCard
+          label="R"
+          value={rMultiple ?? '—'}
+          color={rMultiple ? (parseFloat(rMultiple) >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'}
+        />
+        <StatCard
+          label="Adherence"
+          value={adherence != null ? adherence : '—'}
+          color={
+            adherence == null ? 'text-gray-400'
+            : adherence >= 75 ? 'text-green-600'
+            : adherence >= 50 ? 'text-amber-600'
+            : 'text-red-500'
+          }
+        />
+      </div>
 
-          {/* Plan vs actual — matched closed trades only */}
-          {isMatchedClosed && planRows.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Plan vs actual</p>
-              <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-                {planRows.map(row => (
-                  <div key={row.label} className="flex items-center justify-between px-4 py-2">
-                    <span className="text-xs text-gray-400 w-16">{row.label}</span>
-                    <span className="text-xs text-gray-300 line-through">{row.planned}</span>
-                    <span className="text-xs font-medium text-blue-600">{row.actual}</span>
-                  </div>
-                ))}
+      {/* Plan vs actual — matched closed trades only */}
+      {isMatchedClosed && planRows.length > 0 && (
+        <div className="mb-5">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Plan vs actual</p>
+          <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+            {planRows.map(row => (
+              <div key={row.label} className="flex items-center justify-between px-4 py-2">
+                <span className="text-xs text-gray-400 w-16">{row.label}</span>
+                <span className="text-xs text-gray-300 line-through">{row.planned}</span>
+                <span className="text-xs font-medium text-blue-600">{row.actual}</span>
               </div>
-              {plan.thesis && (
-                <div className="mt-3">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Thesis</p>
-                  <p className="text-xs text-gray-500 italic border-l-2 border-gray-200 pl-3">
-                    "{plan.thesis}"
-                  </p>
-                </div>
-              )}
+            ))}
+          </div>
+          {plan.thesis && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Thesis</p>
+              <p className="text-xs text-gray-500 italic border-l-2 border-gray-200 pl-3">
+                "{plan.thesis}"
+              </p>
             </div>
           )}
         </div>
+      )}
 
-        {/* Right column: notes */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              Notes
-            </label>
-            {isDirty && !saved && (
-              <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
-            )}
-          </div>
-          <textarea
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            placeholder="What happened? What would you do differently?"
-            rows={6}
-            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white text-gray-900 placeholder-gray-300 resize-none"
-            onClick={e => e.stopPropagation()}
-          />
+      {/* Screenshot thumbnail — small, left-aligned. Only renders when one exists.
+          Replace/Remove live in the Actions row above. */}
+      {!isOpen_trade && screenshot.path && (
+        <div onClick={e => e.stopPropagation()} className="mb-5">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Screenshot</p>
+          <ScreenshotThumbnail state={screenshot} />
+        </div>
+      )}
 
-          {/* Save button — bigger state differences so "saved" is obvious */}
+      {/* Notes — full-width textarea + save */}
+      <div onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Notes
+          </label>
+          {isDirty && !saved && (
+            <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
+          )}
+        </div>
+        <textarea
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          placeholder="What happened? What would you do differently?"
+          rows={5}
+          className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white text-gray-900 placeholder-gray-300 resize-none"
+        />
+
+        {/* Save button + keyboard hints sit on one row to keep the column tight */}
+        <div className="flex items-center justify-between mt-3 gap-4">
+          <p className="text-[11px] text-gray-400">
+            <kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded text-gray-500">⌘ ↵</kbd> save &middot;
+            <kbd className="ml-2 px-1.5 py-0.5 bg-white border border-gray-200 rounded text-gray-500">Esc</kbd> close
+          </p>
           <button
             onClick={e => { e.stopPropagation(); handleSave(); }}
             disabled={saving || !isDirty}
-            className={`mt-3 w-full font-semibold py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 ${
+            className={`font-semibold py-2.5 px-6 rounded-xl text-sm transition-all flex items-center justify-center gap-2 ${
               saved
                 ? 'bg-green-500 text-white ring-2 ring-green-300 scale-[1.01]'
                 : isDirty
@@ -350,21 +365,12 @@ export default function TradeInlineDetail({ trade, plan, onSaved, onCollapse }) 
               </>
             ) : saving ? 'Saving…' : isDirty ? 'Save notes' : 'No changes'}
           </button>
-
-          {/* Keyboard shortcut hints */}
-          <p className="mt-2 text-[11px] text-gray-400 text-center">
-            <kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded text-gray-500">⌘ ↵</kbd> save &middot;
-            <kbd className="ml-2 px-1.5 py-0.5 bg-white border border-gray-200 rounded text-gray-500">Esc</kbd> close
-          </p>
         </div>
       </div>
 
-      {/* Chart panel — full-width below the two-column layout when the
-          user has clicked Show chart. The button itself sits in the action
-          row above the grid; only the panel itself lives down here so it
-          has the breathing room it needs. */}
+      {/* Chart panel — full-width below everything when toggled open. */}
       {!isOpen_trade && chartOpen && (
-        <div onClick={e => e.stopPropagation()} className="mt-6 max-w-5xl">
+        <div onClick={e => e.stopPropagation()} className="mt-6">
           <TradeChartPanel trade={trade} plan={plan} />
         </div>
       )}

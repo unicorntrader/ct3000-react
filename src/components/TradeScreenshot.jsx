@@ -13,6 +13,10 @@ import { useBumpDataVersion } from '../lib/DataVersionContext'
 //   * the path string survives rebuildForUser via the existing
 //     preservation mechanism (see api/_lib/rebuildForUser.js — same
 //     pattern used for review_notes, user_reviewed, etc.)
+//
+// Exposed as a hook + two stateless render pieces so the parent
+// (TradeInlineDetail) can place the action buttons and the thumbnail
+// in two different sections without losing shared state.
 
 function buildPath(trade) {
   if (!trade?.user_id || !trade?.opening_ib_order_id) return null
@@ -20,7 +24,7 @@ function buildPath(trade) {
   return `${trade.user_id}/${trade.opening_ib_order_id}_${conidPart}.jpg`
 }
 
-export default function TradeScreenshot({ trade, onSaved }) {
+export function useTradeScreenshot(trade, onSaved) {
   const fileInputRef = useRef(null)
   const [signedUrl, setSignedUrl] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -30,7 +34,6 @@ export default function TradeScreenshot({ trade, onSaved }) {
 
   const path = trade?.screenshot_path || null
 
-  // Resolve a signed URL whenever the screenshot path changes.
   useEffect(() => {
     let cancelled = false
     if (!path) {
@@ -53,7 +56,7 @@ export default function TradeScreenshot({ trade, onSaved }) {
     return () => { cancelled = true }
   }, [path])
 
-  const handlePick = () => fileInputRef.current?.click()
+  const pickFile = () => fileInputRef.current?.click()
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0]
@@ -78,7 +81,6 @@ export default function TradeScreenshot({ trade, onSaved }) {
         })
       if (upErr) throw upErr
 
-      // Persist the path on the logical trade row.
       const { data: updated, error: dbErr } = await supabase
         .from('logical_trades')
         .update({ screenshot_path: targetPath })
@@ -98,7 +100,7 @@ export default function TradeScreenshot({ trade, onSaved }) {
     }
   }
 
-  const handleRemove = async () => {
+  const removeFile = async () => {
     if (!path) return
     if (!window.confirm('Remove this screenshot?')) return
     setBusy(true)
@@ -129,78 +131,82 @@ export default function TradeScreenshot({ trade, onSaved }) {
     }
   }
 
-  // No screenshot yet — show the upload affordance.
-  if (!path) {
-    return (
-      <div>
+  return {
+    path, signedUrl, busy, error, lightboxOpen, setLightboxOpen,
+    fileInputRef, handleFileChange, pickFile, removeFile,
+  }
+}
+
+const BTN_BASE = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-sm font-medium text-gray-600 transition-colors disabled:opacity-50'
+
+export function ScreenshotActions({ state }) {
+  const { path, busy, error, fileInputRef, handleFileChange, pickFile, removeFile } = state
+  return (
+    <>
+      {!path ? (
         <button
-          onClick={handlePick}
+          onClick={pickFile}
           disabled={busy}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 hover:border-blue-400 hover:text-blue-600 text-sm font-medium text-gray-600 transition-colors disabled:opacity-50"
+          className={`${BTN_BASE} hover:border-blue-400 hover:text-blue-600`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
           {busy ? 'Uploading…' : 'Add screenshot'}
         </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png,image/jpeg"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-        {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
-      </div>
-    )
-  }
+      ) : (
+        <>
+          <button
+            onClick={pickFile}
+            disabled={busy}
+            className={`${BTN_BASE} hover:border-blue-400 hover:text-blue-600`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            {busy ? 'Uploading…' : 'Replace screenshot'}
+          </button>
+          <button
+            onClick={removeFile}
+            disabled={busy}
+            className={`${BTN_BASE} hover:border-red-400 hover:text-red-600`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" />
+            </svg>
+            Remove screenshot
+          </button>
+        </>
+      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+      {error && <span className="text-xs text-red-500 ml-2">{error}</span>}
+    </>
+  )
+}
 
-  // Screenshot exists — show the thumbnail with hover actions.
+export function ScreenshotThumbnail({ state }) {
+  const { path, signedUrl, lightboxOpen, setLightboxOpen } = state
+  if (!path) return null
   return (
-    <div>
-      <div className="flex items-start gap-3">
-        <button
-          type="button"
-          onClick={() => setLightboxOpen(true)}
-          className="block w-32 h-20 rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 transition-colors bg-gray-50 flex-shrink-0"
-        >
-          {signedUrl ? (
-            <img src={signedUrl} alt="Trade screenshot" className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-xs text-gray-300">loading…</div>
-          )}
-        </button>
-        <div className="flex flex-col gap-1.5 mt-0.5">
-          <p className="text-xs text-gray-500">Your setup screenshot</p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handlePick}
-              disabled={busy}
-              className="text-xs text-gray-500 hover:text-blue-600 underline decoration-dotted underline-offset-2 disabled:opacity-50"
-            >
-              Replace
-            </button>
-            <span className="text-gray-300">·</span>
-            <button
-              onClick={handleRemove}
-              disabled={busy}
-              className="text-xs text-gray-400 hover:text-red-600 underline decoration-dotted underline-offset-2 disabled:opacity-50"
-            >
-              Remove
-            </button>
-          </div>
-        </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png,image/jpeg"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-      </div>
-      {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+    <>
+      <button
+        type="button"
+        onClick={() => setLightboxOpen(true)}
+        className="block w-48 h-32 rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 transition-colors bg-gray-50"
+      >
+        {signedUrl ? (
+          <img src={signedUrl} alt="Trade screenshot" className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-xs text-gray-300">loading…</div>
+        )}
+      </button>
 
-      {/* Lightbox */}
       {lightboxOpen && signedUrl && (
         <div
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6 cursor-zoom-out"
@@ -223,6 +229,6 @@ export default function TradeScreenshot({ trade, onSaved }) {
           </button>
         </div>
       )}
-    </div>
+    </>
   )
 }
