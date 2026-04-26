@@ -52,21 +52,28 @@ module.exports = async function handler(req, res) {
   const appUrl = process.env.APP_URL || 'https://ct3000-react.vercel.app';
 
   try {
-    // 2. Look up the Stripe customer ID we saved during checkout. Comped
-    //    users (invite redemption) never hit checkout, so they legitimately
-    //    have no customer — handle with a clear error, not a crash.
+    // 2. Look up the Stripe customer ID we saved during checkout. Two
+    //    short-circuits before we ever touch Stripe:
+    //    a) Comped users have no billing to manage — return a clear error.
+    //       Check this FIRST, before stripe_customer_id, because comped
+    //       users may legitimately have a leftover customer id from a
+    //       past test checkout (recorded by stripe-webhook so admin can
+    //       cancel a phantom subscription). Without the comp-first check
+    //       they'd land in an empty Stripe portal with no real billing
+    //       to manage — confusing UX.
+    //    b) Non-comped users with no customer id never hit checkout.
     const { data: sub } = await supabaseAdmin
       .from('user_subscriptions')
       .select('stripe_customer_id, is_comped')
       .eq('user_id', user.id)
       .maybeSingle();
 
+    if (sub?.is_comped) {
+      return res.status(400).json({
+        error: 'Your account is on a complimentary plan — no billing to manage. Email support if you need to close your account.',
+      });
+    }
     if (!sub?.stripe_customer_id) {
-      if (sub?.is_comped) {
-        return res.status(400).json({
-          error: 'Your account is on a complimentary plan — no billing to manage. Email support if you need to close your account.',
-        });
-      }
       return res.status(400).json({
         error: 'No billing record found. Please start a subscription first.',
       });

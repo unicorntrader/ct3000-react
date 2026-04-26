@@ -81,14 +81,33 @@ async function handler(req, res) {
           ? new Date(subscription.trial_end * 1000).toISOString() : null;
         console.log('[webhook] subscription status:', status, '| trialEnd:', trialEnd, '| periodEnd:', periodEnd);
 
-        // Skip update if user has a forever comp
+        // Comped users: record the Stripe linkage (customer + subscription
+        // ids) but never touch subscription_status / trial_ends_at /
+        // current_period_ends_at — those are owned by the comp and must
+        // not be downgraded. Without recording the linkage, a phantom
+        // Stripe subscription created during a checkout would silently
+        // keep billing the user's card with no surface for the app to
+        // cancel it (billing portal can't open without a customer id).
+        // Recording it lets admin / billing-portal cancel from our side.
         const { data: existingRow } = await supabaseAdmin
           .from('user_subscriptions')
           .select('is_comped')
           .eq('user_id', userId)
           .maybeSingle();
         if (existingRow?.is_comped) {
-          console.log('[webhook] user is comped — skipping upsert for userId:', userId);
+          console.log('[webhook] user is comped — recording linkage only for userId:', userId);
+          const { error: linkageErr } = await supabaseAdmin
+            .from('user_subscriptions')
+            .update({
+              stripe_customer_id: customerId,
+              stripe_subscription_id: subscriptionId,
+            })
+            .eq('user_id', userId);
+          if (linkageErr) {
+            console.error('[webhook] linkage update FAILED — userId:', userId, '| error:', linkageErr.message);
+            return res.status(500).json({ error: linkageErr.message });
+          }
+          console.log('[webhook] linkage recorded for comped userId:', userId);
           break;
         }
 
