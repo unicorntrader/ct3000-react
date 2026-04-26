@@ -1,5 +1,6 @@
 const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
+const { captureServerError } = require('./_lib/sentry');
 
 /**
  * Creates a Stripe Billing Portal session for the authenticated user.
@@ -91,6 +92,7 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ url: portal.url });
   } catch (err) {
     console.error('[billing-portal] error:', err.message);
+    await captureServerError(err, { userId: user.id, route: 'billing-portal' });
     return res.status(500).json({ error: err.message });
   }
 };

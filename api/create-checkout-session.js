@@ -1,5 +1,6 @@
 const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
+const { captureServerError } = require('./_lib/sentry');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -90,6 +91,7 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ url: session.url });
   } catch (err) {
     console.error('[checkout] error:', err.message);
+    await captureServerError(err, { userId: user.id, route: 'create-checkout-session' });
     return res.status(500).json({ error: err.message });
   }
 };

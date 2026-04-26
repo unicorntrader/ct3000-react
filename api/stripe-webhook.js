@@ -38,6 +38,25 @@ async function handler(req, res) {
   }
   console.log('[webhook] verified event type:', event.type, '| id:', event.id);
 
+  // Idempotency. Stripe retries webhooks on any 5XX or network blip; without
+  // this guard, a retried checkout.session.completed would re-run and could
+  // downgrade a freshly active sub back to trialing or reset trial_ends_at.
+  // The unique pk on processed_stripe_events.event_id makes the insert race-
+  // safe — only one of N concurrent retries wins; the rest hit 23505 and
+  // return 200 (so Stripe stops retrying).
+  const { error: dedupErr } = await supabaseAdmin
+    .from('processed_stripe_events')
+    .insert({ event_id: event.id, event_type: event.type });
+  if (dedupErr) {
+    if (dedupErr.code === '23505') {
+      console.log('[webhook] event already processed — skipping:', event.id);
+      return res.status(200).json({ received: true, deduped: true });
+    }
+    console.error('[webhook] dedup insert error:', dedupErr.message);
+    // Fall through and process anyway — better to risk a duplicate than to
+    // drop the event entirely on a transient DB hiccup.
+  }
+
   try {
     switch (event.type) {
 

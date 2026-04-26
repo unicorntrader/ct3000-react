@@ -399,7 +399,7 @@ export default function ReviewScreen({ session }) {
                           <p className="text-[11px] text-gray-400 truncate">
                             Actual:{' '}
                             <span className="text-gray-700 font-medium">
-                              {actualEntry != null ? fmtPrice(actualEntry, current?.currency || 'USD') : '—'}
+                              {actualEntry != null ? fmtPrice(actualEntry, planCurrency) : '—'}
                               {actualQty != null && ` · ${actualQty} sh`}
                             </span>
                             {(entryDelta != null || qtyDelta != null) && (

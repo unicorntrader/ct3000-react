@@ -32,6 +32,12 @@ const CHECKOUT_SUCCESS = new URLSearchParams(window.location.search).get('checko
 
 function isActive(sub) {
   if (!sub) return false
+  // Comp short-circuit. Mirrors api/_lib/requireActiveSubscription.js so the
+  // client-side gate agrees with the server. Today every comp also carries
+  // subscription_status='active' so the next branch would also return true,
+  // but a stray non-active status on a comped row used to lock the user out
+  // of the UI even though the API let them in.
+  if (sub.is_comped) return true
   const { subscription_status, trial_ends_at, current_period_ends_at } = sub
   if (subscription_status === 'active') return true
   if (subscription_status === 'trialing') {
