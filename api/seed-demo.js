@@ -251,10 +251,17 @@ module.exports = async function handler(req, res) {
   ])
   if (mtErr) return res.status(500).json({ error: `missed_trades: ${mtErr.message}` })
 
-  await supabaseAdmin
+  // has_seen_welcome was dropped on 20260420 — only demo_seeded remains.
+  // Error-checked so a future schema drift surfaces loudly instead of
+  // silently masking the inserts above.
+  const { error: subFlagErr } = await supabaseAdmin
     .from('user_subscriptions')
-    .update({ demo_seeded: true, has_seen_welcome: true })
+    .update({ demo_seeded: true })
     .eq('user_id', userId)
+  if (subFlagErr) {
+    console.error('[seed-demo] demo_seeded flag update failed:', subFlagErr.message)
+    return res.status(500).json({ error: subFlagErr.message })
+  }
 
   console.log('[seed-demo] seeded demo data for userId:', userId)
   return res.status(200).json({ success: true })
