@@ -226,7 +226,6 @@ module.exports = async function handler(req, res) {
       currency: 'USD',
       matching_status: t.match || 'needs_review',
       planned_trade_id: t.planTag ? planId[t.planTag] : null,
-      is_reversal: false,
       is_demo: true,
     })
   }
