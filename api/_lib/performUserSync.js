@@ -252,12 +252,16 @@ async function performUserSync(userId, supabaseAdmin) {
     if (error) throw new Error(`Positions insert failed: ${error.message}`);
   }
 
-  // Clear any demo rows still sitting around from signup
+  // Clear any demo rows still sitting around from signup. `trades` joined the
+  // demo seed alongside derived tables, so it gets wiped here too — otherwise
+  // a first-real-sync would FIFO over a mix of demo + real executions and
+  // produce nonsense logicals.
   await Promise.all([
     supabaseAdmin.from('logical_trades').delete().eq('user_id', userId).eq('is_demo', true),
     supabaseAdmin.from('open_positions').delete().eq('user_id', userId).eq('is_demo', true),
     supabaseAdmin.from('planned_trades').delete().eq('user_id', userId).eq('is_demo', true),
     supabaseAdmin.from('playbooks').delete().eq('user_id', userId).eq('is_demo', true),
+    supabaseAdmin.from('trades').delete().eq('user_id', userId).eq('is_demo', true),
   ]);
   await supabaseAdmin
     .from('user_subscriptions')
