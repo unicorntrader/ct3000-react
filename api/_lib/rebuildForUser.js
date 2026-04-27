@@ -2,6 +2,7 @@
 
 const { buildLogicalTrades } = require('./logicalTradeBuilder');
 const { computeAdherenceScore } = require('./adherenceScore');
+const { recomputeDailyAdherence } = require('./recomputeDailyAdherence');
 
 // Match logical trades to plans in place. Returns plan-currency backfills that
 // the caller is expected to persist. Mirrors the behaviour in api/rebuild.js
@@ -157,6 +158,17 @@ async function rebuildForUser(userId, supabaseAdmin) {
     .from('logical_trades')
     .insert(logical);
   if (insertError) throw new Error(insertError.message);
+
+  // Refresh the daily_adherence rollup so PerformanceScreen (and any future
+  // consumer like TradeSquares) sees fresh per-day numbers without needing
+  // its own client-side aggregation. Best-effort: a rollup write failure
+  // here shouldn't fail the rebuild — the underlying logical_trades did
+  // land correctly. Log + continue. Sentry catches it via the caller.
+  try {
+    await recomputeDailyAdherence(supabaseAdmin, userId);
+  } catch (err) {
+    console.error('[rebuild] daily_adherence recompute failed (non-fatal):', err?.message || err);
+  }
 
   return { count: logical.length, warnings };
 }

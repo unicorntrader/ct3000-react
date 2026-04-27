@@ -15,6 +15,130 @@ import {
 
 const PRESETS = ['1D', '1W', '1M', '3M', 'All'];
 
+// Discipline heatmap. 52-week GitHub-style grid; rows = days of week,
+// columns = weeks (oldest left). Each cell colored by that day's adherence
+// score from the daily_adherence table:
+//   green  ≥75   amber 50–74   red  <50   gray = no closed trades that day
+// Cell hover/focus shows date + score in the legend strip below.
+//
+// Always shows last 365 days regardless of the period filter above —
+// the period filter scopes the KPIs; this heatmap is a year-view
+// "discipline year-in-review" surface.
+function AdherenceHeatmap({ daysByDate }) {
+  // Build 52 weeks × 7 rows starting from the Monday of the week 51 weeks ago.
+  // Right-most column is the current week. Each cell knows its date_key.
+  const weeks = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    // Find the Sunday at or before today, then walk back 51 weeks.
+    const todayDow = today.getDay(); // 0 = Sunday
+    const lastSun = new Date(today);
+    lastSun.setDate(today.getDate() - todayDow);
+    const start = new Date(lastSun);
+    start.setDate(lastSun.getDate() - 51 * 7);
+
+    const cols = [];
+    for (let w = 0; w < 52; w++) {
+      const col = [];
+      for (let d = 0; d < 7; d++) {
+        const cellDate = new Date(start);
+        cellDate.setDate(start.getDate() + w * 7 + d);
+        const dateKey = cellDate.toISOString().slice(0, 10);
+        const isFuture = cellDate > today;
+        col.push({ date: cellDate, dateKey, isFuture });
+      }
+      cols.push(col);
+    }
+    return cols;
+  }, []);
+
+  const [hovered, setHovered] = useState(null); // { dateKey, score, count } or null
+
+  // Pick fill color from score. null score (no closed trades) → gray.
+  const cellColor = (dayRow) => {
+    if (dayRow?.isFuture) return 'bg-transparent';
+    const day = daysByDate.get(dayRow.dateKey);
+    if (!day || day.trade_count === 0) return 'bg-gray-100';
+    const score = day.adherence_score;
+    if (score == null) return 'bg-gray-200'; // had trades but none scored (matched but missing plan inputs)
+    if (score >= 75) return 'bg-green-500';
+    if (score >= 50) return 'bg-amber-400';
+    return 'bg-red-500';
+  };
+
+  const dayLabels = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
+
+  return (
+    <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700">Discipline year</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Each square is a trading day, colored by that day's average adherence</p>
+        </div>
+        <div className="flex items-center gap-3 text-[11px] text-gray-500">
+          <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-green-500" />≥75</span>
+          <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-400" />50–74</span>
+          <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-500" />&lt;50</span>
+          <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-gray-100 border border-gray-200" />no trades</span>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        {/* Day-of-week labels */}
+        <div className="flex flex-col gap-[3px] pt-[18px] pr-1">
+          {dayLabels.map((l, i) => (
+            <div key={i} className="text-[10px] text-gray-400 leading-[12px] h-[12px]">{l}</div>
+          ))}
+        </div>
+        {/* Grid */}
+        <div className="flex-1 overflow-x-auto">
+          <div className="flex gap-[3px] min-w-fit">
+            {weeks.map((col, ci) => (
+              <div key={ci} className="flex flex-col gap-[3px]">
+                {col.map((cell) => {
+                  const day = daysByDate.get(cell.dateKey);
+                  const isHovered = hovered?.dateKey === cell.dateKey;
+                  return (
+                    <button
+                      key={cell.dateKey}
+                      type="button"
+                      onMouseEnter={() => !cell.isFuture && setHovered({
+                        dateKey: cell.dateKey,
+                        score: day?.adherence_score ?? null,
+                        count: day?.trade_count ?? 0,
+                      })}
+                      onMouseLeave={() => setHovered(null)}
+                      onFocus={() => !cell.isFuture && setHovered({
+                        dateKey: cell.dateKey,
+                        score: day?.adherence_score ?? null,
+                        count: day?.trade_count ?? 0,
+                      })}
+                      onBlur={() => setHovered(null)}
+                      className={`w-[12px] h-[12px] rounded-[2px] ${cellColor(cell)} ${
+                        isHovered ? 'ring-2 ring-blue-400' : ''
+                      } ${cell.isFuture ? 'pointer-events-none' : 'cursor-pointer hover:ring-1 hover:ring-blue-300'}`}
+                      aria-label={cell.isFuture ? '' : cell.dateKey}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      {/* Hover detail strip — keeps layout stable when nothing is hovered */}
+      <div className="mt-3 text-xs text-gray-500 h-4">
+        {hovered ? (
+          hovered.count === 0
+            ? <span>{hovered.dateKey} — no closed trades</span>
+            : hovered.score == null
+              ? <span>{hovered.dateKey} — {hovered.count} trade{hovered.count !== 1 ? 's' : ''}, no adherence score</span>
+              : <span>{hovered.dateKey} — {hovered.count} trade{hovered.count !== 1 ? 's' : ''}, adherence {Math.round(hovered.score)}</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 // Returns a YYYY-MM-DD string so we can compare against closed_at.slice(0,10)
 const presetStartDate = (p) => {
   const now = new Date();
@@ -97,6 +221,11 @@ export default function PerformanceScreen({ session }) {
   const location = useLocation();
   const baseCurrency = useBaseCurrency();
   const [allTrades, setAllTrades] = useState([]);
+  // daily_adherence rollup — rows shaped like
+  //   { date_key: 'YYYY-MM-DD', adherence_score, matched_count, off_plan_count, needs_review_count, trade_count }
+  // Populated server-side by recomputeDailyAdherence on every rebuild/sync.
+  // Heatmap below the KPIs renders one square per day off this list.
+  const [dailyAdherence, setDailyAdherence] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -160,7 +289,7 @@ export default function PerformanceScreen({ session }) {
     setLoadError(null);
     (async () => {
       try {
-        const [tradesRes, reviewRes] = await Promise.all([
+        const [tradesRes, reviewRes, adherenceRes] = await Promise.all([
           supabase
             .from('logical_trades')
             .select('*')
@@ -172,11 +301,27 @@ export default function PerformanceScreen({ session }) {
             .eq('user_id', userId)
             .eq('week_key', weekKey)
             .maybeSingle(),
+          // daily_adherence is populated server-side after every rebuild/sync.
+          // Empty array if the user has zero closed trades — heatmap renders
+          // all-grey in that case, which is fine.
+          supabase
+            .from('daily_adherence')
+            .select('date_key, adherence_score, matched_count, off_plan_count, needs_review_count, trade_count')
+            .eq('user_id', userId),
         ]);
         if (tradesRes.error) throw tradesRes.error;
         // weekly_reviews.maybeSingle() returns error: null + data: null when no row
         // exists — that's the expected "no weekly review yet" path, not a failure.
         if (reviewRes.error) throw reviewRes.error;
+        // daily_adherence: don't fail the screen if the rollup query errors
+        // (e.g. table doesn't exist on a preview env). Log and render the
+        // heatmap empty.
+        if (adherenceRes.error) {
+          console.warn('[performance] daily_adherence load failed (non-fatal):', adherenceRes.error.message);
+          setDailyAdherence([]);
+        } else {
+          setDailyAdherence(adherenceRes.data || []);
+        }
         setAllTrades(tradesRes.data || []);
         if (reviewRes.data) {
           setReflection({
@@ -272,6 +417,15 @@ export default function PerformanceScreen({ session }) {
   }, [trades]);
 
   // ── avg adherence across the period ──
+  // Heatmap lookup: date_key → daily_adherence row. Built once, indexed by
+  // date string so the AdherenceHeatmap component can render 365 cells with
+  // O(1) lookups instead of array.find per cell.
+  const daysByDate = useMemo(() => {
+    const map = new Map();
+    for (const d of dailyAdherence) map.set(d.date_key, d);
+    return map;
+  }, [dailyAdherence]);
+
   // Reads the stored adherence_score column directly. No client-side recompute.
   // api/rebuild.js writes adherence_score for every matched closed trade, so
   // any null value means the trade was open, unmatched, or predates the
@@ -792,6 +946,12 @@ export default function PerformanceScreen({ session }) {
           </div>
         ))}
       </div>
+
+      {/* ── Discipline heatmap ──
+          Per-day adherence visualization, sourced from daily_adherence.
+          Always shows last 365 days regardless of the period filter (the
+          period filter scopes the KPIs above; this is a year-view). */}
+      <AdherenceHeatmap daysByDate={daysByDate} />
 
       {/* ── auto callouts ──
           Each callout is a clickable card that expands to reveal "Why flagged"

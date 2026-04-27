@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PR adherence — option preview</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  .option-frame { border: 1px dashed #cbd5e1; border-radius: 16px; }
+  .option-tag { background: #1e293b; color: #fff; font-size: 11px; padding: 2px 10px; border-radius: 999px; letter-spacing: 0.04em; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen p-8">
+
+<div class="max-w-6xl mx-auto">
+
+  <h1 class="text-2xl font-semibold text-gray-900 mb-2">Performance Review — adherence visibility options</h1>
+  <p class="text-sm text-gray-500 mb-8">Preview of the same fictional trader's data rendered four ways. Pick one (or describe a hybrid).</p>
+
+  <!-- ───────────────────────── A: TODAY (baseline) ───────────────────────── -->
+  <section class="mb-12">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="option-tag">A · TODAY</span>
+      <h2 class="text-sm font-semibold text-gray-700">What PR shows now — single avg KPI card</h2>
+    </div>
+    <div class="option-frame p-6 bg-white">
+      <div class="grid grid-cols-5 gap-4">
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <p class="text-xs font-medium text-gray-400 mb-1.5">Avg adherence</p>
+          <p class="text-2xl font-semibold leading-none mb-1 text-amber-600">71</p>
+          <p class="text-xs text-gray-400">42 matched trades</p>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 opacity-50"><p class="text-xs font-medium text-gray-400 mb-1.5">Win rate</p><p class="text-2xl font-semibold text-green-600">58%</p><p class="text-xs text-gray-400">68 trades</p></div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 opacity-50"><p class="text-xs font-medium text-gray-400 mb-1.5">Net P&amp;L</p><p class="text-2xl font-semibold text-green-600">$2,840</p><p class="text-xs text-gray-400">period</p></div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 opacity-50"><p class="text-xs font-medium text-gray-400 mb-1.5">Avg R</p><p class="text-2xl font-semibold text-green-600">0.84</p><p class="text-xs text-gray-400">per trade</p></div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 opacity-50"><p class="text-xs font-medium text-gray-400 mb-1.5">Expectancy</p><p class="text-2xl font-semibold text-green-600">$41.76</p><p class="text-xs text-gray-400">per trade</p></div>
+      </div>
+      <p class="text-xs text-gray-400 mt-4 italic">↑ The avg adherence card is the only window into discipline. No trend, no per-day, no story.</p>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── 2A: SOURCE SWAP ───────────────────────── -->
+  <section class="mb-12">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="option-tag" style="background:#475569">2A · SOURCE SWAP ONLY</span>
+      <h2 class="text-sm font-semibold text-gray-700">Same card, sourced from <code class="text-xs bg-gray-100 px-1.5 py-0.5 rounded">daily_adherence</code> instead of computed client-side</h2>
+    </div>
+    <div class="option-frame p-6 bg-white">
+      <div class="grid grid-cols-5 gap-4">
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <p class="text-xs font-medium text-gray-400 mb-1.5">Avg adherence</p>
+          <p class="text-2xl font-semibold leading-none mb-1 text-amber-600">71</p>
+          <p class="text-xs text-gray-400">42 matched trades</p>
+        </div>
+        <div class="opacity-30 col-span-4 flex items-center text-xs text-gray-400">— other KPIs unchanged —</div>
+      </div>
+      <p class="text-xs text-gray-400 mt-4 italic">↑ Looks identical to today. Pure plumbing change. Trader sees nothing new.</p>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── 2B: CHIP STRIP ───────────────────────── -->
+  <section class="mb-12">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="option-tag" style="background:#1d4ed8">2B · CHIP STRIP (recommended)</span>
+      <h2 class="text-sm font-semibold text-gray-700">Avg card + last 14 trading days as colored chips below</h2>
+    </div>
+    <div class="option-frame p-6 bg-white">
+      <div class="grid grid-cols-5 gap-4 mb-4">
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <p class="text-xs font-medium text-gray-400 mb-1.5">Avg adherence</p>
+          <p class="text-2xl font-semibold leading-none mb-1 text-amber-600">71</p>
+          <p class="text-xs text-gray-400">42 matched trades</p>
+        </div>
+        <div class="opacity-30 col-span-4 flex items-center text-xs text-gray-400">— other KPIs —</div>
+      </div>
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-xs font-medium text-gray-400">Last 14 trading days</p>
+          <p class="text-xs text-gray-400"><span class="inline-block w-2 h-2 rounded-full bg-green-400 mr-1"></span>≥75 <span class="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1 ml-2"></span>50–74 <span class="inline-block w-2 h-2 rounded-full bg-red-400 mr-1 ml-2"></span>&lt;50 <span class="inline-block w-2 h-2 rounded-full bg-gray-200 mr-1 ml-2"></span>no trades</p>
+        </div>
+        <div class="flex items-end gap-2">
+          <!-- 14 days, oldest left -->
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-green-50 border border-green-200 text-green-700 flex items-center justify-center text-sm font-semibold">82</div><p class="text-[10px] text-gray-400">M 14</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-green-50 border border-green-200 text-green-700 flex items-center justify-center text-sm font-semibold">88</div><p class="text-[10px] text-gray-400">T 15</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-sm font-semibold">66</div><p class="text-[10px] text-gray-400">W 16</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-gray-100 border border-gray-200 text-gray-400 flex items-center justify-center text-sm">—</div><p class="text-[10px] text-gray-400">T 17</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-sm font-semibold">71</div><p class="text-[10px] text-gray-400">F 18</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-red-50 border border-red-200 text-red-600 flex items-center justify-center text-sm font-semibold">42</div><p class="text-[10px] text-gray-400">M 21</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-red-50 border border-red-200 text-red-600 flex items-center justify-center text-sm font-semibold">35</div><p class="text-[10px] text-gray-400">T 22</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-sm font-semibold">58</div><p class="text-[10px] text-gray-400">W 23</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-sm font-semibold">68</div><p class="text-[10px] text-gray-400">T 24</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-sm font-semibold">72</div><p class="text-[10px] text-gray-400">F 25</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-green-50 border border-green-200 text-green-700 flex items-center justify-center text-sm font-semibold">85</div><p class="text-[10px] text-gray-400">M 28</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-green-50 border border-green-200 text-green-700 flex items-center justify-center text-sm font-semibold">91</div><p class="text-[10px] text-gray-400">T 29</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-green-50 border border-green-200 text-green-700 flex items-center justify-center text-sm font-semibold">79</div><p class="text-[10px] text-gray-400">W 30</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-12 rounded-md bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-sm font-semibold">73</div><p class="text-[10px] text-gray-400">today</p></div>
+        </div>
+      </div>
+      <p class="text-xs text-gray-400 mt-4 italic">↑ Trader scans left-to-right and sees the rough patch (M 21 – W 23) bounce back. Each chip is one trading day. Skips weekends. ~30 lines of UI to add.</p>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── 2C: SPARKLINE ───────────────────────── -->
+  <section class="mb-12">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="option-tag" style="background:#0e7490">2C · SPARKLINE</span>
+      <h2 class="text-sm font-semibold text-gray-700">Avg card + line chart of daily adherence across the selected period</h2>
+    </div>
+    <div class="option-frame p-6 bg-white">
+      <div class="grid grid-cols-5 gap-4 mb-4">
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <p class="text-xs font-medium text-gray-400 mb-1.5">Avg adherence</p>
+          <p class="text-2xl font-semibold leading-none mb-1 text-amber-600">71</p>
+          <p class="text-xs text-gray-400">42 matched trades</p>
+        </div>
+        <div class="opacity-30 col-span-4 flex items-center text-xs text-gray-400">— other KPIs —</div>
+      </div>
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-xs font-medium text-gray-400">Adherence over the last 30 days</p>
+          <p class="text-xs text-gray-400">avg 71 · range 35–91</p>
+        </div>
+        <svg viewBox="0 0 600 120" class="w-full h-32">
+          <!-- gridlines -->
+          <line x1="0" y1="20" x2="600" y2="20" stroke="#f3f4f6" stroke-width="1"/>
+          <line x1="0" y1="60" x2="600" y2="60" stroke="#f3f4f6" stroke-width="1"/>
+          <line x1="0" y1="100" x2="600" y2="100" stroke="#f3f4f6" stroke-width="1"/>
+          <!-- y-axis labels -->
+          <text x="0" y="24" font-size="9" fill="#9ca3af">100</text>
+          <text x="0" y="64" font-size="9" fill="#9ca3af">50</text>
+          <text x="0" y="104" font-size="9" fill="#9ca3af">0</text>
+          <!-- 75 threshold (good zone bottom) -->
+          <line x1="30" y1="40" x2="600" y2="40" stroke="#86efac" stroke-width="1" stroke-dasharray="3,3"/>
+          <text x="600" y="36" font-size="9" fill="#16a34a" text-anchor="end">75</text>
+          <!-- area under curve -->
+          <path d="M 30 36 L 50 28 L 70 50 L 110 38 L 140 70 L 170 90 L 200 92 L 230 60 L 260 50 L 290 44 L 320 32 L 350 24 L 380 38 L 410 30 L 440 20 L 470 30 L 500 50 L 530 36 L 560 40 L 580 32 L 580 100 L 30 100 Z" fill="#fef3c7" opacity="0.6"/>
+          <!-- main line -->
+          <polyline points="30,36 50,28 70,50 110,38 140,70 170,90 200,92 230,60 260,50 290,44 320,32 350,24 380,38 410,30 440,20 470,30 500,50 530,36 560,40 580,32" fill="none" stroke="#d97706" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+          <!-- data points -->
+          <g fill="#d97706">
+            <circle cx="30" cy="36" r="2.5"/><circle cx="50" cy="28" r="2.5"/><circle cx="70" cy="50" r="2.5"/><circle cx="110" cy="38" r="2.5"/>
+            <circle cx="140" cy="70" r="2.5"/><circle cx="170" cy="90" r="2.5" fill="#dc2626"/><circle cx="200" cy="92" r="2.5" fill="#dc2626"/>
+            <circle cx="230" cy="60" r="2.5"/><circle cx="260" cy="50" r="2.5"/><circle cx="290" cy="44" r="2.5"/>
+            <circle cx="320" cy="32" r="2.5" fill="#16a34a"/><circle cx="350" cy="24" r="2.5" fill="#16a34a"/><circle cx="380" cy="38" r="2.5"/>
+            <circle cx="410" cy="30" r="2.5" fill="#16a34a"/><circle cx="440" cy="20" r="2.5" fill="#16a34a"/><circle cx="470" cy="30" r="2.5" fill="#16a34a"/>
+            <circle cx="500" cy="50" r="2.5"/><circle cx="530" cy="36" r="2.5"/><circle cx="560" cy="40" r="2.5"/><circle cx="580" cy="32" r="2.5" fill="#16a34a"/>
+          </g>
+          <!-- x-axis date labels -->
+          <text x="30" y="115" font-size="9" fill="#9ca3af">Mar 28</text>
+          <text x="170" y="115" font-size="9" fill="#9ca3af">Apr 4</text>
+          <text x="320" y="115" font-size="9" fill="#9ca3af">Apr 14</text>
+          <text x="470" y="115" font-size="9" fill="#9ca3af">Apr 21</text>
+          <text x="580" y="115" font-size="9" fill="#9ca3af" text-anchor="end">today</text>
+        </svg>
+      </div>
+      <p class="text-xs text-gray-400 mt-4 italic">↑ Same data, trend view. Easier to spot momentum/regression. Slightly more code (~60 lines, inline SVG, no chart lib needed).</p>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── 2D: BOTH ───────────────────────── -->
+  <section class="mb-12">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="option-tag" style="background:#7c3aed">2D · BOTH</span>
+      <h2 class="text-sm font-semibold text-gray-700">Sparkline for trend + chip strip for recency. Maximum visibility.</h2>
+    </div>
+    <div class="option-frame p-6 bg-white">
+      <div class="grid grid-cols-5 gap-4 mb-4">
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <p class="text-xs font-medium text-gray-400 mb-1.5">Avg adherence</p>
+          <p class="text-2xl font-semibold leading-none mb-1 text-amber-600">71</p>
+          <p class="text-xs text-gray-400">42 matched trades</p>
+        </div>
+        <div class="opacity-30 col-span-4 flex items-center text-xs text-gray-400">— other KPIs —</div>
+      </div>
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-xs font-medium text-gray-400">Adherence over the last 30 days</p>
+          <p class="text-xs text-gray-400">avg 71 · range 35–91</p>
+        </div>
+        <svg viewBox="0 0 600 120" class="w-full h-32">
+          <line x1="0" y1="20" x2="600" y2="20" stroke="#f3f4f6" stroke-width="1"/>
+          <line x1="0" y1="60" x2="600" y2="60" stroke="#f3f4f6" stroke-width="1"/>
+          <line x1="0" y1="100" x2="600" y2="100" stroke="#f3f4f6" stroke-width="1"/>
+          <text x="0" y="24" font-size="9" fill="#9ca3af">100</text>
+          <text x="0" y="64" font-size="9" fill="#9ca3af">50</text>
+          <text x="0" y="104" font-size="9" fill="#9ca3af">0</text>
+          <line x1="30" y1="40" x2="600" y2="40" stroke="#86efac" stroke-width="1" stroke-dasharray="3,3"/>
+          <text x="600" y="36" font-size="9" fill="#16a34a" text-anchor="end">75</text>
+          <path d="M 30 36 L 50 28 L 70 50 L 110 38 L 140 70 L 170 90 L 200 92 L 230 60 L 260 50 L 290 44 L 320 32 L 350 24 L 380 38 L 410 30 L 440 20 L 470 30 L 500 50 L 530 36 L 560 40 L 580 32 L 580 100 L 30 100 Z" fill="#fef3c7" opacity="0.6"/>
+          <polyline points="30,36 50,28 70,50 110,38 140,70 170,90 200,92 230,60 260,50 290,44 320,32 350,24 380,38 410,30 440,20 470,30 500,50 530,36 560,40 580,32" fill="none" stroke="#d97706" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-xs font-medium text-gray-400">Last 14 trading days</p>
+          <p class="text-xs text-gray-400"><span class="inline-block w-2 h-2 rounded-full bg-green-400 mr-1"></span>≥75 <span class="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1 ml-2"></span>50–74 <span class="inline-block w-2 h-2 rounded-full bg-red-400 mr-1 ml-2"></span>&lt;50</p>
+        </div>
+        <div class="flex items-end gap-2">
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-green-50 border border-green-200 text-green-700 flex items-center justify-center text-sm font-semibold">82</div><p class="text-[10px] text-gray-400">M 14</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-green-50 border border-green-200 text-green-700 flex items-center justify-center text-sm font-semibold">88</div><p class="text-[10px] text-gray-400">T 15</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-sm font-semibold">66</div><p class="text-[10px] text-gray-400">W 16</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-gray-100 border border-gray-200 text-gray-400 flex items-center justify-center text-sm">—</div><p class="text-[10px] text-gray-400">T 17</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-sm font-semibold">71</div><p class="text-[10px] text-gray-400">F 18</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-red-50 border border-red-200 text-red-600 flex items-center justify-center text-sm font-semibold">42</div><p class="text-[10px] text-gray-400">M 21</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-red-50 border border-red-200 text-red-600 flex items-center justify-center text-sm font-semibold">35</div><p class="text-[10px] text-gray-400">T 22</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-sm font-semibold">58</div><p class="text-[10px] text-gray-400">W 23</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-sm font-semibold">68</div><p class="text-[10px] text-gray-400">T 24</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-sm font-semibold">72</div><p class="text-[10px] text-gray-400">F 25</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-green-50 border border-green-200 text-green-700 flex items-center justify-center text-sm font-semibold">85</div><p class="text-[10px] text-gray-400">M 28</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-green-50 border border-green-200 text-green-700 flex items-center justify-center text-sm font-semibold">91</div><p class="text-[10px] text-gray-400">T 29</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-green-50 border border-green-200 text-green-700 flex items-center justify-center text-sm font-semibold">79</div><p class="text-[10px] text-gray-400">W 30</p></div>
+          <div class="flex-1 flex flex-col items-center gap-1"><div class="w-full h-10 rounded-md bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-sm font-semibold">73</div><p class="text-[10px] text-gray-400">today</p></div>
+        </div>
+      </div>
+      <p class="text-xs text-gray-400 mt-4 italic">↑ Trend (sparkline) at the top, recency (chips) at the bottom. Most expressive. ~90 lines combined.</p>
+    </div>
+  </section>
+
+  <div class="bg-white border border-gray-200 rounded-xl p-5 mt-12">
+    <p class="text-sm font-semibold text-gray-700 mb-2">Reply with one of:</p>
+    <ul class="text-sm text-gray-600 space-y-1 list-disc pl-5">
+      <li><strong>2A</strong> — source swap only, no new UI</li>
+      <li><strong>2B</strong> — chip strip (recommended)</li>
+      <li><strong>2C</strong> — sparkline</li>
+      <li><strong>2D</strong> — both (sparkline + chips)</li>
+      <li>Or describe a hybrid / different shape</li>
+    </ul>
+  </div>
+
+</div>
+
+</body>
+</html>
