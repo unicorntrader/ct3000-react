@@ -119,9 +119,12 @@ module.exports = async function handler(req, res) {
     // but sequential is fine here — deletion is rare and we want clear
     // error attribution.
     const tables = [
-      'logical_trade_executions',
       'logical_trades',
-      'daily_adherence',          // on tradesquares branch; may 404 on main
+      // daily_adherence — pending feature, table exists but unused yet.
+      // Kept in the wipe list so when the feature ships, a deleted user's
+      // rollup rows go with them. The 42P01 catch below handles "table not
+      // yet on this env" without breaking deletion.
+      'daily_adherence',
       'weekly_reviews',
       'daily_notes',
       'planned_trades',
